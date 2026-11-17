@@ -1,0 +1,63 @@
+[project]
+name = "voicehub"
+version = "0.1.0"
+description = "音色驱动的有声书工作台：音色库管理、有声书生产与多引擎合成中转"
+# 许可证写进元数据，装完 `pip show` 与打包产物都能看到；正文在 LICENSE。
+# 用 SPDX 标识（PEP 639）而非老的 `{ text = ... }`，setuptools>=77 才认，本项目已满足。
+license = "MIT"
+license-files = ["LICENSE"]
+# 从 3.11 收到 3.12：不是为了用新语法，是为了**让 uv 自己装一个独立的 CPython**。
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.6",
+    # 云端引擎插件（minimax）自己发 HTTP 请求；不引各家 SDK——一个 POST + 一层 JSON，
+    # 自己写反而更短，也少一个会过期的依赖。
+    "httpx>=0.27",
+    # 音色克隆要收 multipart 上传（FastAPI 解析表单/文件时的运行时依赖）。
+    "python-multipart>=0.0.9",
+    "opencv-python-headless>=4.10,<5",
+    # 缩略图/头像裁切是运行时功能，不是打包期工具。
+    "pillow>=10",
+    # 语义检索的本地向量模型：ONNX Runtime + Hugging Face tokenizer。
+    # 模型本身不随包发，用户手动下载；运行时在这里声明，装完即可离线推理。
+    "onnxruntime>=1.18",
+    "tokenizers>=0.20",
+    # 头像裁切与向量计算直接 import numpy，不靠 onnxruntime 的传递依赖碰运气。
+    "numpy>=1.26",
+]
+
+[dependency-groups]
+# 开发依赖走 uv 的 dependency-groups（不再是 optional-dependencies）：`uv sync`
+# 默认就装上它们，新机器上一句命令开发环境就齐了。
+# ruff 从前是**手装进 .venv 的、没进任何声明**——于是"这台机器能跑、换台机器
+# 跑不动"，而且看不出缺什么。现在它是声明的一部分。
+dev = ["pytest>=8", "ruff>=0.17"]
+# 打包依赖**不默认装**：PyInstaller 与图标绘制只在构建便携包时用。
+# 托盘不走第三方库——`packaging/voicehub_tray.py` 直接调 Shell_NotifyIcon，
+# pystray 在 64 位下注册静默失败（图标不显示也不报错），已弃用。
+#   uv sync --group package
+#   uv run --group package python packaging/build.py
+package = ["pyinstaller>=6.10"]
+
+[tool.uv]
+# 这是一个**应用**，不是库：没有 build backend，也不需要被安装成包。
+# （audiobook-pipeline 同款设置。）`uv sync` 只装依赖，不会试着构建本项目。
+# 也正因如此，它**不进任何 uv workspace**——两个项目各管各的环境与锁。
+package = false
+
+# 第三方引擎包在自己的 pyproject 里声明 `[project.entry-points."voicehub.engines"]`，
+# 装上即被发现。**内置引擎不在这里登记**——注册表扫 app/engines/builtin/<key>/
+# 目录就能发现它们，多维护一张名单只会漏。
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# 这个工程没有 build-system：`app` 能被 import 全靠「从仓库根启动」。`python -m pytest`
+# 会把 cwd 放进 sys.path，`pytest`（控制台脚本）不会——本机一直是前者，CI 是后者，
+# 于是同一份代码在 CI 上 57 个文件全部 ModuleNotFoundError。这一行把差别抹平。
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="GPT-SoVITS">
+  <!-- VoiceHub 自绘的标识：本机（显示器轮廓）+ 声波。**不是官方 logo 的复制品**；
+       要换成官方图标，直接替换本文件即可（插件按目录里的 icon.svg 取图）。
+       配色刻意与 MiniMax 那个紫色渐变不同——左栏一眼要看得出"这台跑在本机"。 -->
+  <defs>
+    <linearGradient id="gsvGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f766e"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#gsvGrad)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round">
+    <!-- 显示器：本机推理 -->
+    <rect x="5.5" y="8.5" width="21" height="13" rx="2.4"/>
+    <path d="M12 25.5h8"/>
+  </g>
+  <g fill="#ffffff">
+    <rect x="9.6"  y="13.4" width="2" height="3.2" rx="1" opacity=".85"/>
+    <rect x="13.2" y="11.6" width="2" height="6.8" rx="1"/>
+    <rect x="16.8" y="12.8" width="2" height="4.4" rx="1"/>
+    <rect x="20.4" y="13.4" width="2" height="3.2" rx="1" opacity=".85"/>
+  </g>
+</svg>

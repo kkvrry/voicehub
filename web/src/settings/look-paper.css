@@ -1,0 +1,1287 @@
+/* ============================================================================
+ * 纸墨 · 编辑台（data-look="paper"）
+ *
+ * 不是"把玻璃调淡"：纸墨换的是一套排版语言——
+ *   - 米纸底 + 墨色字 + 朱砂一点；没有渐变、模糊与投影
+ *   - 标题与正文用衬线，界面标签仍用无衬线，读与用的边界一眼分明
+ *   - 控件收成直角/2px 小圆角，选中态用"墨块"或"下划线"，不用发光
+ *   - 表格是一条一条的账本：强表头线、行间细线、对白只留左侧朱砂短线
+ *
+ * 令牌仍在 :root 上覆盖，组件一行不改；只有硬编码的渐变/999px/50% 需要
+ * 在这里按选择器收回。选择器统一带 `:root[data-look='paper'] .app-shell`
+ * 前缀：Vue scoped 样式是"类 + data-v"两票，前缀三票才能稳定压过它们。
+ * ==========================================================================*/
+
+:root[data-look='paper'] {
+  /* ---- 颜色（浅色 · 纸）---- */
+  --sh-text: #1e1d19;
+  --sh-text-2: #3f3c34;
+  --sh-text-3: #5a554a;
+  --sh-text-4: #736c5e;
+
+  --sh-accent: #b3402a;
+  --sh-accent-2: #8c2f1d;
+  --sh-accent-soft: #f2dfd7;
+  --sh-accent-soft-2: #ecd0c4;
+  --sh-accent-ring: rgba(179, 64, 42, 0.24);
+  --sh-accent-contrast: #fbf9f3;
+
+  --sh-canvas: #f1ede3;
+  --sh-panel: #fbf9f3;
+  --sh-chip: #f4f0e6;
+  --sh-mask: rgba(30, 29, 25, 0.24);
+  --sh-mask-strong: rgba(30, 29, 25, 0.38);
+  --sh-toast-bg: #1e1d19;
+  --sh-toast-text: #f7f3ea;
+
+  --sh-glass: rgba(251, 249, 243, 0.94);
+  --sh-glass-soft: #f4f0e6;
+  --sh-glass-strong: #fdfbf6;
+  --sh-glass-border: #d8d0c0;
+  --sh-line: #d8d0c0;
+  --sh-line-soft: #e6dfd0;
+  --sh-line-strong: #b9b09e;
+  --sh-tree-line: #b9b09e;
+  --sh-folder: #8a7a5f;
+  --sh-field: #fdfbf6;
+  --sh-field-focus: #fffdf8;
+  --sh-hover: #efeade;
+  --sh-track: #ddd5c4;
+
+  --sh-ok: #4f6b4a;
+  --sh-ok-soft: rgba(79, 107, 74, 0.12);
+  --sh-warn: #9a6a24;
+  --sh-warn-soft: rgba(154, 106, 36, 0.12);
+  --sh-danger: #a63b2c;
+  --sh-danger-soft: rgba(166, 59, 44, 0.1);
+
+  --sh-shadow-1: 0 1px 0 rgba(30, 29, 25, 0.04);
+  --sh-shadow-2: 0 24px 60px -40px rgba(30, 29, 25, 0.5);
+  --sh-shadow-pop: 0 10px 28px -20px rgba(30, 29, 25, 0.45);
+  --sh-inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+
+  /* ---- 形状：纸上的控件是裁出来的，不是吹出来的 ---- */
+  --sh-r-2xs: 1px;
+  --sh-r-xs: 2px;
+  --sh-r-sm: 2px;
+  --sh-r-md: 3px;
+  --sh-r-lg: 3px;
+  --sh-r-xl: 4px;
+  --sh-radius-card: 4px;
+  --sh-radius-inner: 3px;
+
+  --sh-font-serif: Georgia, 'Source Han Serif SC', 'Noto Serif SC', 'Songti SC', 'STSong',
+    'SimSun', serif;
+
+  --star: #b98a2e;
+
+  /* 分类色：同一套色相压到纸的饱和度上，不再像贴在纸上的荧光贴纸 */
+  --tone-gray-bg: #efeade;
+  --tone-gray-fg: #6f685a;
+  --tone-blue-bg: #e7edf0;
+  --tone-blue-fg: #3f6478;
+  --tone-indigo-bg: #e9e8ef;
+  --tone-indigo-fg: #4f5470;
+  --tone-pink-bg: #f4e5e3;
+  --tone-pink-fg: #9a4a44;
+  --tone-amber-bg: #f3ead6;
+  --tone-amber-fg: #84622a;
+  --tone-coral-bg: #f3e2da;
+  --tone-coral-fg: #a3543c;
+  --tone-teal-bg: #e1ece7;
+  --tone-teal-fg: #3d6b60;
+  --tone-green-bg: #e5ecdf;
+  --tone-green-fg: #4d6b45;
+  --tone-purple-bg: #ebe6ee;
+  --tone-purple-fg: #635377;
+}
+
+/* 强调色预设和纸墨无关：朱砂是这一套视觉的一部分。
+   直接写在 .app-shell 上，才压得过 theme.css 的 [data-accent] 预设。 */
+.app-shell[data-look='paper'] {
+  --sh-accent: #b3402a;
+  --sh-accent-2: #8c2f1d;
+  --sh-accent-soft: #f2dfd7;
+  --sh-accent-soft-2: #ecd0c4;
+  --sh-accent-ring: rgba(179, 64, 42, 0.24);
+  --sh-accent-contrast: #fbf9f3;
+}
+
+/* ---- 深色 · 夜读 ---- */
+:root[data-look='paper'][data-theme='dark'] {
+  --sh-text: #ece7db;
+  --sh-text-2: #cfc7b7;
+  --sh-text-3: #a99f8d;
+  --sh-text-4: #8f8574;
+
+  --sh-accent: #d2684c;
+  --sh-accent-2: #b34a33;
+  --sh-accent-soft: rgba(210, 104, 76, 0.15);
+  --sh-accent-soft-2: rgba(210, 104, 76, 0.25);
+  --sh-accent-ring: rgba(210, 104, 76, 0.3);
+  --sh-accent-contrast: #191712;
+
+  --sh-canvas: #14130f;
+  --sh-panel: #1d1b16;
+  --sh-chip: #26231c;
+  --sh-mask: rgba(0, 0, 0, 0.55);
+  --sh-mask-strong: rgba(0, 0, 0, 0.72);
+  --sh-toast-bg: #2b2720;
+  --sh-toast-text: #f3ede0;
+
+  --sh-glass: rgba(29, 27, 22, 0.94);
+  --sh-glass-soft: #24211b;
+  --sh-glass-strong: #2b2720;
+  --sh-glass-border: #3a352b;
+  --sh-line: #3a352b;
+  --sh-line-soft: #2e2a22;
+  --sh-line-strong: #4a4437;
+  --sh-tree-line: #5a5344;
+  --sh-folder: #b8a988;
+  --sh-field: #24211b;
+  --sh-field-focus: #2a261f;
+  --sh-hover: #2a261f;
+  --sh-track: #3a352b;
+
+  --sh-ok: #8fb784;
+  --sh-ok-soft: rgba(143, 183, 132, 0.14);
+  --sh-warn: #d2a35a;
+  --sh-warn-soft: rgba(210, 163, 90, 0.14);
+  --sh-danger: #e0836b;
+  --sh-danger-soft: rgba(224, 131, 107, 0.14);
+
+  --sh-shadow-1: none;
+  --sh-shadow-2: 0 30px 70px -40px rgba(0, 0, 0, 0.85);
+  --sh-shadow-pop: 0 12px 30px -20px rgba(0, 0, 0, 0.8);
+  --sh-inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  --tone-gray-bg: #2a261f;
+  --tone-gray-fg: #b3a994;
+  --tone-blue-bg: #1e2a2f;
+  --tone-blue-fg: #8fb3c2;
+  --tone-indigo-bg: #24242f;
+  --tone-indigo-fg: #9ba0bf;
+  --tone-pink-bg: #2e2220;
+  --tone-pink-fg: #d99289;
+  --tone-amber-bg: #2c2618;
+  --tone-amber-fg: #d3ad6a;
+  --tone-coral-bg: #2e211b;
+  --tone-coral-fg: #d98e70;
+  --tone-teal-bg: #1d2a26;
+  --tone-teal-fg: #8dbbae;
+  --tone-green-bg: #232a1e;
+  --tone-green-fg: #a0bd8f;
+  --tone-purple-bg: #272330;
+  --tone-purple-fg: #b3a2c9;
+}
+
+:root[data-look='paper'][data-theme='dark'] .app-shell {
+  --sh-accent: #d2684c;
+  --sh-accent-2: #b34a33;
+  --sh-accent-soft: rgba(210, 104, 76, 0.15);
+  --sh-accent-soft-2: rgba(210, 104, 76, 0.25);
+  --sh-accent-ring: rgba(210, 104, 76, 0.3);
+  --sh-accent-contrast: #191712;
+}
+
+/* --------------------------------------------------------------- 画布与壳 -- */
+:root[data-look='paper'] .app-shell {
+  color: var(--sh-text);
+  background-color: var(--sh-canvas);
+  background-image: radial-gradient(rgba(30, 29, 25, 0.07) 0.7px, transparent 0.7px);
+  background-size: 18px 18px;
+}
+
+:root[data-look='paper'][data-theme='dark'] .app-shell {
+  background-color: var(--sh-canvas);
+  background-image: radial-gradient(rgba(236, 231, 219, 0.055) 0.7px, transparent 0.7px);
+  background-size: 18px 18px;
+}
+
+/* 纸面的光来自纸本身，不需要环境光斑。 */
+:root[data-look='paper'] .app-shell .sh-ambient {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ 顶栏 -- */
+:root[data-look='paper'] .app-shell .sh-topbar {
+  background: var(--sh-panel);
+  border-bottom: 1px solid var(--sh-text);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-look='paper'] .app-shell .sh-topbar::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 3px;
+  height: 1px;
+  background: var(--sh-line);
+  pointer-events: none;
+}
+
+:root[data-look='paper'] .app-shell .sh-brand-mark {
+  border-radius: 2px;
+  color: var(--sh-accent-contrast);
+  background: var(--sh-accent);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sh-brand-mark::after {
+  display: none;
+}
+:root[data-look='paper'] .app-shell .sh-brand-name {
+  font-family: var(--sh-font-serif);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+:root[data-look='paper'] .app-shell .sh-brand-sub {
+  font-size: 8.5px;
+  letter-spacing: 0.2em;
+}
+
+:root[data-look='paper'] .app-shell .sh-search {
+  border-radius: 2px;
+  background: transparent;
+  border-color: var(--sh-line);
+}
+:root[data-look='paper'] .app-shell .sh-search:hover {
+  border-color: var(--sh-line-strong);
+}
+:root[data-look='paper'] .app-shell .sh-search:focus-within {
+  background: var(--sh-field-focus);
+  border-color: var(--sh-accent);
+  box-shadow: 0 0 0 2px var(--sh-accent-ring);
+}
+:root[data-look='paper'] .app-shell .sh-search kbd {
+  border-radius: 2px;
+  background: transparent;
+  border-color: var(--sh-line);
+}
+:root[data-look='paper'] .app-shell .sh-search-clear {
+  border-radius: 2px;
+}
+
+:root[data-look='paper'] .app-shell .sh-theme-toggle {
+  border-radius: 2px;
+  background: transparent;
+  border-color: var(--sh-line);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sh-theme-toggle:hover {
+  background: var(--sh-hover);
+  box-shadow: none;
+}
+
+:root[data-look='paper'] .app-shell .sh-banner {
+  background: var(--sh-warn-soft);
+  border-bottom: 1px solid var(--sh-line);
+}
+
+/* ------------------------------------------------------------ 主导航/分类 -- */
+:root[data-look='paper'] .app-shell .sh-nav {
+  background: var(--sh-panel);
+  border-right: 1px solid var(--sh-line);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-look='paper'] .app-shell .sh-nav-item {
+  border-radius: 2px;
+  font-size: 10px;
+}
+:root[data-look='paper'] .app-shell .sh-nav-item:hover {
+  background: var(--sh-accent-soft);
+}
+:root[data-look='paper'] .app-shell .sh-nav-item.is-active {
+  background: transparent;
+  border-color: transparent;
+  color: var(--sh-text);
+  font-weight: 700;
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sh-nav-item.is-active svg {
+  color: var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .sh-nav-item.is-active::before {
+  left: 0;
+  right: auto;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  height: auto;
+  border-radius: 0;
+  transform: none;
+  background: var(--sh-accent);
+  opacity: 1;
+}
+:root[data-look='paper'] .app-shell .sh-nav-badge {
+  border-radius: 1px;
+  box-shadow: 0 0 0 2px var(--sh-panel);
+}
+
+:root[data-look='paper'] .app-shell .sh-rail {
+  background: transparent;
+  border-right: 1px solid var(--sh-line);
+}
+:root[data-look='paper'] .app-shell .sh-rail-title {
+  font-size: 9.4px;
+  letter-spacing: 0.14em;
+}
+:root[data-look='paper'] .app-shell .sh-rail-item {
+  border-radius: 2px;
+}
+:root[data-look='paper'] .app-shell .sh-rail-item.is-active {
+  background: transparent;
+  border-color: transparent;
+  color: var(--sh-text);
+  font-weight: 600;
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sh-rail-item.is-active svg {
+  color: var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .sh-rail-item.is-active::before {
+  width: 2px;
+  top: 9px;
+  bottom: 9px;
+  border-radius: 0;
+  background: var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .sh-rail-card {
+  border-radius: 2px;
+  background: transparent;
+  border-color: var(--sh-line-soft);
+}
+
+/* -------------------------------------------------------------- 页面抬头 -- */
+:root[data-look='paper'] .app-shell .sh-page-head h1 {
+  font-family: var(--sh-font-serif);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+:root[data-look='paper'] .app-shell .sh-sec-icon {
+  border-radius: 2px;
+  color: var(--sh-accent);
+  background: transparent;
+  border: 1px solid var(--sh-line);
+}
+:root[data-look='paper'] .app-shell .sh-sec-title {
+  font-family: var(--sh-font-serif);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+:root[data-look='paper'] .app-shell .sh-sec-sub {
+  color: var(--sh-text-3);
+  letter-spacing: 0.01em;
+}
+
+/* ------------------------------------------------------------------ 卡片 -- */
+:root[data-look='paper'] .app-shell .sh-card {
+  border-radius: var(--sh-radius-card);
+  border: 1px solid var(--sh-line);
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sh-card-icon {
+  border-radius: 2px;
+  background: transparent;
+  border: 1px solid var(--sh-line);
+}
+:root[data-look='paper'] .app-shell .sh-card-title {
+  font-family: var(--sh-font-serif);
+  font-size: 14.6px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+/* 设置页的卡片按 01/ 02/ 编号：翻页时知道自己在第几张纸上。 */
+:root[data-look='paper'] .app-shell .sh-sec {
+  counter-reset: sheet;
+}
+:root[data-look='paper'] .app-shell .sh-sec .sh-card {
+  counter-increment: sheet;
+}
+:root[data-look='paper'] .app-shell .sh-sec .sh-card > .sh-card-head {
+  border-bottom: 1px solid var(--sh-line-soft);
+  padding-bottom: 10px;
+}
+:root[data-look='paper'] .app-shell .sh-sec .sh-card > .sh-card-head .sh-card-title::before {
+  content: counter(sheet, decimal-leading-zero) '/';
+  margin-right: 8px;
+  font-family: var(--sh-font-serif);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .sh-card-foot {
+  background: transparent;
+  border-top: 1px solid var(--sh-line-soft);
+}
+
+:root[data-look='paper'] .app-shell .sh-row {
+  border-top: 1px solid var(--sh-line-soft);
+}
+:root[data-look='paper'] .app-shell .sh-row-title {
+  font-size: 12.8px;
+  font-weight: 600;
+}
+:root[data-look='paper'] .app-shell .sh-row-desc,
+:root[data-look='paper'] .app-shell .sh-hint {
+  color: var(--sh-text-3);
+}
+
+/* ------------------------------------------------------------------ 按钮 -- */
+:root[data-look='paper'] .app-shell .sh-btn,
+:root[data-look='paper'] .app-shell .btn {
+  border-radius: 2px;
+}
+:root[data-look='paper'] .app-shell .sh-btn.is-primary,
+:root[data-look='paper'] .app-shell .btn.primary {
+  color: var(--sh-accent-contrast);
+  background: var(--sh-accent);
+  border-color: var(--sh-accent);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sh-btn.is-primary:hover:not(:disabled),
+:root[data-look='paper'] .app-shell .btn.primary:hover:not(:disabled) {
+  background: var(--sh-accent-2);
+  border-color: var(--sh-accent-2);
+  filter: none;
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sh-btn.is-soft {
+  background: transparent;
+  border-color: var(--sh-accent-ring);
+}
+:root[data-look='paper'] .app-shell .sh-btn.is-soft:hover:not(:disabled) {
+  background: var(--sh-accent-soft);
+}
+:root[data-look='paper'] .app-shell .sh-btn.is-ghost,
+:root[data-look='paper'] .app-shell .btn {
+  background: transparent;
+  border-color: var(--sh-line);
+}
+:root[data-look='paper'] .app-shell .sh-btn.is-ghost:hover:not(:disabled),
+:root[data-look='paper'] .app-shell .btn:hover:not(:disabled) {
+  background: var(--sh-hover);
+  border-color: var(--sh-line-strong);
+  color: var(--sh-text);
+}
+:root[data-look='paper'] .app-shell .sh-btn.is-icon,
+:root[data-look='paper'] .app-shell .icon-btn {
+  border-radius: 2px;
+  background: transparent;
+}
+:root[data-look='paper'] .app-shell .sh-btn.is-icon:hover:not(:disabled) {
+  background: var(--sh-accent-soft);
+}
+/* 实例卡右上角的运行按钮是主动作：纸墨不收成透明图标，否则纸底上看不见。 */
+:root[data-look='paper'] .app-shell .sh-btn.acp-run {
+  color: var(--sh-accent-contrast);
+  background: var(--sh-accent);
+  border-color: var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .sh-btn.acp-run:hover:not(:disabled) {
+  color: var(--sh-accent-contrast);
+  background: var(--sh-accent-2);
+  border-color: var(--sh-accent-2);
+}
+:root[data-look='paper'] .app-shell .sh-btn.acp-run.is-stop {
+  color: var(--sh-danger);
+  background: var(--sh-danger-soft);
+  border-color: var(--sh-danger-soft);
+}
+:root[data-look='paper'] .app-shell .sh-btn.acp-run.is-stop:hover:not(:disabled) {
+  color: var(--sh-danger);
+  background: color-mix(in srgb, var(--sh-danger) 18%, transparent);
+  border-color: transparent;
+}
+
+/* ------------------------------------------------------------------ 控件 -- */
+:root[data-look='paper'] .app-shell .sh-field {
+  border-radius: 2px;
+  border-color: var(--sh-line);
+  /* 只改底色：用 background 简写会把下拉自绘箭头的 no-repeat/定位一起冲掉，
+     箭头就会铺满整个框。 */
+  background-color: var(--sh-field);
+}
+:root[data-look='paper'] .app-shell .sh-field:focus {
+  border-color: var(--sh-accent);
+  background-color: var(--sh-field-focus);
+  box-shadow: 0 0 0 2px var(--sh-accent-ring);
+}
+:root[data-look='paper'] .app-shell .sh-field[readonly] {
+  background: transparent;
+}
+:root[data-look='paper'] .app-shell select.sh-field {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%235a554a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+:root[data-look='paper'][data-theme='dark'] .app-shell select.sh-field {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23a99f8d' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+:root[data-look='paper'] .app-shell .sh-toggle {
+  border-radius: 2px;
+  background: transparent;
+  border-color: var(--sh-line-strong);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sh-toggle::after {
+  border-radius: 1px;
+  background: var(--sh-text-3);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sh-toggle[aria-checked='true'] {
+  background: var(--sh-accent);
+  border-color: var(--sh-accent);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sh-toggle[aria-checked='true']::after {
+  background: var(--sh-panel);
+}
+
+:root[data-look='paper'] .app-shell .sh-seg {
+  border-radius: 2px;
+  background: transparent;
+  border-color: var(--sh-line);
+  padding: 2px;
+}
+:root[data-look='paper'] .app-shell .sh-seg-btn {
+  border-radius: 1px;
+  font-size: 11.5px;
+}
+:root[data-look='paper'] .app-shell .sh-seg-btn:hover {
+  background: var(--sh-hover);
+  color: var(--sh-text);
+}
+:root[data-look='paper'] .app-shell .sh-seg-btn[aria-checked='true'] {
+  color: var(--sh-panel);
+  background: var(--sh-text);
+  box-shadow: none;
+}
+
+:root[data-look='paper'] .app-shell .sh-slider input[type='range']::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 0;
+  background: var(--sh-track);
+}
+:root[data-look='paper'] .app-shell .sh-slider input[type='range']::-moz-range-track {
+  height: 3px;
+  border-radius: 0;
+}
+:root[data-look='paper'] .app-shell .sh-slider input[type='range']::-moz-range-progress {
+  height: 3px;
+  border-radius: 0;
+  background: var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .sh-slider input[type='range']::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  border-radius: 1px;
+  border: 1px solid var(--sh-accent);
+  background: var(--sh-panel);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sh-slider input[type='range']::-moz-range-thumb {
+  border-radius: 1px;
+  border: 1px solid var(--sh-accent);
+  background: var(--sh-panel);
+}
+:root[data-look='paper'] .app-shell .sh-slider input[type='range']:hover::-webkit-slider-thumb {
+  transform: none;
+}
+:root[data-look='paper'] .app-shell .sh-slider-value {
+  font-family: var(--sh-font-serif);
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-look='paper'] .app-shell .sh-swatch {
+  border-radius: 2px;
+}
+
+:root[data-look='paper'] .app-shell .sh-kbd {
+  border-radius: 2px;
+  background: transparent;
+}
+
+/* 小标签统一方角：纸上的标签是盖章，不是药丸。 */
+:root[data-look='paper'] .app-shell :is(.sh-chip, .tag-chip, .mark-chip, .tag-opt, .state-chip, .vh-pill, .rule-chip, .sh-nav-badge) {
+  border-radius: 2px;
+}
+:root[data-look='paper'] .app-shell .tag-input {
+  border-radius: 2px;
+}
+
+/* ------------------------------------------------------------ 菜单/弹层 -- */
+:root[data-look='paper'] .app-shell :is(.vpop, .row-menu-pop, .speaker-menu) {
+  border-radius: 3px;
+  border-color: var(--sh-line);
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--sh-shadow-pop);
+}
+:root[data-look='paper'] .app-shell :is(.vpop-clear, .row-menu-item, .speaker-menu button) {
+  border-radius: 1px;
+}
+:root[data-look='paper'] .app-shell .vpop-custom input {
+  border-radius: 2px;
+  border-color: var(--sh-line);
+}
+
+/* ------------------------------------------------------------ 设置左侧树 -- */
+:root[data-look='paper'] .app-shell .sh-sidebar .tree-root {
+  border-radius: 2px;
+  background: transparent;
+  border-color: var(--sh-line);
+}
+:root[data-look='paper'] .app-shell .sh-sidebar .tree-item {
+  border-radius: 2px;
+}
+:root[data-look='paper'] .app-shell .sh-sidebar .tree-item.active {
+  /* 纸墨这一套偏好"淡"，但只剩一道 2px 竖线时，选中与悬停几乎分不清；
+     补一层极淡的朱色底，竖线加粗到 3px。 */
+  background: var(--sh-accent-soft);
+  box-shadow: inset 3px 0 0 var(--sh-accent);
+  border-radius: 0;
+}
+:root[data-look='paper'] .app-shell .sh-sidebar .tree-item > .count {
+  border-radius: 1px;
+  background: transparent;
+  border: 1px solid var(--sh-line-soft);
+}
+
+/* ------------------------------------------------------------ 音色卡片列 -- */
+:root[data-look='paper'] .app-shell .rail-fixed {
+  border-radius: 3px;
+  border-color: var(--sh-line);
+  background: var(--sh-panel);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .rail-card {
+  border-radius: 2px;
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+}
+:root[data-look='paper'] .app-shell .rail-card:hover:not(.on) {
+  /* 悬停铺一层强调淡色。别改边框色：卡片贴成一条之后只剩一道底边，
+     改它等于给这行划一道下划线。 */
+  background: var(--sh-accent-soft);
+}
+/* 录音那张卡不接点击：不亮悬停底色（选中态仍有强调）。 */
+:root[data-look='paper'] .app-shell .rail-card.rec-card:not(.on):hover {
+  background: var(--sh-panel);
+}
+:root[data-look='paper'] .app-shell .rail-card.on {
+  background: var(--sh-accent-soft);
+}
+/* 钉住的那张（参考音频）：上面那条 .rail-card 把每张卡的底都刷成了面板色，
+   这里要单独把它捡回朱砂淡晕，否则"置顶"在纸墨外观里就只剩一枚章，
+   和列表第一行长得一模一样。
+   纸墨这一套里强调色本身就是朱砂（`--sh-accent: #b3402a`），"钉住"与"选中"
+   颜色分不开——这里改由**粗细**分：列表里选中的左沿是 3px，钉住的这道给 4px。 */
+:root[data-look='paper'] .app-shell .rail-card.rail-frozen {
+  /* 纸墨的 `--sh-accent-soft` 是一块实色 `#f2dfd7`，10% 的朱砂铺上去反而更淡——
+     于是"钉住"比"选中"还轻。这里直接按面板色兑朱砂，兑到比那块实色更深一档。 */
+  background: color-mix(in srgb, var(--seal) 22%, var(--sh-panel));
+  border-bottom-color: color-mix(in srgb, var(--seal) 30%, var(--sh-line));
+  box-shadow: inset 4px 0 0 var(--seal);
+}
+:root[data-look='paper'][data-theme='dark'] .app-shell .rail-card.rail-frozen {
+  /* 暗底不兑面板（面板本身很深，兑进去会发灰），直接按透明度上朱砂 */
+  background: color-mix(in srgb, var(--seal) 24%, transparent);
+}
+:root[data-look='paper'] .app-shell .rail-card.rail-frozen:hover {
+  background: color-mix(in srgb, var(--seal) 30%, var(--sh-panel));
+}
+:root[data-look='paper'][data-theme='dark'] .app-shell .rail-card.rail-frozen:hover {
+  background: color-mix(in srgb, var(--seal) 32%, transparent);
+}
+:root[data-look='paper'] .app-shell .rail-cover {
+  border-radius: 1px;
+}
+/* ------------------------------------------------------------ 书籍刊头 -- */
+:root[data-look='paper'] .app-shell .producer-rail {
+  border-top-color: var(--sh-line);
+}
+:root[data-look='paper'] .app-shell .rail-book {
+  border-bottom-color: var(--sh-line);
+}
+:root[data-look='paper'] .app-shell .rail-book-mark {
+  background: var(--sh-toast-bg);
+  color: var(--sh-toast-text);
+  box-shadow: inset 3px 0 0 var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .rail-book-name {
+  font-family: var(--sh-font-serif);
+  font-size: 13.6px;
+  letter-spacing: 0.02em;
+}
+:root[data-look='paper'] .app-shell .rail-book-meta {
+  letter-spacing: 0.06em;
+}
+:root[data-look='paper'] .app-shell .producer-rail .chapter-item {
+  border-radius: 0;
+  border-left: 2px solid transparent;
+  padding-left: 6px;
+}
+:root[data-look='paper'] .app-shell .producer-rail .chapter-row + .chapter-row {
+  border-top: 1px solid var(--sh-line-soft);
+}
+:root[data-look='paper'] .app-shell .producer-rail .chapter-row.is-active .chapter-item {
+  background: transparent;
+  color: var(--sh-text);
+  border-left-color: var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .producer-rail .chapter-title {
+  font-family: var(--sh-font-serif);
+  font-size: 12.4px;
+}
+:root[data-look='paper'] .app-shell .producer-rail .chapter-ord {
+  font-family: var(--sh-font-serif);
+  font-size: 10px;
+}
+:root[data-look='paper'] .app-shell .producer-rail .chapter-stage {
+  border-radius: 0;
+  width: 5px;
+  height: 5px;
+}
+
+/* ------------------------------------------------------------------ 表格 -- */
+:root[data-look='paper'] .app-shell .producer-main,
+:root[data-look='paper'] .app-shell .producer-side {
+  border-radius: 3px;
+  border-color: var(--sh-line);
+  background: var(--sh-panel);
+}
+:root[data-look='paper'] .app-shell .producer-main {
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .chapter-head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--sh-line);
+}
+:root[data-look='paper'] .app-shell .chapter-name {
+  font-family: var(--sh-font-serif);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+:root[data-look='paper'] .app-shell .chapter-name::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  vertical-align: 2px;
+  background: var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .chapter-meta {
+  letter-spacing: 0.02em;
+}
+
+:root[data-look='paper'] .app-shell .view-switch {
+  border-radius: 2px;
+  border-color: var(--sh-line);
+  background: transparent;
+  padding: 1px;
+}
+:root[data-look='paper'] .app-shell .view-switch-btn {
+  border-radius: 1px;
+}
+:root[data-look='paper'] .app-shell .view-switch-btn.on {
+  background: var(--sh-text);
+  color: var(--sh-panel);
+}
+
+:root[data-look='paper'] .app-shell .rows-tools {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+/* 筛选用下划线页签，不再用胶囊：它是一排"看哪一段"的索引。 */
+:root[data-look='paper'] .app-shell .rows-filter {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  gap: 12px;
+}
+:root[data-look='paper'] .app-shell .filter-btn {
+  border-radius: 0;
+  padding: 3px 1px 5px;
+  border-bottom: 2px solid transparent;
+  color: var(--sh-text-3);
+}
+:root[data-look='paper'] .app-shell .filter-btn:hover {
+  background: transparent;
+  color: var(--sh-text);
+}
+:root[data-look='paper'] .app-shell .filter-btn.is-active {
+  background: transparent;
+  color: var(--sh-text);
+  border-bottom-color: var(--sh-text);
+}
+:root[data-look='paper'] .app-shell .filter-btn.is-active .filter-count {
+  color: var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .rows-batch {
+  border-radius: 2px;
+  border-color: var(--sh-accent-ring);
+  background: var(--sh-accent-soft);
+}
+:root[data-look='paper'] .app-shell .batch-input {
+  border-radius: 2px;
+  border-color: var(--sh-line);
+  background: var(--sh-field);
+}
+:root[data-look='paper'] .app-shell .field-sm {
+  border-radius: 2px;
+  border-color: var(--sh-line);
+  background-color: var(--sh-field);
+}
+:root[data-look='paper'] .app-shell .rows-wrap {
+  border-top: 1px solid var(--sh-line);
+  background: var(--sh-panel);
+}
+:root[data-look='paper'] .app-shell .rows thead th {
+  height: 40px;
+  background: var(--sh-panel);
+  border-bottom: 1px solid var(--sh-text);
+  color: var(--sh-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+:root[data-look='paper'] .app-shell .rows th + th,
+:root[data-look='paper'] .app-shell .rows td + td {
+  border-left: 0;
+}
+:root[data-look='paper'] .app-shell .rows td {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+/* 对白行：极淡一层苔绿底 + 左缘那根短线。**底不能省**——只留一根 2px 的线时，
+   一屏几十行看下去根本分不出哪几行有人说话（"未高亮"就是这么来的）。
+   取 `--sh-ok` 而非强调色：纸墨的强调色是朱砂，与「失败」的红读起来分不开。 */
+:root[data-look='paper'] .app-shell .rows tbody tr.is-dialogue td {
+  background: color-mix(in srgb, var(--sh-ok) 20%, var(--sh-panel));
+}
+:root[data-look='paper'] .app-shell .rows tbody tr.is-dialogue td:first-child {
+  box-shadow: inset 3px 0 0 var(--sh-ok);
+}
+:root[data-look='paper'] .app-shell .rows tbody tr.is-dialogue .speaker-input {
+  color: var(--sh-ok);
+  font-weight: 600;
+}
+:root[data-look='paper'] .app-shell .rows tbody tr.is-dialogue:not(.is-selected):hover td {
+  background: color-mix(in srgb, var(--sh-ok) 26%, var(--sh-panel));
+}
+/* 过期压过对白：底色仍是绿的（这行在说话），左缘换成警示色（这段不是现在的）。 */
+:root[data-look='paper'] .app-shell .rows tbody tr.is-stale td:first-child {
+  box-shadow: inset 2px 0 0 var(--sh-warn);
+}
+:root[data-look='paper'] .app-shell .rows tbody tr.is-failed td {
+  background: var(--sh-danger-soft);
+}
+:root[data-look='paper'] .app-shell .rows tbody tr.is-selected td {
+  background: var(--sh-accent-soft);
+}
+:root[data-look='paper'] .app-shell .rows tbody tr:not(.is-selected):hover td {
+  background: var(--sh-accent-soft);
+}
+:root[data-look='paper'] .app-shell .ord-btn {
+  border-radius: 1px;
+  font-family: var(--sh-font-serif);
+}
+:root[data-look='paper'] .app-shell .ord-btn:hover {
+  border-color: var(--sh-line);
+  background: transparent;
+}
+:root[data-look='paper'] .app-shell .ord-btn.is-selected {
+  background: var(--sh-text);
+  color: var(--sh-panel);
+}
+:root[data-look='paper'] .app-shell .row-input {
+  border-radius: 1px;
+}
+:root[data-look='paper'] .app-shell .row-input:focus {
+  background: var(--sh-panel);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .mark-mirror {
+  border-radius: 1px;
+}
+:root[data-look='paper'] .app-shell .row-text-area {
+  border-radius: 2px;
+  border-color: var(--sh-line);
+  background: var(--sh-field);
+  font-family: var(--sh-font-serif);
+  font-size: 12.8px;
+  line-height: 1.85;
+}
+:root[data-look='paper'] .app-shell .speaker-field {
+  border-radius: 2px;
+  border-color: var(--sh-line);
+  background: var(--sh-field);
+}
+:root[data-look='paper'] .app-shell .speaker-menu {
+  border-radius: 2px;
+}
+/* 情绪胶囊只改形状：底色由 `.tone-*` 那一档分类色给，这里不设 background。 */
+:root[data-look='paper'] .app-shell .emotion-cell {
+  border-radius: 2px;
+}
+:root[data-look='paper'] .app-shell .emotion-cell:focus-within {
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .audio-btn {
+  border-radius: 2px;
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+}
+:root[data-look='paper'] .app-shell .audio-btn:hover {
+  filter: none;
+  background: var(--sh-accent-2);
+}
+:root[data-look='paper'] .app-shell .audio-btn.is-generate {
+  background: transparent;
+  color: var(--sh-accent);
+  border: 1px dashed var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .audio-btn.is-generate:hover {
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+  border-style: solid;
+}
+:root[data-look='paper'] .app-shell .audio-btn.is-danger {
+  background: transparent;
+  border: 1px solid var(--sh-danger);
+  color: var(--sh-danger);
+}
+:root[data-look='paper'] .app-shell .state-chip {
+  border-radius: 2px;
+}
+
+/* ------------------------------------------------------------ 章节阅读 -- */
+:root[data-look='paper'] .app-shell .chapter-source-lines,
+:root[data-look='paper'] .app-shell .chapter-source-text {
+  border-radius: 2px;
+  border-color: var(--sh-line);
+  background: var(--sh-field);
+  font-family: var(--sh-font-serif);
+  font-size: 12.8px;
+  line-height: 1.9;
+}
+:root[data-look='paper'] .app-shell .chapter-line {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+:root[data-look='paper'] .app-shell .chapter-line.is-dialogue {
+  border-radius: 0;
+  background: color-mix(in srgb, var(--sh-ok) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--sh-ok);
+}
+:root[data-look='paper'] .app-shell .chapter-line-ord {
+  font-family: var(--sh-font-serif);
+}
+:root[data-look='paper'] .app-shell .mark-token {
+  border-radius: 1px;
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+/* ---------------------------------------------------------------- 右栏 -- */
+:root[data-look='paper'] .app-shell .side-title {
+  font-size: 9.6px;
+  letter-spacing: 0.12em;
+}
+:root[data-look='paper'] .app-shell .role-row {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+:root[data-look='paper'] .app-shell .role-name {
+  font-family: var(--sh-font-serif);
+  font-size: 12.8px;
+}
+:root[data-look='paper'] .app-shell .role-engine-select {
+  font-size: 11px;
+}
+
+:root[data-look='paper'] .app-shell .producer-job {
+  border-radius: 2px;
+  border-color: var(--sh-line);
+  background: var(--sh-accent-soft);
+}
+:root[data-look='paper'] .app-shell .producer-job .job-kind {
+  color: var(--sh-accent);
+}
+
+/* -------------------------------------------------------------- 空状态 -- */
+:root[data-look='paper'] .app-shell .empty {
+  border-radius: 4px;
+  border-color: var(--sh-line);
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .empty-icon {
+  border-radius: 2px;
+  border: 1px solid var(--sh-line);
+  background: transparent;
+}
+
+/* ------------------------------------------------------------ 生成页 -- */
+:root[data-look='paper'] .app-shell .synth-side {
+  border-radius: 4px;
+  border-color: var(--sh-line);
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .chip-panel {
+  border-radius: 2px;
+  background: transparent;
+}
+:root[data-look='paper'] .app-shell .instr-area,
+:root[data-look='paper'] .app-shell .seed-row .field-input {
+  border-radius: 2px;
+  border-color: var(--sh-line);
+  background: var(--sh-field);
+}
+:root[data-look='paper'] .app-shell .sref-bar,
+:root[data-look='paper'] .app-shell .sref-play {
+  border-radius: 2px;
+}
+:root[data-look='paper'] .app-shell .result-play {
+  border-radius: 2px;
+}
+
+/* -------------------------------------------------------------- 对话框 -- */
+:root[data-look='paper'] .app-shell .vh-root {
+  background: rgba(30, 29, 25, 0.26);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-look='paper'][data-theme='dark'] .app-shell .vh-root {
+  background: rgba(0, 0, 0, 0.62);
+}
+:root[data-look='paper'] .app-shell .vh-modal {
+  border-radius: 4px;
+  border-color: var(--sh-line);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow-2);
+}
+:root[data-look='paper'] .app-shell .vh-hero {
+  background: transparent;
+  border-bottom: 1px solid var(--sh-line);
+}
+:root[data-look='paper'] .app-shell .vh-cover {
+  border-radius: 2px;
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .vh-title {
+  font-family: var(--sh-font-serif);
+  font-size: 22px;
+  letter-spacing: 0.02em;
+}
+/* 创作页各弹窗的标题自成一类：玻璃风格里是 15px 的无衬线，
+   纸墨下抬到宋体 18px，和页面标题、卡片标题同一条线。 */
+:root[data-look='paper'] .app-shell :is(
+  .options-title,
+  .split-title,
+  .preview-title,
+  .analysis-title,
+  .import-title,
+  .confirm-title,
+  .assign-title,
+  .params-title,
+  .merge-title
+) {
+  font-family: var(--sh-font-serif);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+:root[data-look='paper'] .app-shell .audition > h3 {
+  font-family: var(--sh-font-serif);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+:root[data-look='paper'] .app-shell .vh-title.is-editable,
+:root[data-look='paper'] .app-shell .vh-title-input {
+  border-radius: 2px;
+}
+:root[data-look='paper'] .app-shell .vh-pill {
+  border-radius: 1px;
+}
+
+/* ------------------------------------------------- 音色库：卡片与样例条 -- */
+/* 卡片是纸上的一个条目：平涂、细边、直角，悬停只把边压深一档——纸不会浮起来。 */
+:root[data-look='paper'] .app-shell .card {
+  border: 1px solid var(--sh-line);
+  border-radius: 3px;
+  background: var(--sh-panel);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .card:hover {
+  transform: none;
+  border-color: var(--sh-line-strong);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .card-name {
+  font-family: var(--sh-font-serif);
+}
+/* 头像也裁成小方章：整圆是玻璃那套的柔和，纸上是"贴的一张标签"；
+   压在头像上的两档跟着纸的墨色走，不用玻璃那套冷蓝，更不拿实色盖住头像。 */
+:root[data-look='paper'] .app-shell {
+  --sh-scrim: rgba(30, 29, 25, 0.46);
+  --sh-scrim-on: rgba(30, 29, 25, 0.64);
+}
+:root[data-look='paper'] .app-shell .cover,
+:root[data-look='paper'] .app-shell .cover-wrap,
+:root[data-look='paper'] .app-shell .cover-play {
+  border-radius: 2px;
+}
+
+/* 样例行：一条一条的账本条目。底色不再用硬编码的白，边线与表格同一条。 */
+:root[data-look='paper'] .app-shell .sample {
+  border-color: var(--sh-line);
+  border-radius: 3px;
+  background: var(--sh-panel);
+}
+:root[data-look='paper'] .app-shell .sample:hover {
+  border-color: var(--sh-line-strong);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sample.is-playing {
+  border-color: var(--sh-accent-ring);
+  background: var(--sh-chip);
+}
+/* 主样例：朱砂一层薄底 + 左侧那根短线。颜色取皮肤令牌，不跟着玻璃的蓝走。 */
+:root[data-look='paper'] .app-shell .sample.is-main {
+  border-color: color-mix(in srgb, var(--sh-accent) 45%, var(--sh-line));
+  background: var(--sh-accent-soft);
+}
+:root[data-look='paper'] .app-shell .sample.is-main::before {
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 0;
+  background: var(--sh-accent);
+}
+/* 播放圆钮在纸上是一颗"朱砂方章"：平涂、无渐变、无投影。 */
+:root[data-look='paper'] .app-shell .sample-play-btn {
+  border-radius: 2px;
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sample-play-btn:hover {
+  filter: none;
+  transform: none;
+  background: var(--sh-accent-2);
+  box-shadow: none;
+}
+:root[data-look='paper'] .app-shell .sample-play-btn:active {
+  transform: none;
+  background: var(--sh-accent-2);
+}
+:root[data-look='paper'] .app-shell .sample.is-playing .sample-play-btn,
+:root[data-look='paper'] .app-shell .sample-play-btn.is-on {
+  background: var(--sh-accent-2);
+  box-shadow: none;
+}
+/* 「设为主样例」：没指定 = 细边空章，已指定 = 填实的朱砂章。 */
+:root[data-look='paper'] .app-shell .sample-main {
+  border-radius: 2px;
+  background: transparent;
+}
+:root[data-look='paper'] .app-shell .sample-main:hover:not(:disabled) {
+  background: var(--sh-accent-soft);
+}
+:root[data-look='paper'] .app-shell .sample-main.is-on {
+  border-color: var(--sh-accent);
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+  box-shadow: none;
+}
+
+/* -------------------------------------------------------------- 播放条 -- */
+/* 纸墨里圆钮是唯一的圆：盘面与坞都是切角的一张纸，只有那颗钮是圆的。 */
+:root[data-look='paper'] .app-shell .player-fold :is(.pb-disc, .pb-dock) {
+  border-color: var(--sh-line);
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 18px 40px -30px rgba(30, 29, 25, 0.55);
+}
+:root[data-look='paper'] .app-shell .pb-dock {
+  border-radius: 4px;
+}
+:root[data-look='paper'] .app-shell .player-fold.is-pinned .pb-disc::after {
+  border-radius: 1px;
+}
+:root[data-look='paper'] .app-shell .pb-btn {
+  border-radius: 2px;
+  background: transparent;
+}
+:root[data-look='paper'] .app-shell .pb-seek::-webkit-slider-runnable-track,
+:root[data-look='paper'] .app-shell .pb-seek::-moz-range-track {
+  border-radius: 0;
+  height: 4px;
+}
+:root[data-look='paper'] .app-shell .pb-seek::-webkit-slider-thumb,
+:root[data-look='paper'] .app-shell .pb-seek::-moz-range-thumb {
+  border-radius: 1px;
+  border: 1px solid var(--sh-accent);
+  background: var(--sh-panel);
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------------ 提示条 -- */
+/* toast 在 .app-shell 外：只用 :root 上的纸墨令牌，前缀到不了它。 */
+:root[data-look='paper'] .toast {
+  border-radius: 2px;
+  border: 1px solid var(--sh-line);
+  background: var(--sh-toast-bg);
+  color: var(--sh-toast-text);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--sh-shadow-pop);
+}
+
+/* ---------------------------------------------------------- 焦点兜底 -- */
+/* 皮肤里那些"纸上的控件"规则（`.field-sm`、`.row-text-area`、`.instr-area` …）
+   特异性比组件高一档，会把控件自己写的 `:focus` 边框压掉：点进去只有一格淡淡的
+   底色，像没反应。这里按同一档把焦点补回来——**只补边框色**，环仍由控件自己那
+   一层给（不画第二圈）。 */
+:root[data-look='paper'] .app-shell
+  :is(
+    .sh-field,
+    .instr-area,
+    .tag-input,
+    .aud-pick,
+    .row-input,
+    .field-input,
+    .field-textarea,
+    .field-sm,
+    .batch-input,
+    .logview-source,
+    .logview-needle,
+    .analysis-prompt,
+    .params-text,
+    .params-input,
+    .import-text
+  ):focus {
+  border-color: var(--sh-accent);
+}
+:root[data-look='paper'] .app-shell .speaker-field:focus-within {
+  border-color: var(--sh-accent);
+}

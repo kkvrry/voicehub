@@ -1,0 +1,370 @@
+/* ============================================================================
+ * 原色（data-look="classic"）
+ *
+ * 最早那套平面界面：冷灰画布、白色面板、冰蓝强调、小圆角。
+ * 这里不只换颜色，也**把材质压平**——渐变、内高光、毛玻璃、彩色发光都是
+ * 「玻璃」那一档的东西；原色里层级只由 1px 边框与底色说。
+ *
+ * 令牌在 :root 上覆盖；组件层写死的渐变 / 模糊 / 高光在本文件末尾按选择器
+ * 收回。选择器统一带 `:root[data-look='classic']` 前缀：Vue scoped 样式是
+ * 「类 + data-v」两票，前缀三票才能稳定压过它们。
+ * ==========================================================================*/
+
+:root[data-look='classic'] {
+  /* ---- 颜色（浅色）---- */
+  --sh-canvas: #eef1f6;
+  --sh-panel: #ffffff;
+  --sh-chip: #f4f6fa;
+  --sh-glass: #ffffff;
+  --sh-glass-soft: #f6f8fb;
+  --sh-glass-strong: #ffffff;
+  --sh-glass-border: #e3e8f0;
+  --sh-line: #e3e8f0;
+  --sh-line-soft: #edf1f6;
+  --sh-line-strong: #cfd8e4;
+  --sh-tree-line: #c9d4e3;
+  --sh-folder: #4a88e8;
+  --sh-field: #ffffff;
+  --sh-field-focus: #ffffff;
+  --sh-hover: #f4f7fb;
+  --sh-track: #dfe6f0;
+
+  /* 原色的强调色固定为最早的冰蓝，不跟随强调色预设。 */
+  --sh-accent: #2f7bff;
+  --sh-accent-2: #7c6cff;
+  --sh-accent-soft: rgba(47, 123, 255, 0.1);
+  --sh-accent-soft-2: rgba(47, 123, 255, 0.18);
+  --sh-accent-ring: rgba(47, 123, 255, 0.26);
+  --sh-accent-contrast: #ffffff;
+
+  /* 深度只有一层极淡的投影；内高光在这套外观里不存在。 */
+  --sh-shadow-1: 0 1px 2px rgba(16, 31, 56, 0.06);
+  --sh-shadow-2: 0 18px 40px -32px rgba(16, 31, 56, 0.35);
+  --sh-shadow-pop: 0 10px 24px -18px rgba(16, 31, 56, 0.28);
+  --sh-inset-hi: none;
+
+  /* ---- 形状 ---- */
+  --sh-r-2xs: 4px;
+  --sh-r-xs: 6px;
+  --sh-r-sm: 8px;
+  --sh-r-md: 10px;
+  --sh-r-lg: 12px;
+  --sh-r-xl: 14px;
+  --sh-radius-card: 10px;
+  --sh-radius-inner: 8px;
+
+  --star: #e0a327;
+
+  --tone-gray-bg: #eef2f7;
+  --tone-gray-fg: #5f7089;
+  --tone-blue-bg: #e6efff;
+  --tone-blue-fg: #2f6bc4;
+  --tone-indigo-bg: #e9ebfb;
+  --tone-indigo-fg: #4a55b8;
+  --tone-pink-bg: #fde9ef;
+  --tone-pink-fg: #b84670;
+  --tone-amber-bg: #fdf1dd;
+  --tone-amber-fg: #9a6a1f;
+  --tone-coral-bg: #fdeae4;
+  --tone-coral-fg: #b1553f;
+  --tone-teal-bg: #e2f3f4;
+  --tone-teal-fg: #2c6f74;
+  --tone-green-bg: #e6f3ea;
+  --tone-green-fg: #3f7350;
+  --tone-purple-bg: #f0eafb;
+  --tone-purple-fg: #6a4fa3;
+}
+
+/* 强调色预设与原色无关：冰蓝是这套外观的一部分。 */
+.app-shell[data-look='classic'] {
+  --sh-accent: #2f7bff;
+  --sh-accent-2: #7c6cff;
+  --sh-accent-soft: rgba(47, 123, 255, 0.1);
+  --sh-accent-soft-2: rgba(47, 123, 255, 0.18);
+  --sh-accent-ring: rgba(47, 123, 255, 0.26);
+  --sh-accent-contrast: #ffffff;
+}
+
+/* 平面背景：不铺环境光渐变，也不留光斑。 */
+:root[data-look='classic'] .app-shell {
+  background-color: var(--sh-canvas);
+  background-image: none;
+}
+
+:root[data-look='classic'] .app-shell .sh-ambient {
+  display: none;
+}
+
+/* ---- 深色 ---- */
+:root[data-look='classic'][data-theme='dark'] {
+  --sh-canvas: #0f141c;
+  --sh-panel: #171e28;
+  --sh-chip: #1d2531;
+  --sh-glass: #171e28;
+  --sh-glass-soft: #1b232e;
+  --sh-glass-strong: #1c2430;
+  --sh-glass-border: #2a3442;
+  --sh-line: #2a3442;
+  --sh-line-soft: #222b37;
+  --sh-line-strong: #3a4656;
+  --sh-tree-line: #33455c;
+  --sh-folder: #6ea6ff;
+  --sh-field: #121923;
+  --sh-field-focus: #151d29;
+  --sh-hover: #1f2835;
+  --sh-track: #2c3949;
+
+  --sh-text: #e8eef7;
+  --sh-text-2: #c3cfdf;
+  --sh-text-3: #94a3b8;
+  --sh-text-4: #7d8ca2;
+
+  --sh-accent: #5b9dff;
+  --sh-accent-2: #8f83ff;
+  --sh-accent-soft: rgba(91, 157, 255, 0.14);
+  --sh-accent-soft-2: rgba(91, 157, 255, 0.24);
+  --sh-accent-ring: rgba(91, 157, 255, 0.3);
+  --sh-accent-contrast: #08111f;
+
+  --sh-ok: #3ecfa0;
+  --sh-ok-soft: rgba(62, 207, 160, 0.14);
+  --sh-warn: #e8b266;
+  --sh-warn-soft: rgba(232, 178, 102, 0.14);
+  --sh-danger: #ff8172;
+  --sh-danger-soft: rgba(255, 129, 114, 0.14);
+
+  --sh-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --sh-shadow-2: 0 22px 48px -34px rgba(0, 0, 0, 0.9);
+  --sh-shadow-pop: 0 10px 26px -18px rgba(0, 0, 0, 0.85);
+  --sh-inset-hi: none;
+
+  /* 分类色（性别 / 语言 / 情绪 / 能力标签）：这一套从前只有浅色值，深色下
+     `:root[data-look='classic']` 的浅底会盖住 `[data-theme='dark']` 那份兜底
+     （特异性更高），整页胶囊就成了暗底上的浅色块。这里按同一批色相补深色。 */
+  --tone-gray-bg: #1c2531;
+  --tone-gray-fg: #9db0c8;
+  --tone-blue-bg: #14243a;
+  --tone-blue-fg: #7fb3ff;
+  --tone-indigo-bg: #1a1e3b;
+  --tone-indigo-fg: #a6adff;
+  --tone-pink-bg: #2c1a24;
+  --tone-pink-fg: #f08fb5;
+  --tone-amber-bg: #2b2315;
+  --tone-amber-fg: #e3b268;
+  --tone-coral-bg: #2d1e17;
+  --tone-coral-fg: #f0966f;
+  --tone-teal-bg: #122724;
+  --tone-teal-fg: #5ac6bd;
+  --tone-green-bg: #15271b;
+  --tone-green-fg: #7cc793;
+  --tone-purple-bg: #201c35;
+  --tone-purple-fg: #b0a0ff;
+}
+
+:root[data-look='classic'][data-theme='dark'] .app-shell {
+  background-color: var(--sh-canvas);
+  background-image: none;
+}
+
+/* ------------------------------------------------------------ 组件层压平 -- */
+/* 顶栏 / 主导航 / 设置分类栏：实色面板，不透视背后的画布。 */
+:root[data-look='classic'] .app-shell .sh-topbar,
+:root[data-look='classic'] .app-shell .sh-nav,
+:root[data-look='classic'] .app-shell .sh-rail {
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* 品牌标记：一块纯色，没有渐变与顶边高光。 */
+:root[data-look='classic'] .app-shell .sh-brand-mark,
+:root[data-look='classic'] .app-shell .sider-brand .logo {
+  background: var(--sh-accent);
+  box-shadow: none;
+}
+:root[data-look='classic'] .app-shell .sh-brand-mark::after {
+  display: none;
+}
+
+/* 主导航：选中项只换底色，不浮起来。 */
+:root[data-look='classic'] .app-shell .sh-nav-item:hover {
+  color: var(--sh-text);
+  background: var(--sh-hover);
+}
+:root[data-look='classic'] .app-shell .sh-nav-item:hover svg,
+:root[data-look='classic'] .app-shell .sh-nav-item:active {
+  transform: none;
+}
+:root[data-look='classic'] .app-shell .sh-nav-item.is-active {
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft-2);
+  border-color: transparent;
+  box-shadow: none;
+}
+:root[data-look='classic'] .app-shell .sh-nav-item.is-active::before {
+  display: none;
+}
+
+/* 设置分类栏同理：没有渐变，也没有左侧那根渐变条。 */
+:root[data-look='classic'] .app-shell .sh-rail-item.is-active {
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft-2);
+  border-color: transparent;
+  box-shadow: none;
+}
+:root[data-look='classic'] .app-shell .sh-rail-item.is-active::before {
+  display: none;
+}
+
+/* 卡片与整块面板：白底 + 1px 描边，仅此而已。 */
+:root[data-look='classic'] .app-shell .sh-card,
+:root[data-look='classic'] .app-shell .card,
+:root[data-look='classic'] .app-shell .empty,
+:root[data-look='classic'] .app-shell .synth-side {
+  border-color: var(--sh-line);
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+:root[data-look='classic'] .app-shell .card {
+  border-radius: var(--sh-radius-card);
+}
+:root[data-look='classic'] .app-shell .sh-card-foot {
+  background: transparent;
+}
+/* 卡片墙不悬浮：指针移上去只换边框颜色。 */
+:root[data-look='classic'] .app-shell .card:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--sh-line-strong);
+}
+
+/* 播放小窗是浮层，留一层灰影；但没有毛玻璃与顶边高光。 */
+:root[data-look='classic'] .app-shell .player-fold :is(.pb-disc, .pb-dock) {
+  background: var(--sh-panel);
+  border-color: var(--sh-line);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 8px 24px -14px rgba(16, 31, 56, 0.28);
+}
+:root[data-look='classic'][data-theme='dark'] .app-shell .player-fold :is(.pb-disc, .pb-dock) {
+  box-shadow: 0 10px 28px -16px rgba(0, 0, 0, 0.8);
+}
+
+/* 主按钮：一档纯色，没有渐变、发光与按压位移。 */
+:root[data-look='classic'] .app-shell .sh-btn.is-primary,
+:root[data-look='classic'] .app-shell .btn.primary {
+  background: var(--sh-accent);
+  border-color: var(--sh-accent);
+  box-shadow: none;
+  filter: none;
+}
+:root[data-look='classic'] .app-shell .sh-btn.is-primary:hover:not(:disabled),
+:root[data-look='classic'] .app-shell .btn.primary:hover:not(:disabled) {
+  background: var(--sh-accent-2);
+  border-color: var(--sh-accent-2);
+  box-shadow: none;
+  filter: none;
+}
+:root[data-look='classic'] .app-shell .sh-btn:active:not(:disabled),
+:root[data-look='classic'] .app-shell .btn:active:not(:disabled) {
+  transform: none;
+}
+
+/* 开关、分段、滑块：纯色块，不带立体感。 */
+:root[data-look='classic'] .app-shell .sh-toggle,
+:root[data-look='classic'] .app-shell .sh-toggle::after {
+  box-shadow: none;
+}
+:root[data-look='classic'] .app-shell .sh-toggle[aria-checked='true'] {
+  background: var(--sh-accent);
+  border-color: var(--sh-accent);
+  box-shadow: none;
+}
+:root[data-look='classic'] .app-shell .sh-seg-btn[aria-checked='true'] {
+  background: var(--sh-panel);
+  box-shadow: 0 0 0 1px var(--sh-line);
+}
+:root[data-look='classic'] .app-shell
+  .sh-slider
+  input[type='range']::-webkit-slider-runnable-track {
+  background: var(--sh-track);
+}
+:root[data-look='classic'] .app-shell .sh-slider input[type='range']::-moz-range-progress {
+  background: var(--sh-accent);
+}
+:root[data-look='classic'] .app-shell .sh-slider input[type='range']::-webkit-slider-thumb,
+:root[data-look='classic'] .app-shell .sh-slider input[type='range']::-moz-range-thumb {
+  box-shadow: none;
+}
+
+/* 样例控件：播放钮是纯色圆点；「正在播」换一档色，不套环、不放大。 */
+:root[data-look='classic'] .app-shell .sample.is-main {
+  background: var(--sh-accent-soft);
+}
+:root[data-look='classic'] .app-shell .sample-play-btn {
+  background: var(--sh-accent);
+  box-shadow: none;
+  filter: none;
+}
+:root[data-look='classic'] .app-shell .sample-play-btn:hover {
+  background: var(--sh-accent-2);
+  box-shadow: none;
+  filter: none;
+  transform: none;
+}
+:root[data-look='classic'] .app-shell .sample-play-btn:active {
+  transform: none;
+}
+:root[data-look='classic'] .app-shell .sample.is-playing .sample-play-btn,
+:root[data-look='classic'] .app-shell .sample-play-btn.is-on {
+  background: var(--sh-accent-2);
+  box-shadow: none;
+}
+:root[data-look='classic'] .app-shell .sample-main.is-on {
+  background: var(--sh-accent);
+  box-shadow: none;
+}
+:root[data-look='classic'] .app-shell .audio-btn {
+  background: var(--sh-accent);
+}
+
+/* 遮罩与弹窗：遮罩是纯色，弹窗是白底 + 一圈普通投影。 */
+:root[data-look='classic'] .app-shell .vh-root {
+  background: rgba(16, 31, 56, 0.32);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-look='classic'][data-theme='dark'] .app-shell .vh-root {
+  background: rgba(4, 10, 20, 0.6);
+}
+:root[data-look='classic'] .app-shell .vh-modal {
+  background: var(--sh-panel);
+  border-radius: var(--sh-r-lg);
+  box-shadow: 0 28px 64px -36px rgba(16, 31, 56, 0.42);
+}
+:root[data-look='classic'] .app-shell .vh-cover {
+  border-radius: var(--sh-r-md);
+}
+:root[data-look='classic'] .app-shell .vh-hero {
+  background: transparent;
+}
+:root[data-look='classic'] .app-shell .vh-cover {
+  box-shadow: none;
+}
+
+/* 提示条：深色底保留（它要压过内容），去掉毛玻璃。 */
+:root[data-look='classic'] .app-shell .toast {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* 其余小块：清掉悬停投影与渐变页脚。 */
+:root[data-look='classic'] .app-shell .sh-theme-toggle:hover {
+  background: var(--sh-hover);
+  box-shadow: none;
+}
+:root[data-look='classic'] .app-shell .col-foot {
+  background: transparent;
+}

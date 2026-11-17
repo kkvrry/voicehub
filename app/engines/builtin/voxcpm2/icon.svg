@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="VoxCPM2">
+  <!-- VoiceHub 自绘的标识：一道起伏的声波（不是官方 logo 的复制品）；
+       要换成官方图标，直接替换本文件即可（插件按目录里的 icon.svg 取图）。
+       配色取深红，与 BreezeTTS 2（蓝）/ IndexTTS2（青绿）/ DotTTS（琥珀）/
+       MiniMax（紫）/ GPT-SoVITS（青）/ MiMo 都不撞。 -->
+  <rect width="32" height="32" rx="8" fill="#b91c1c"/>
+  <path d="M5.5 16c2 0 3-6 5-6s3 12 5 12 3-14 5-14 3 8 5.5 8"
+        fill="none" stroke="#ffffff" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

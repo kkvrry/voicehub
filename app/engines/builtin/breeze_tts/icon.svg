@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="BreezeTTS 2">
+  <!-- VoiceHub 自绘的标识：**风**（Breeze）+ 声波——不是官方 logo 的复制品；
+       要换成官方图标，直接替换本文件即可（插件按目录里的 icon.svg 取图）。
+       配色刻意与 MiniMax（紫）/ GPT-SoVITS（青绿）都不同：左栏一眼要看得出是哪一台。 -->
+  <defs>
+    <linearGradient id="breezeGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#breezeGrad)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round">
+    <!-- 三道风：由长到短，向右收口 -->
+    <path d="M5.5 11.5h13.2a3 3 0 1 0-3-3"/>
+    <path d="M5.5 16h17a2.6 2.6 0 1 1-2.6 2.6"/>
+    <path d="M5.5 20.5h9.4"/>
+  </g>
+  <g fill="#ffffff" opacity=".9">
+    <!-- 声波：风尾上的一小节 -->
+    <rect x="22.2" y="14.2" width="1.8" height="3.6" rx=".9"/>
+    <rect x="25.4" y="15.4" width="1.8" height="1.2" rx=".6"/>
+  </g>
+</svg>

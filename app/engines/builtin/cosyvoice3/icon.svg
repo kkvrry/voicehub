@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="CosyVoice3">
+  <!-- VoiceHub 自绘的标识：一颗声波 + 外圈两道辐射弧（"换一种语言也是这把嗓子"）；
+       不是官方 logo 的复制品。要换成官方图标，直接替换本文件即可。
+       配色取靛蓝，与 BreezeTTS 2（蓝）/ IndexTTS2（青绿）/ DotTTS（琥珀）/
+       VoxCPM2（深红）/ MiniMax（紫）/ GPT-SoVITS（青）都不撞。 -->
+  <rect width="32" height="32" rx="8" fill="#3730a3"/>
+  <g fill="#ffffff">
+    <rect x="12.4" y="12" width="2.4" height="8" rx="1.2"/>
+    <rect x="16.4" y="9.5" width="2.4" height="13" rx="1.2"/>
+    <rect x="20.4" y="12.8" width="2.4" height="6.4" rx="1.2" opacity=".8"/>
+  </g>
+  <g fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" opacity=".62">
+    <path d="M7.6 12.6a8 8 0 0 1 0 6.8"/>
+    <path d="M5.2 10.4a11.6 11.6 0 0 1 0 11.2"/>
+  </g>
+</svg>

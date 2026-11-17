@@ -1,0 +1,149 @@
+{
+  "note": "URL 与 sha256 取自 audio.cpp v0.9.4 Release assets digest；extras 为 CUDA 运行时依赖，解压到同一目录。",
+  "version": "0.9.4",
+  "minimum": "0.9.4",
+  "source": "https://github.com/0xShug0/audio.cpp/releases/tag/v0.9.4",
+  "packages": [
+    {
+      "id": "windows-x64-cpu",
+      "platform": "windows-x64",
+      "backend": "cpu",
+      "label": "Windows x64 · CPU",
+      "archive": "zip",
+      "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-bin-windows-x64-cpu-portable.zip",
+      "sha256": "9c11a03b7ea21979792fde05f2f355ea1fc0da26ccd8f675dd61c628250ae76f",
+      "size": 32190461,
+      "extras": []
+    },
+    {
+      "id": "windows-x64-cuda12.4",
+      "platform": "windows-x64",
+      "backend": "cuda",
+      "label": "Windows x64 · CUDA 12.4",
+      "archive": "zip",
+      "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-bin-windows-x64-cuda12.4.zip",
+      "sha256": "e85d829e121a424a960d9ad293536b7ada74ea845b1c12fcf2991ec09a224d1e",
+      "size": 467800419,
+      "extras": [
+        {
+          "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-cudart-windows-x64-cuda12.4.zip",
+          "sha256": "efb58667b95bcb32e89ddf87811664e6ffdced3fe7015ddcc077599ed5f44bb2",
+          "size": 607273675
+        }
+      ]
+    },
+    {
+      "id": "windows-x64-cuda13.3",
+      "platform": "windows-x64",
+      "backend": "cuda",
+      "label": "Windows x64 · CUDA 13.3",
+      "archive": "zip",
+      "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-bin-windows-x64-cuda13.3.zip",
+      "sha256": "b05eceb8aa0a29e618b3af87e0c2fd0fb665034d181096eb868ed856bf656b8b",
+      "size": 279188412,
+      "extras": [
+        {
+          "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-cudart-windows-x64-cuda13.3.zip",
+          "sha256": "b93fa9b9cb875ccea1aa81cb09fd6b02c9afda133de73bd119a73ff5d8db6d96",
+          "size": 575457454
+        }
+      ]
+    },
+    {
+      "id": "windows-x64-vulkan",
+      "platform": "windows-x64",
+      "backend": "vulkan",
+      "label": "Windows x64 · Vulkan",
+      "archive": "zip",
+      "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-bin-windows-x64-vulkan-portable.zip",
+      "sha256": "295ca309160e59ec3ce3cff0e07edb6709e28d43b4c0a5ad76760938ae6a4e5c",
+      "size": 83953489,
+      "extras": []
+    },
+    {
+      "id": "windows-x64-hip",
+      "platform": "windows-x64",
+      "backend": "hip",
+      "label": "Windows x64 · ROCm（实验）",
+      "archive": "zip",
+      "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-bin-windows-x64-rocm10.0.0-test.zip",
+      "sha256": "d619c6e0cbf5ca1f0d583ec8218ca1f2fb9393742a5381f349be65cb47ed6854",
+      "size": 284432685,
+      "extras": [],
+      "experimental": true
+    },
+    {
+      "id": "linux-x64-cpu",
+      "platform": "linux-x64",
+      "backend": "cpu",
+      "label": "Linux x64 · CPU",
+      "archive": "tar.gz",
+      "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-bin-ubuntu-x64-cpu-portable.tar.gz",
+      "sha256": "02756c556d78ccca8040cab6fbc6c7bf57d4f6ed70fe534e8a9e846bab464687",
+      "size": 70154506,
+      "extras": []
+    },
+    {
+      "id": "linux-x64-cuda12.8",
+      "platform": "linux-x64",
+      "backend": "cuda",
+      "label": "Linux x64 · CUDA 12.8",
+      "archive": "tar.gz",
+      "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-bin-ubuntu-x64-cuda12.8-colab.tar.gz",
+      "sha256": "5b6708aa781a8a7b08d506abc6104ff9e642cb33c4271c768e81205c4c8df686",
+      "size": 229825141,
+      "extras": [
+        {
+          "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-cudart-ubuntu-x64-cuda12.8.tar.gz",
+          "sha256": "48ab6515a4a924c128309bdeebed10c8e6a647f0399e66d46c986c6ba4e7c50f",
+          "size": 787014404
+        }
+      ]
+    },
+    {
+      "id": "linux-x64-vulkan",
+      "platform": "linux-x64",
+      "backend": "vulkan",
+      "label": "Linux x64 · Vulkan",
+      "archive": "tar.gz",
+      "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-bin-ubuntu-x64-vulkan-portable.tar.gz",
+      "sha256": "82808683beb5da2987abbdca5ba3b93622eb93568eda8d92acf1f7314a26dbab",
+      "size": 87776393,
+      "extras": []
+    },
+    {
+      "id": "linux-x64-hip",
+      "platform": "linux-x64",
+      "backend": "hip",
+      "label": "Linux x64 · ROCm（实验）",
+      "archive": "tar.gz",
+      "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-bin-ubuntu-x64-rocm10.0.0-test.tar.gz",
+      "sha256": "fb8a9409a589a568c4e05292157728e327034c46574eaa85a23931f0cbd342a7",
+      "size": 702524239,
+      "extras": [],
+      "experimental": true
+    },
+    {
+      "id": "macos-arm64-metal",
+      "platform": "macos-arm64",
+      "backend": "metal",
+      "label": "macOS arm64 · Metal",
+      "archive": "tar.gz",
+      "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-bin-macos-arm64-metal.tar.gz",
+      "sha256": "5722c4f33e56114345965c0dee472a9239218f7499ace6393bba6a951a41b86a",
+      "size": 36947118,
+      "extras": []
+    },
+    {
+      "id": "macos-x64-metal",
+      "platform": "macos-x64",
+      "backend": "metal",
+      "label": "macOS x64 · Metal",
+      "archive": "tar.gz",
+      "url": "https://github.com/0xShug0/audio.cpp/releases/download/v0.9.4/audio-v0.9.4-bin-macos-x64-metal.tar.gz",
+      "sha256": "be2a35aa004cc3d63978c77723ee3f2805129eedf726172c45145ef114664451",
+      "size": 39330776,
+      "extras": []
+    }
+  ]
+}

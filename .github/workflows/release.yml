@@ -1,0 +1,177 @@
+# 打 tag（v0.1.0）即发布：Windows 便携包 → 可选代码签名 → zip + 校验和 → GitHub Release。
+# 只认 tag：发布物必须对应一个已经过 CI 的提交；分支上不产出任何发行物。
+# 签名凭据走在 job env 里映射的 secrets，未配置就跳过签名（不是失败）。
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已存在的 tag（形如 v0.1.0）
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  portable:
+    runs-on: windows-latest
+    env:
+      SIGN_PFX_BASE64: ${{ secrets.VOICEHUB_SIGN_PFX_BASE64 }}
+      SIGN_PFX_PASSWORD: ${{ secrets.VOICEHUB_SIGN_PFX_PASSWORD }}
+      # runner 的默认控制台是 cp1252，脚本里的中文一步都打不出来就崩在第一步。
+      # 只影响本工作流：真正的兜底在 packaging/build.py（errors="replace"）。
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: astral-sh/setup-uv@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 取版本号
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "${{ inputs.tag || github.ref_name }}"
+          if ($tag -notmatch '^v\d+\.\d+\.\d+([-+].*)?$') {
+            throw "tag 必须形如 v0.1.0，当前为 $tag"
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$($tag.Substring(1))" >> $env:GITHUB_OUTPUT
+
+      - name: 同步版本号
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          $m = [regex]::Match($env:VERSION, '^(\d+)\.(\d+)\.(\d+)')
+          if (-not $m.Success) { throw "版本号必须含 X.Y.Z：$env:VERSION" }
+          $nums = "$($m.Groups[1].Value),$($m.Groups[2].Value),$($m.Groups[3].Value),0"
+
+          $vi = "packaging/version_info.txt"
+          $text = Get-Content $vi -Raw -Encoding UTF8
+          $text = $text -replace 'filevers=\([^)]*\)', "filevers=($nums)"
+          $text = $text -replace 'prodvers=\([^)]*\)', "prodvers=($nums)"
+          $text = $text -replace "StringStruct\('FileVersion', '[^']*'\)", "StringStruct('FileVersion', '$env:VERSION')"
+          $text = $text -replace "StringStruct\('ProductVersion', '[^']*'\)", "StringStruct('ProductVersion', '$env:VERSION')"
+          # 必须写成无 BOM 的 UTF-8：PyInstaller 用 eval 读这个文件，BOM 会让它解析失败。
+          $utf8 = New-Object System.Text.UTF8Encoding($false)
+          [IO.File]::WriteAllText($vi, $text, $utf8)
+
+          $pp = "pyproject.toml"
+          $toml = Get-Content $pp -Raw -Encoding UTF8
+          $toml = $toml -replace '(?m)^version = "[^"]*"', "version = `"$env:VERSION`""
+          [IO.File]::WriteAllText($pp, $toml, $utf8)
+
+          Write-Host "版本：$env:VERSION"
+
+      - name: 构建界面
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      # 共享库构建：ffmpeg.exe / ffprobe.exe 各只有几百 KB，解码器由一组共用的 DLL 提供。
+      # static 构建等于把同一套库各链接一份进两个 exe，包体白白翻倍。
+      - name: 取 ffmpeg
+        shell: pwsh
+        run: |
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"
+          $zip = Join-Path $env:RUNNER_TEMP "ffmpeg.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $out = Join-Path $env:RUNNER_TEMP "ffmpeg"
+          Expand-Archive -Path $zip -DestinationPath $out -Force
+          $exe = Get-ChildItem $out -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $exe) { throw "压缩包里没有 ffmpeg.exe" }
+          & $exe.FullName -version | Select-Object -First 1
+          "FFMPEG_DIR=$($exe.DirectoryName)" >> $env:GITHUB_ENV
+
+      - name: 打包
+        shell: bash
+        run: |
+          uv sync --group package
+          uv run --group package python packaging/build.py \
+            --ffmpeg "$FFMPEG_DIR" --skip-web --no-zip
+
+      # 证书与口令走 secrets：base64 后的 .pfx 与导出口令。
+      # 时间戳必须打，否则证书到期后已发布的包签名一并失效。
+      - name: 代码签名
+        if: env.SIGN_PFX_BASE64 != ''
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "sign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGN_PFX_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+            -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signtool) { throw "未找到 signtool.exe（缺少 Windows SDK）" }
+          $target = "dist\VoiceHub\VoiceHub.exe"
+          & $signtool.FullName sign /fd sha256 /f $pfx /p $env:SIGN_PFX_PASSWORD `
+            /tr http://timestamp.digicert.com /td sha256 $target
+          if ($LASTEXITCODE -ne 0) { throw "签名失败（退出码 $LASTEXITCODE）" }
+          & $signtool.FullName verify /pa /v $target
+          Remove-Item $pfx -Force
+
+      - name: 打包 zip
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          $zip = "dist\VoiceHub-$env:VERSION-win64.zip"
+          Remove-Item $zip -ErrorAction SilentlyContinue
+          Compress-Archive -Path "dist\VoiceHub" -DestinationPath $zip -CompressionLevel Optimal
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  $(Split-Path $zip -Leaf)" | Set-Content "dist\SHA256SUMS.txt" -Encoding ascii
+          $mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
+          Write-Host "产物：$(Split-Path $zip -Leaf)（$mb MB）"
+
+      - name: 生成发布说明
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          $tpl = @'
+          ## 下载
+
+          - `VoiceHub-__VER__-win64.zip` —— 解压即用，内置 ffmpeg / ffprobe
+          - `SHA256SUMS.txt` —— SHA-256 校验和
+
+          Windows 10 / 11 x64。解压后双击 `VoiceHub.exe`，浏览器自动打开界面，程序在托盘常驻。
+
+          ## 说明
+
+          - 程序未做代码签名，首次运行可能被 SmartScreen 拦截：选「更多信息 → 仍要运行」。
+          - 数据目录 `%LOCALAPPDATA%\voicehub`（密钥、音色库、生成结果、日志），删除即彻底清除。
+          - 随包 ffmpeg 为 GPL 构建，许可证与来源见包内 `_internal\vendor\ffmpeg`；源码 https://ffmpeg.org/download.html 。
+          - 本机引擎需自行启动推理服务；云端引擎在「设置 → 引擎」填地址与密钥。
+          '@
+          $tpl = $tpl.Replace('__VER__', $env:VERSION)
+          $utf8 = New-Object System.Text.UTF8Encoding($false)
+          [IO.File]::WriteAllText((Join-Path (Get-Location) "dist\RELEASE_NOTES.md"), $tpl, $utf8)
+
+      - name: 发布
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: VoiceHub ${{ steps.ver.outputs.version }}
+          body_path: dist/RELEASE_NOTES.md
+          files: |
+            dist/VoiceHub-${{ steps.ver.outputs.version }}-win64.zip
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true

@@ -1,0 +1,3656 @@
+/* ============================================================================
+ * VoiceHub 设置页 · 设计令牌与共享原语
+ *
+ * 令牌定义在 `:root`（见下），整个应用只有这一份色值；
+ * 旧页面里的 `--bg` / `--accent` / `--radius` 是别名，在 style.css 里指向 `--sh-*`。
+ * 强调色预设与密度属于用户偏好，挂在 `.app-shell` 上覆盖。
+ *
+ * 视觉方向：轻科幻 · 浅色玻璃拟态
+ *   - 冰蓝底 + 少量紫蓝渐变的低强度环境光（不是霓虹）
+ *   - 半透明面板 + 1px 高光边框 + 柔和多层阴影 + 适度 backdrop-filter
+ *   - 文字按三级层次：标题 / 正文 / 说明，对比度按 WCAG AA 校准
+ * ==========================================================================*/
+
+/* 令牌的单源：颜色 / 形状 / 动效都住在 :root。
+   深色只覆盖这些变量，组件样式一行都不用改；
+   强调色预设与密度是用户偏好，仍然挂在 .app-shell 上覆盖。 */
+:root {
+  /* 原生控件按浅色画：系统偏好是深色时，输入框与下拉列表不该自己变黑。 */
+  color-scheme: light;
+  --sh-font: 'Segoe UI Variable Text', 'Segoe UI', 'Inter', 'PingFang SC', 'Microsoft YaHei',
+    system-ui, sans-serif;
+
+  /* ---- 颜色（浅色）---- */
+  --sh-text: #101f38;
+  --sh-text-2: #3c516e;
+  --sh-text-3: #5a6f8d;
+  --sh-text-4: #71839c;
+
+  --sh-accent: #2f7bff;
+  --sh-accent-2: #7c6cff;
+  --sh-accent-soft: rgba(47, 123, 255, 0.1);
+  --sh-accent-soft-2: rgba(47, 123, 255, 0.18);
+  --sh-accent-ring: rgba(47, 123, 255, 0.26);
+  --sh-accent-contrast: #ffffff;
+
+  --sh-glass: rgba(255, 255, 255, 0.62);
+  --sh-glass-soft: rgba(255, 255, 255, 0.4);
+  --sh-glass-strong: rgba(255, 255, 255, 0.86);
+  --sh-glass-border: rgba(255, 255, 255, 0.92);
+  --sh-line: rgba(122, 156, 202, 0.22);
+  --sh-line-soft: rgba(122, 156, 202, 0.13);
+  --sh-tree-line: rgba(96, 133, 186, 0.4);
+  --sh-folder: #4a88e8;
+  --sh-field: rgba(255, 255, 255, 0.62);
+  --sh-field-focus: rgba(255, 255, 255, 0.95);
+  --sh-hover: rgba(255, 255, 255, 0.55);
+  --sh-track: rgba(120, 148, 186, 0.22);
+
+  --sh-ok: #0e9d74;
+  --sh-ok-soft: rgba(14, 157, 116, 0.12);
+  --sh-warn: #c07a1d;
+  --sh-warn-soft: rgba(192, 122, 29, 0.13);
+  --sh-danger: #d9574b;
+  --sh-danger-soft: rgba(217, 87, 75, 0.12);
+
+  /* ---- 形状与深度 ---- */
+
+  /* ---- 画布与面板：旧页面的 --bg / --panel 从这里取，不再各写一份色值 ---- */
+  --sh-canvas: #eaf2fd;
+  --sh-panel: #fdfeff;
+  --sh-chip: #eef4fc;
+  --sh-mask: rgba(16, 31, 56, 0.22);
+  /* 压在头像上的那一层：`scrim` 是"这里能点/刚悬停"，`scrim-on` 是"这一段正在放"。
+     两档都半透明——头像本身要一直透得出来，不许被一块实色盖掉。 */
+  --sh-scrim: rgba(10, 16, 28, 0.34);
+  --sh-scrim-on: rgba(10, 16, 28, 0.52);
+  --sh-mask-strong: rgba(16, 31, 56, 0.34);
+  --sh-toast-bg: #16233a;
+  --sh-toast-text: #ffffff;
+
+  /* ---- 间距阶梯：组件只从这里取值，别再出现 9 / 11 / 13 这种孤值 ---- */
+  --sh-gap-1: 4px;
+  --sh-gap-2: 8px;
+  --sh-gap-3: 12px;
+  --sh-gap-4: 16px;
+  --sh-gap-5: 24px;
+  --sh-gap-6: 32px;
+
+  /* ---- 圆角阶梯：4 / 5 / 6 / 7 / 8 / 9 / 10 混用是之前最明显的不一致 ---- */
+  --sh-r-2xs: 6px;
+  --sh-r-xs: 8px;
+  --sh-r-sm: 10px;
+  --sh-r-md: 12px;
+  --sh-r-lg: 16px;
+  --sh-r-xl: 20px;
+  --sh-radius-card: 18px;
+  --sh-radius-inner: 12px;
+
+  --sh-shadow-1: 0 1px 2px rgba(19, 43, 79, 0.05), 0 14px 34px -26px rgba(19, 43, 79, 0.55);
+  --sh-shadow-2: 0 26px 60px -34px rgba(19, 43, 79, 0.5);
+  --sh-shadow-pop: 0 8px 24px -14px rgba(31, 82, 158, 0.42);
+  --sh-inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
+  --sh-blur: 20px;
+  --sh-blur-strong: 30px;
+
+  /* ---- 动效 ---- */
+  --sh-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --sh-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --sh-t-fast: 130ms;
+  --sh-t: 190ms;
+  --sh-t-slow: 320ms;
+}
+
+.app-shell {
+  /* ---- 结构尺寸 ---- */
+  --sh-nav-w: 88px;
+  --sh-rail-w: 214px;
+  --sh-topbar-h: 64px;
+  /* 内容列左右留白：内容区与底部保存条共用这一个数，两边才对得齐 */
+  --sh-gutter: 30px;
+  --sh-content-max: 960px;
+  /* 应用页里"要读"的那几页（引擎 / 日志 / 生成）在宽屏上收到这个宽度并居中：
+     屏幕再宽，一行的字也不会拉成一条长线。卡片墙不吃这一档——它靠网格加列数。 */
+  --sh-page-max: 1120px;
+  /* 整块面板居中后左边的空白；播放条用它对齐内容列，非设置页为 0 */
+  --sh-pane-offset: 0px;
+
+
+  /* ---- 密度（由 data-density 覆盖）---- */
+  --sh-row-py: 15px;
+  --sh-card-gap: 14px;
+  --sh-section-gap: 28px;
+  /* 设置项右侧文本类控件的列宽：设置页与插件行表共用这一档 */
+  --sh-control-w: 240px;
+
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--sh-font);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--sh-text);
+  background-color: var(--sh-canvas);
+  background-image:
+    radial-gradient(920px 640px at 6% -10%, rgba(150, 202, 255, 0.55), transparent 62%),
+    radial-gradient(780px 540px at 97% 3%, rgba(185, 172, 255, 0.42), transparent 64%),
+    radial-gradient(720px 480px at 58% 108%, rgba(150, 236, 255, 0.34), transparent 68%),
+    linear-gradient(180deg, #f4f9ff 0%, #eef5ff 46%, #e8f2fe 100%);
+  overflow: hidden;
+  isolation: isolate;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---- 深色主题：只覆盖变量，组件一行都不用改 ---- */
+:root[data-theme='dark'] {
+  /* 原生控件（下拉列表、滚动条、日期选择）也跟着深色：<option> 的列表由系统画，
+     不声明这一行，夜间模式下会跳出一张白底列表。 */
+  color-scheme: dark;
+  --sh-canvas: #070d18;
+  --sh-panel: #121c2c;
+  --sh-chip: #1a2740;
+  --sh-mask: rgba(3, 8, 16, 0.6);
+  --sh-mask-strong: rgba(3, 8, 16, 0.72);
+  --sh-toast-bg: #1b2a41;
+  --sh-toast-text: #eaf2ff;
+
+  --sh-text: #e9f1ff;
+  --sh-text-2: #c2d1e8;
+  --sh-text-3: #98abc7;
+  --sh-text-4: #8095b2;
+
+  --sh-accent: #62a2ff;
+  --sh-accent-2: #9b8cff;
+  --sh-accent-soft: rgba(98, 162, 255, 0.14);
+  --sh-accent-soft-2: rgba(98, 162, 255, 0.24);
+  --sh-accent-ring: rgba(98, 162, 255, 0.3);
+  --sh-accent-contrast: #071426;
+
+  --sh-glass: rgba(19, 30, 50, 0.6);
+  --sh-glass-soft: rgba(19, 30, 50, 0.38);
+  --sh-glass-strong: rgba(23, 36, 58, 0.88);
+  --sh-glass-border: rgba(126, 170, 235, 0.16);
+  --sh-line: rgba(120, 165, 235, 0.2);
+  --sh-line-soft: rgba(120, 165, 235, 0.1);
+  --sh-tree-line: rgba(130, 175, 240, 0.34);
+  --sh-folder: #7cb0ff;
+  --sh-field: rgba(12, 21, 37, 0.55);
+  --sh-field-focus: rgba(16, 27, 46, 0.85);
+  --sh-hover: rgba(255, 255, 255, 0.05);
+  --sh-track: rgba(140, 175, 230, 0.2);
+
+  --sh-ok: #39d3a4;
+  --sh-ok-soft: rgba(57, 211, 164, 0.14);
+  --sh-warn: #f0b162;
+  --sh-warn-soft: rgba(240, 177, 98, 0.14);
+  --sh-danger: #ff8577;
+  --sh-danger-soft: rgba(255, 133, 119, 0.14);
+
+  --sh-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 40px -28px rgba(0, 0, 0, 0.9);
+  --sh-shadow-2: 0 30px 70px -36px rgba(0, 0, 0, 0.95);
+  --sh-shadow-pop: 0 10px 28px -16px rgba(0, 0, 0, 0.8);
+  --sh-inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+:root[data-theme='dark'] .app-shell {
+  background-color: #070d18;
+  background-image:
+    radial-gradient(920px 640px at 6% -10%, rgba(38, 94, 186, 0.42), transparent 62%),
+    radial-gradient(780px 540px at 97% 3%, rgba(84, 63, 168, 0.34), transparent 64%),
+    radial-gradient(720px 480px at 58% 108%, rgba(18, 84, 124, 0.38), transparent 68%),
+    linear-gradient(180deg, #080e1a 0%, #0a1220 46%, #070d18 100%);
+}
+
+/* ---- 强调色预设 ---- */
+.app-shell[data-accent='indigo'] {
+  --sh-accent: #4b5cf5;
+  --sh-accent-2: #7a6cff;
+  --sh-accent-soft: rgba(75, 92, 245, 0.1);
+  --sh-accent-soft-2: rgba(75, 92, 245, 0.18);
+  --sh-accent-ring: rgba(75, 92, 245, 0.26);
+}
+.app-shell[data-accent='violet'] {
+  --sh-accent: #7b5cf0;
+  --sh-accent-2: #b06cff;
+  --sh-accent-soft: rgba(123, 92, 240, 0.1);
+  --sh-accent-soft-2: rgba(123, 92, 240, 0.18);
+  --sh-accent-ring: rgba(123, 92, 240, 0.26);
+}
+.app-shell[data-accent='teal'] {
+  --sh-accent: #0f9bb8;
+  --sh-accent-2: #3fc9b0;
+  --sh-accent-soft: rgba(15, 155, 184, 0.1);
+  --sh-accent-soft-2: rgba(15, 155, 184, 0.18);
+  --sh-accent-ring: rgba(15, 155, 184, 0.26);
+}
+:root[data-theme='dark'] .app-shell[data-accent='indigo'] {
+  --sh-accent: #7c8bff;
+  --sh-accent-2: #a89bff;
+}
+:root[data-theme='dark'] .app-shell[data-accent='violet'] {
+  --sh-accent: #a98bff;
+  --sh-accent-2: #c99bff;
+}
+:root[data-theme='dark'] .app-shell[data-accent='teal'] {
+  --sh-accent: #45c6dd;
+  --sh-accent-2: #62e0c7;
+}
+
+/* ---- 密度 ---- */
+.app-shell[data-density='compact'] {
+  --sh-row-py: 10px;
+  --sh-card-gap: 11px;
+  --sh-section-gap: 22px;
+  --sh-control-w: 210px;
+}
+.app-shell[data-density='roomy'] {
+  --sh-row-py: 20px;
+  --sh-card-gap: 18px;
+  --sh-section-gap: 34px;
+  --sh-control-w: 270px;
+}
+
+/* 创作页同样吃这套密度：表格行、章节行、步骤卡与两栏间距一起收放，
+   不只看设置页。变量在 Workspace.vue 的 .producer-panel 上有默认值。 */
+.app-shell[data-density='compact'] .producer-panel {
+  --ws-side-pad: 10px 12px;
+  --ws-body-gap: 14px;
+  --ws-tools-gap: 6px;
+  --ws-row-h: 42px;
+  --ws-cell-py: 2px;
+  --ws-line-py: 3px;
+  --ws-line-gap: 7px;
+  --ws-role-gap: 6px;
+  --ws-font: 12px;
+  --ws-chapter-font: 11.6px;
+  --ws-chapter-leading: 1.62;
+  --ws-step-gap: 6px;
+  --ws-step-py: 5px;
+  --ws-steps-pad: 7px 22px 2px;
+}
+.app-shell[data-density='roomy'] .producer-panel {
+  --ws-side-pad: 18px 20px;
+  --ws-body-gap: 22px;
+  --ws-tools-gap: 10px;
+  --ws-row-h: 58px;
+  --ws-cell-py: 6px;
+  --ws-line-py: 7px;
+  --ws-line-gap: 13px;
+  --ws-role-gap: 12px;
+  --ws-font: 13px;
+  --ws-chapter-font: 12.6px;
+  --ws-chapter-leading: 1.8;
+  --ws-step-gap: 10px;
+  --ws-step-py: 9px;
+  --ws-steps-pad: 13px 22px 4px;
+}
+
+/* ---------------------------------------------------------------- 环境光 -- */
+.sh-ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.sh-ambient span {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  /* 不用 filter: blur() 再抹一遍：模糊层 + 位移动画意味着**每一帧**都要重新
+     光栅化整个模糊面（几百乘几百像素），低端 GPU 上这是常驻掉帧源，还会与滚动
+     叠加。渐变自身的透明度斜坡已把边缘拉到 0，足够柔——透明停止点从 68% 推到
+     82% 即是补偿，观感差异在 5% 以内。will-change 让三个斑点常驻合成层，
+     动画只走 transform，由合成器线程推进，不占主线程。 */
+  will-change: transform;
+  opacity: 0.55;
+}
+.sh-ambient span:nth-child(1) {
+  width: 420px;
+  height: 360px;
+  left: -60px;
+  top: 8%;
+  background: radial-gradient(circle, rgba(126, 186, 255, 0.75), rgba(126, 186, 255, 0) 82%);
+  animation: sh-drift-a 24s var(--sh-ease) infinite alternate;
+}
+.sh-ambient span:nth-child(2) {
+  width: 380px;
+  height: 320px;
+  right: -40px;
+  top: 2%;
+  background: radial-gradient(circle, rgba(178, 160, 255, 0.6), rgba(178, 160, 255, 0) 82%);
+  animation: sh-drift-b 28s var(--sh-ease) infinite alternate;
+}
+.sh-ambient span:nth-child(3) {
+  width: 360px;
+  height: 280px;
+  left: 42%;
+  bottom: -120px;
+  background: radial-gradient(circle, rgba(146, 234, 255, 0.55), rgba(146, 234, 255, 0) 84%);
+  animation: sh-drift-a 32s var(--sh-ease) infinite alternate-reverse;
+}
+:root[data-theme='dark'] .sh-ambient span {
+  opacity: 0.34;
+}
+@keyframes sh-drift-a {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(48px, 34px, 0) scale(1.12);
+  }
+}
+@keyframes sh-drift-b {
+  from {
+    transform: translate3d(0, 0, 0) scale(1.05);
+  }
+  to {
+    transform: translate3d(-42px, 28px, 0) scale(0.94);
+  }
+}
+.app-shell[data-ambient='off'] .sh-ambient {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ 顶栏 -- */
+.sh-topbar {
+  position: relative;
+  z-index: 6;
+  flex: none;
+  height: var(--sh-topbar-h);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.36));
+  border-bottom: 1px solid var(--sh-line-soft);
+  backdrop-filter: blur(var(--sh-blur-strong)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--sh-blur-strong)) saturate(160%);
+}
+:root[data-theme='dark'] .sh-topbar {
+  background: linear-gradient(180deg, rgba(14, 23, 39, 0.78), rgba(12, 20, 35, 0.52));
+}
+
+.sh-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: none;
+  user-select: none;
+}
+.sh-brand-mark {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(145deg, var(--sh-accent), var(--sh-accent-2));
+  box-shadow: 0 8px 18px -10px rgba(47, 123, 255, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -6px 12px rgba(11, 38, 92, 0.22);
+}
+.sh-brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 10px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.32), transparent 52%);
+  pointer-events: none;
+}
+.sh-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.sh-brand-name {
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--sh-text);
+}
+.sh-brand-sub {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sh-text-4);
+  margin-top: 3px;
+}
+
+.sh-search {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 34vw);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 9px 0 12px;
+  border-radius: var(--sh-r-md);
+  background: var(--sh-field);
+  border: 1px solid var(--sh-line);
+  color: var(--sh-text-3);
+  transition: border-color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    box-shadow var(--sh-t) var(--sh-ease);
+}
+.sh-search:hover {
+  border-color: rgba(122, 156, 202, 0.34);
+}
+.sh-search:focus-within {
+  background: var(--sh-field-focus);
+  border-color: var(--sh-accent);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+.sh-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--sh-text);
+}
+.sh-search input::placeholder {
+  color: var(--sh-text-4);
+}
+.sh-search-clear {
+  border: 0;
+  background: transparent;
+  color: var(--sh-text-4);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color var(--sh-t-fast), background var(--sh-t-fast);
+}
+.sh-search-clear:hover {
+  color: var(--sh-text-2);
+  background: var(--sh-hover);
+}
+.sh-search kbd {
+  flex: none;
+  font-family: var(--sh-font);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--sh-text-4);
+  border: 1px solid var(--sh-line);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 1px 6px;
+  background: var(--sh-glass-soft);
+  line-height: 1.5;
+}
+
+.sh-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.sh-theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--sh-line);
+  background: var(--sh-glass-soft);
+  color: var(--sh-text-2);
+  font: inherit;
+  font-size: 12.2px;
+  font-weight: 600;
+  cursor: pointer;
+  /* 不写 all：这颗按钮自己就是切主题的入口，all 会把布局属性也拖进过渡里 */
+  transition: color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    border-color var(--sh-t) var(--sh-ease), box-shadow var(--sh-t) var(--sh-ease);
+}
+.sh-theme-toggle:hover {
+  color: var(--sh-text);
+  background: var(--sh-glass-strong);
+  box-shadow: var(--sh-shadow-pop);
+}
+.sh-theme-toggle .sh-theme-icon {
+  display: grid;
+  place-items: center;
+  transition: transform var(--sh-t-slow) var(--sh-ease-out);
+}
+.sh-theme-toggle:hover .sh-theme-icon {
+  transform: rotate(18deg);
+}
+.sh-theme-toggle .sh-theme-label {
+  letter-spacing: 0.01em;
+}
+
+/* ------------------------------------------------------------ 顶部提示条 -- */
+.sh-banner {
+  position: relative;
+  z-index: 5;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 24px;
+  font-size: 12.2px;
+  color: var(--sh-warn);
+  background: var(--sh-warn-soft);
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+.sh-banner .sh-banner-close {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+.sh-banner .sh-banner-close:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* ------------------------------------------------------------------ 主体 -- */
+.sh-body {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--sh-nav-w) minmax(0, 1fr);
+}
+
+/* 导航坞：默认就是网格第一列；自动隐藏时整坞收成左边缘一条窄带（见下方桌面规则）。 */
+.sh-nav-dock {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.sh-nav-dock > .sh-nav {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+/* 分类栏 + 内容是**一块**：设置页整块居中，两者共用同一条左边界。
+   从前它们是三列平铺，内容一居中，分类栏就被落在最左边，看着像两块东西。 */
+.sh-pane {
+  display: grid;
+  grid-template-columns: var(--sh-rail-w) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+.app-shell[data-mode='settings'] .sh-pane {
+  width: 100%;
+  max-width: calc(var(--sh-rail-w) + var(--sh-content-max) + var(--sh-gutter) * 2);
+  margin-inline: auto;
+}
+/* 同一份居中量，给悬浮播放条用；面板比可视区窄时才有值 */
+.app-shell[data-mode='settings'] {
+  --sh-pane-offset: max(
+    0px,
+    calc(
+      (
+          100vw - var(--sh-nav-w) - (var(--sh-rail-w) + var(--sh-content-max) +
+                var(--sh-gutter) * 2)
+        ) / 2
+    )
+  );
+}
+.sh-pane > .sh-rail {
+  grid-column: 1;
+  grid-row: 1 / -1;
+}
+.sh-pane > .sh-content {
+  grid-column: 2;
+  grid-row: 1;
+}
+/* 没有第二列的页（日志）：第一列那一档空着就是 214px 的空白，
+   内容还会被钉在第二列。整块收成一列，内容才真的铺开。 */
+.sh-pane.is-bare {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sh-pane.is-bare > .sh-content {
+  grid-column: 1;
+}
+
+/* -------------------------------------------------------------- 左侧主导航 -- */
+.sh-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 9px 16px;
+  border-right: 1px solid var(--sh-line-soft);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(255, 255, 255, 0.14));
+  backdrop-filter: blur(var(--sh-blur));
+  -webkit-backdrop-filter: blur(var(--sh-blur));
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+:root[data-theme='dark'] .sh-nav {
+  background: linear-gradient(180deg, rgba(15, 25, 43, 0.5), rgba(12, 20, 34, 0.2));
+}
+
+.sh-nav-item {
+  position: relative;
+  width: 100%;
+  height: 58px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-r-lg);
+  background: transparent;
+  color: var(--sh-text-3);
+  font: inherit;
+  font-size: 10.8px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    border-color var(--sh-t) var(--sh-ease), transform var(--sh-t-fast) var(--sh-ease),
+    box-shadow var(--sh-t) var(--sh-ease);
+}
+.sh-nav-item svg {
+  transition: transform var(--sh-t) var(--sh-ease), opacity var(--sh-t) var(--sh-ease);
+}
+.sh-nav-item:hover {
+  color: var(--sh-text-2);
+  background: var(--sh-hover);
+}
+.sh-nav-item:hover svg {
+  transform: translateY(-1px);
+}
+.sh-nav-item:active {
+  transform: scale(0.97);
+}
+.sh-nav-item.is-active {
+  color: var(--sh-accent);
+  background: linear-gradient(180deg, var(--sh-glass-strong), var(--sh-accent-soft));
+  border-color: var(--sh-glass-border);
+  box-shadow: var(--sh-inset-hi), 0 10px 22px -16px rgba(47, 123, 255, 0.7);
+}
+.sh-nav-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 5px;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, var(--sh-accent), var(--sh-accent-2));
+  opacity: 0.9;
+}
+.sh-nav-spacer {
+  flex: 1;
+  min-height: 12px;
+}
+.sh-nav-divider {
+  width: 26px;
+  height: 1px;
+  margin: 6px 0;
+  background: var(--sh-line-soft);
+}
+
+/* ------------------------------------------------------------ 侧栏收起 -- */
+/* 两个外观开关只在桌面生效：窄屏导航已经横排到顶上，再收起就找不回来了。 */
+@media (min-width: 901px) {
+  /* 隐藏文字：只留图标，整条导航收窄 */
+  .app-shell[data-nav-labels='off'] {
+    --sh-nav-w: 64px;
+  }
+  .app-shell[data-nav-labels='off'] .sh-nav {
+    padding-inline: 8px;
+  }
+  .app-shell[data-nav-labels='off'] .sh-nav-item {
+    height: 46px;
+  }
+  /* 只藏文字。插件图标是 span（遮罩），别跟着一起藏。 */
+  .app-shell[data-nav-labels='off'] .sh-nav-item > .sh-nav-label {
+    display: none;
+  }
+  .app-shell[data-nav-labels='off'] .sh-nav-divider {
+    width: 22px;
+  }
+  .app-shell[data-nav-labels='off'] .sh-nav-item.is-active::before {
+    bottom: 3px;
+    width: 16px;
+  }
+
+  /* 自动隐藏：坞不再占列宽，正文铺满；鼠标/键盘进入才滑出，盖在正文上 */
+  .app-shell[data-nav-auto='on'] .sh-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app-shell[data-nav-auto='on'] .sh-nav-dock {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 10px;
+    z-index: 35;
+    overflow: hidden;
+    transition: width var(--sh-t) var(--sh-ease);
+  }
+  .app-shell[data-nav-auto='on'] .sh-nav-dock:hover,
+  .app-shell[data-nav-auto='on'] .sh-nav-dock:focus-within {
+    width: var(--sh-nav-w);
+  }
+  .app-shell[data-nav-auto='on'] .sh-nav-dock > .sh-nav {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--sh-nav-w);
+    transform: translateX(-100%);
+    transition: transform var(--sh-t) var(--sh-ease);
+    background: var(--sh-panel);
+    border-right: 1px solid var(--sh-line);
+    box-shadow: var(--sh-shadow-pop);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .app-shell[data-nav-auto='on'] .sh-nav-dock:hover > .sh-nav,
+  .app-shell[data-nav-auto='on'] .sh-nav-dock:focus-within > .sh-nav {
+    transform: translateX(0);
+  }
+  /* 收起时左边缘留一道短把手：不挡内容，但让人知道这里能滑出来 */
+  .app-shell[data-nav-auto='on'] .sh-nav-dock::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 3px;
+    height: 56px;
+    transform: translateY(-50%);
+    border-radius: 0 3px 3px 0;
+    background: var(--sh-line-strong);
+    opacity: 0.7;
+    transition: opacity var(--sh-t-fast) var(--sh-ease);
+  }
+  .app-shell[data-nav-auto='on'] .sh-nav-dock:hover::before,
+  .app-shell[data-nav-auto='on'] .sh-nav-dock:focus-within::before {
+    opacity: 0;
+  }
+  .app-shell[data-nav-auto='on'][data-motion='off'] .sh-nav-dock,
+  .app-shell[data-nav-auto='on'][data-motion='off'] .sh-nav-dock > .sh-nav {
+    transition: none;
+  }
+}
+
+/* -------------------------------------------------------------- 设置分类 -- */
+.sh-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 22px 14px 16px;
+  border-right: 1px solid var(--sh-line-soft);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.1));
+  overflow-y: auto;
+}
+:root[data-theme='dark'] .sh-rail {
+  background: linear-gradient(180deg, rgba(15, 25, 43, 0.36), rgba(12, 20, 34, 0.12));
+}
+.sh-rail-title {
+  padding: 0 10px 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sh-text-4);
+}
+.sh-rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+/* 分组标题：把 11 个分节收成 4 段，竖栏里才看得出层次。 */
+.sh-rail-sub {
+  padding: 12px 10px 5px;
+  font-size: 10.2px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--sh-text-4);
+}
+.sh-rail-sub:first-child {
+  padding-top: 0;
+}
+.sh-rail-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-r-md);
+  background: transparent;
+  color: var(--sh-text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    border-color var(--sh-t) var(--sh-ease);
+}
+.sh-rail-item svg {
+  flex: none;
+  color: var(--sh-text-3);
+  transition: color var(--sh-t) var(--sh-ease);
+}
+.sh-rail-item:hover {
+  color: var(--sh-text);
+  background: var(--sh-hover);
+}
+.sh-rail-item:hover svg {
+  color: var(--sh-text-2);
+}
+.sh-rail-item.is-active {
+  color: var(--sh-accent);
+  background: linear-gradient(90deg, var(--sh-accent-soft-2), rgba(255, 255, 255, 0.06));
+  border-color: rgba(47, 123, 255, 0.16);
+  box-shadow: var(--sh-inset-hi);
+}
+.sh-rail-item.is-active svg {
+  color: var(--sh-accent);
+}
+.sh-rail-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 11px;
+  bottom: 11px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--sh-accent), var(--sh-accent-2));
+}
+.sh-rail-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sh-rail-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sh-warn);
+  box-shadow: 0 0 0 3px var(--sh-warn-soft);
+}
+.sh-rail-count {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--sh-text-4);
+  font-variant-numeric: tabular-nums;
+}
+.sh-rail-foot {
+  margin-top: auto;
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sh-rail-card {
+  padding: 11px 12px;
+  border-radius: var(--sh-r-md);
+  border: 1px solid var(--sh-line-soft);
+  background: var(--sh-glass-soft);
+}
+.sh-rail-card-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.8px;
+  color: var(--sh-text-2);
+  font-weight: 550;
+}
+.sh-rail-card-note {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--sh-text-4);
+}
+.sh-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--sh-text-4);
+}
+.sh-status-dot.is-online {
+  background: var(--sh-ok);
+  box-shadow: 0 0 0 3px var(--sh-ok-soft);
+}
+.sh-status-dot.is-offline {
+  background: var(--sh-warn);
+  box-shadow: 0 0 0 3px var(--sh-warn-soft);
+}
+
+/* ------------------------------------------------------------------ 内容 -- */
+.sh-content {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 22px var(--sh-gutter) 34px;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sh-line) transparent;
+  /* 滚动条槽常驻：长短不同的分组之间切换时内容列宽度不变，左右边界不会跳 10px */
+  scrollbar-gutter: stable;
+}
+.sh-content::-webkit-scrollbar {
+  width: 10px;
+}
+.sh-content::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 99px;
+  background: var(--sh-line);
+  background-clip: content-box;
+}
+.sh-content::-webkit-scrollbar-thumb:hover {
+  background: var(--sh-text-4);
+  background-clip: content-box;
+}
+/* 内容与分类栏之间只留一道留白：max-width 到顶就贴住，不再居中飘走 */
+.sh-content-inner {
+  width: 100%;
+  max-width: var(--sh-content-max);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sh-section-gap);
+}
+
+.sh-page-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.sh-page-head h1 {
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--sh-text);
+}
+
+.sh-sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sh-card-gap);
+  scroll-margin-top: 18px;
+}
+.sh-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 2px;
+  min-height: 32px;
+}
+.sh-sec-icon {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+  border: 1px solid rgba(47, 123, 255, 0.14);
+}
+.sh-sec-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+.sh-sec-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--sh-text-3);
+}
+.sh-sec-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+/* 保存 / 恢复默认：就摆在抬头右上角，跟分组名同一行 */
+.sh-sec-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sh-sec-actions .sh-btn {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12.4px;
+}
+.sh-sec-confirm {
+  font-size: 12px;
+  color: var(--sh-text-3);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ 卡片 -- */
+.sh-card {
+  position: relative;
+  border-radius: var(--sh-radius-card);
+  border: 1px solid var(--sh-glass-border);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.86) 0%,
+    rgba(255, 255, 255, 0.62) 52%,
+    rgba(246, 251, 255, 0.6) 100%
+  );
+  backdrop-filter: blur(var(--sh-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--sh-blur)) saturate(140%);
+  box-shadow: var(--sh-inset-hi), var(--sh-shadow-1);
+  transition: box-shadow var(--sh-t) var(--sh-ease), border-color var(--sh-t) var(--sh-ease);
+}
+:root[data-theme='dark'] .sh-card {
+  background: linear-gradient(165deg, rgba(25, 39, 62, 0.72), rgba(17, 28, 46, 0.58));
+}
+/* 弹窗内已经是一层卡：分组只留标题，行表直接铺开，不再套第二层壳。
+   深色主题对 .sh-card 有独立背景声明，这里要跟上同一条链才盖得住。 */
+.sh-card.is-bare,
+:root[data-theme='dark'] .sh-card.is-bare {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.sh-card.is-bare .sh-card-head {
+  padding: 12px 0 2px;
+}
+.sh-card.is-bare .sh-card-icon {
+  display: none;
+}
+.sh-card.is-bare .sh-card-title {
+  font-size: 10.8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--sh-text-4);
+}
+.sh-card.is-bare .sh-card-body {
+  padding: 0;
+}
+.sh-card.is-bare .sh-card-foot {
+  padding: 10px 0 0;
+  background: none;
+  border-top: 0;
+}
+
+.sh-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 17px 20px 12px;
+}
+.sh-card-icon {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+}
+.sh-card-title {
+  margin: 0;
+  font-size: 13.8px;
+  font-weight: 650;
+  color: var(--sh-text);
+  letter-spacing: -0.003em;
+}
+.sh-card-head-side {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sh-card-body {
+  padding: 2px 20px 8px;
+}
+.sh-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--sh-line-soft);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.34));
+}
+:root[data-theme='dark'] .sh-card-foot {
+  background: rgba(10, 18, 31, 0.24);
+}
+.sh-card-foot-note {
+  font-size: 11.6px;
+  color: var(--sh-text-4);
+  line-height: 1.5;
+}
+.sh-card-foot-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------------- 行 -- */
+.sh-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 22px;
+  padding: var(--sh-row-py) 0;
+  border-top: 1px solid var(--sh-line-soft);
+}
+.sh-row:first-child {
+  border-top: 0;
+}
+.sh-row-main {
+  min-width: 0;
+}
+.sh-row-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.1px;
+  font-weight: 600;
+  color: var(--sh-text);
+  line-height: 1.45;
+}
+.sh-row-desc {
+  margin-top: 4px;
+  font-size: 11.9px;
+  line-height: 1.62;
+  color: var(--sh-text-3);
+  max-width: 54ch;
+}
+/* 「显示设置项说明」只认这一个选择器：行说明、说明块都在这里收口。
+   新写说明类样式必须并入，否则开关管不到（存储条目那栏就这样漏过）。 */
+.app-shell[data-desc='off'] .sh-sec :is(.sh-row-desc, .sh-hint, .scan-hint) {
+  display: none;
+}
+.sh-row-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+.sh-row--stack {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+.sh-row--stack .sh-row-control {
+  justify-content: flex-start;
+}
+.sh-row--wide-control {
+  grid-template-columns: minmax(0, 0.9fr) minmax(280px, 1.1fr);
+}
+.sh-row--wide-control .sh-row-control {
+  justify-content: stretch;
+}
+
+/* --------------------------------------------------------------- 小件 -- */
+.sh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10.8px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--sh-text-2);
+  background: var(--sh-glass-soft);
+  border: 1px solid var(--sh-line-soft);
+  white-space: nowrap;
+}
+.sh-chip.is-ok {
+  color: var(--sh-ok);
+  background: var(--sh-ok-soft);
+  border-color: transparent;
+}
+.sh-chip.is-warn {
+  color: var(--sh-warn);
+  background: var(--sh-warn-soft);
+  border-color: transparent;
+}
+.sh-chip.is-accent {
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+  border-color: transparent;
+}
+.sh-muted {
+  color: var(--sh-text-3);
+}
+.sh-hint {
+  font-size: 11.6px;
+  line-height: 1.6;
+  color: var(--sh-text-4);
+}
+.sh-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--sh-line);
+  border-bottom-width: 2px;
+  background: var(--sh-glass-strong);
+  color: var(--sh-text-2);
+  font-family: var(--sh-font);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* 图标描边统一 1.8：Lucide 默认是 2，图省事没写 stroke-width 的那几颗
+   会和旁边差一档。这条兜底把整个应用拉回同一档（显式写了 1.8 的仍是 1.8）。 */
+.app-shell svg.lucide {
+  stroke-width: 1.8;
+}
+
+/* 焦点环：兜底，只负责**自己没有焦点长相**的元素（按钮、可聚焦容器、裸控件）。
+ *
+ * 这里用 `:where()` 把特异性压到最低（0,1,0）——这不是洁癖：`.sh-field:focus`、
+ * `.row-input:focus`、`.te-text:focus` 都是"类 + 伪类"两票，兜底只要多一票就会
+ * 压过它们各自的 `outline: none`。浏览器对输入框**点击也匹配 `:focus-visible`**，
+ * 于是控件自己画了一圈边框/光晕，兜底又在外面错开 2px 画第二圈（圆角也不一样），
+ * 看起来就是"点一下多出一个框"，而且怎么都对不齐。 */
+:where(.app-shell) :where(button, a, [tabindex], input, select, textarea):focus-visible {
+  outline: 2px solid var(--sh-accent);
+  outline-offset: 2px;
+  border-radius: var(--sh-r-xs);
+}
+/* 对话框本身 `tabindex="-1"`、只为把焦点收进来：给它画一圈蓝边，
+   看起来像"整个窗口被选中了"。 */
+.app-shell .vh-modal:focus-visible {
+  outline: none;
+}
+.app-shell button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ------------------------------------------------------------------ 按钮 -- */
+.sh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 15px;
+  border-radius: var(--sh-r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--sh-text-2);
+  font: inherit;
+  font-size: 12.6px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--sh-t) var(--sh-ease), border-color var(--sh-t) var(--sh-ease),
+    color var(--sh-t) var(--sh-ease), box-shadow var(--sh-t) var(--sh-ease),
+    transform var(--sh-t-fast) var(--sh-ease), opacity var(--sh-t) var(--sh-ease);
+}
+.sh-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.sh-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.sh-btn.is-primary {
+  color: var(--sh-accent-contrast);
+  background: linear-gradient(135deg, var(--sh-accent), var(--sh-accent-2));
+  border-color: transparent;
+  box-shadow: 0 10px 22px -12px rgba(47, 123, 255, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.sh-btn.is-primary:hover:not(:disabled) {
+  filter: brightness(1.04);
+  box-shadow: 0 14px 26px -12px rgba(47, 123, 255, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.sh-btn.is-soft {
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+  border-color: rgba(47, 123, 255, 0.16);
+}
+.sh-btn.is-soft:hover:not(:disabled) {
+  background: var(--sh-accent-soft-2);
+}
+.sh-btn.is-ghost {
+  color: var(--sh-text-2);
+  background: var(--sh-glass-soft);
+  border-color: var(--sh-line);
+}
+.sh-btn.is-ghost:hover:not(:disabled) {
+  background: var(--sh-glass-strong);
+  color: var(--sh-text);
+}
+.sh-btn.is-danger {
+  color: var(--sh-danger);
+  background: var(--sh-danger-soft);
+  border-color: transparent;
+}
+.sh-btn.is-danger:hover:not(:disabled) {
+  background: rgba(217, 87, 75, 0.2);
+}
+.sh-btn.is-sm {
+  height: 30px;
+  padding: 0 11px;
+  font-size: 11.8px;
+  border-radius: var(--sh-r-xs);
+}
+.sh-btn.is-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--sh-r-xs);
+  color: var(--sh-text-3);
+  background: transparent;
+}
+.sh-btn.is-icon:hover:not(:disabled) {
+  color: var(--sh-text-2);
+  background: var(--sh-hover);
+}
+.sh-spin {
+  animation: sh-spin 900ms linear infinite;
+}
+@keyframes sh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ------------------------------------------------------------------ 控件 -- */
+.sh-field {
+  width: 100%;
+  height: 36px;
+  padding: 0 11px;
+  border-radius: var(--sh-r-sm);
+  border: 1px solid var(--sh-line);
+  background: var(--sh-field);
+  color: var(--sh-text);
+  font: inherit;
+  font-size: 12.8px;
+  transition: border-color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    box-shadow var(--sh-t) var(--sh-ease);
+}
+.sh-field::placeholder {
+  color: var(--sh-text-4);
+}
+.sh-field:hover {
+  border-color: rgba(122, 156, 202, 0.34);
+}
+.sh-field:focus {
+  outline: none;
+  border-color: var(--sh-accent);
+  background: var(--sh-field-focus);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+select.sh-field {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%2371839c' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.sh-field.is-mono {
+  font-family: 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+}
+.sh-field[readonly] {
+  color: var(--sh-text-3);
+  background: var(--sh-glass-soft);
+}
+
+/* 开关 */
+.sh-toggle {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--sh-line);
+  background: var(--sh-track);
+  cursor: pointer;
+  transition: background var(--sh-t) var(--sh-ease), border-color var(--sh-t) var(--sh-ease),
+    box-shadow var(--sh-t) var(--sh-ease);
+}
+.sh-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(16, 38, 74, 0.25);
+  transition: transform var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease);
+}
+.sh-toggle[aria-checked='true'] {
+  background: linear-gradient(135deg, var(--sh-accent), var(--sh-accent-2));
+  border-color: transparent;
+  box-shadow: 0 4px 12px -6px rgba(47, 123, 255, 0.8);
+}
+.sh-toggle[aria-checked='true']::after {
+  transform: translateX(18px);
+  background: #fff;
+}
+.sh-toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+:root[data-theme='dark'] .sh-toggle::after {
+  background: #dce9ff;
+}
+:root[data-theme='dark'] .sh-toggle[aria-checked='true']::after {
+  background: #0b1626;
+}
+
+/* 分段选择器 */
+.sh-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--sh-r-md);
+  border: 1px solid var(--sh-line);
+  background: var(--sh-glass-soft);
+}
+.sh-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--sh-text-3);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--sh-t-fast) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    box-shadow var(--sh-t) var(--sh-ease);
+}
+.sh-seg-btn:hover {
+  color: var(--sh-text-2);
+}
+.sh-seg-btn[aria-checked='true'] {
+  color: var(--sh-accent);
+  background: var(--sh-glass-strong);
+  box-shadow: 0 2px 8px -4px rgba(16, 38, 74, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+:root[data-theme='dark'] .sh-seg-btn[aria-checked='true'] {
+  background: rgba(98, 162, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(98, 162, 255, 0.22);
+}
+.sh-seg-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.sh-seg.is-block {
+  display: flex;
+  width: 100%;
+}
+.sh-seg.is-block .sh-seg-btn {
+  flex: 1;
+}
+
+/* 滑块 */
+.sh-slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 190px;
+  width: 100%;
+}
+.sh-slider input[type='range'] {
+  flex: 1;
+  min-width: 110px;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+.sh-slider input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--sh-accent) 0%,
+    var(--sh-accent-2) var(--sh-p, 50%),
+    var(--sh-track) var(--sh-p, 50%),
+    var(--sh-track) 100%
+  );
+}
+.sh-slider input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--sh-track);
+}
+.sh-slider input[type='range']::-moz-range-progress {
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--sh-accent), var(--sh-accent-2));
+}
+.sh-slider input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--sh-accent);
+  background: #fff;
+  box-shadow: 0 2px 8px -2px rgba(20, 50, 100, 0.45);
+  transition: transform var(--sh-t-fast) var(--sh-ease), box-shadow var(--sh-t) var(--sh-ease);
+}
+.sh-slider input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--sh-accent);
+  background: #fff;
+}
+.sh-slider input[type='range']:hover::-webkit-slider-thumb {
+  transform: scale(1.1);
+}
+.sh-slider input[type='range']:focus-visible {
+  outline: none;
+}
+.sh-slider input[type='range']:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px var(--sh-accent-ring);
+}
+.sh-slider input[type='range']:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.sh-slider-value {
+  flex: none;
+  min-width: 54px;
+  text-align: right;
+  font-size: 12.2px;
+  font-weight: 650;
+  color: var(--sh-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 颜色圆点 */
+.sh-swatches {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sh-swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  position: relative;
+  transition: transform var(--sh-t-fast) var(--sh-ease), box-shadow var(--sh-t) var(--sh-ease);
+}
+.sh-swatch:hover {
+  transform: scale(1.08);
+}
+.sh-swatch[aria-checked='true'] {
+  box-shadow: 0 0 0 3px var(--sh-glass-strong), 0 0 0 5px currentColor;
+}
+.sh-swatch:active {
+  transform: scale(0.96);
+}
+
+/* 列表（扫描根 / 存储位置） */
+.sh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.sh-list-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.sh-list-row .sh-field {
+  flex: 1;
+  min-width: 0;
+}
+.sh-storage-list {
+  display: flex;
+  flex-direction: column;
+}
+.sh-storage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 13px 0;
+  border-top: 1px solid var(--sh-line-soft);
+}
+.sh-storage-row:first-child {
+  border-top: 0;
+}
+.sh-storage-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.8px;
+  font-weight: 600;
+}
+.sh-storage-path {
+  margin-top: 6px;
+  font-size: 11.6px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  color: var(--sh-text-3);
+  word-break: break-all;
+  line-height: 1.5;
+}
+.sh-storage-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sh-storage-size {
+  font-size: 11.6px;
+  font-weight: 600;
+  color: var(--sh-text-3);
+  font-variant-numeric: tabular-nums;
+  min-width: 62px;
+  text-align: right;
+}
+
+/* 空状态 */
+.sh-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 26px 12px;
+  text-align: center;
+  color: var(--sh-text-4);
+  font-size: 12.2px;
+}
+.sh-empty svg {
+  opacity: 0.65;
+}
+.sh-empty strong {
+  color: var(--sh-text-2);
+  font-weight: 600;
+}
+
+/* 搜索无结果 */
+.sh-no-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--sh-text-3);
+}
+.sh-no-result strong {
+  font-size: 14px;
+  color: var(--sh-text);
+}
+
+/* 隐藏（搜索过滤用 v-show 语义，但保留行注册） */
+.sh-hidden {
+  display: none !important;
+}
+
+/* 高亮刚跳转到的那一行 */
+.sh-row.is-flash {
+  animation: sh-flash 1.4s var(--sh-ease);
+}
+@keyframes sh-flash {
+  0%,
+  35% {
+    background: var(--sh-accent-soft-2);
+    box-shadow: 0 0 0 1px var(--sh-accent-ring);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
+/* 减弱动效：系统偏好或设置里关掉 */
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *,
+  .app-shell *::before,
+  .app-shell *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+.app-shell[data-motion='off'] *,
+.app-shell[data-motion='off'] *::before,
+.app-shell[data-motion='off'] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+/* 换肤的那一两帧：日夜切换时全局摘过渡（由 store/shell.js 的 applyTheme 挂标记）。
+ *  不摘的话，主题一翻好几十条规则的背景 / 边框 / 阴影过渡同时开跑，整页持续
+ *  重绘 190ms——这正是切换时"卡一下"的来源。与「减弱动效」同一思路，但只活在
+ *  切换的那两帧里，不影响日常交互的过渡。 */
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after {
+  transition: none !important;
+}
+
+/* ---------------------------------------------------------------- 响应式 -- */
+@media (max-width: 1240px) {
+  .app-shell {
+    --sh-rail-w: 200px;
+    --sh-gutter: 24px;
+  }
+  .sh-content {
+    padding: 20px var(--sh-gutter) 32px;
+  }
+}
+
+@media (max-width: 1040px) {
+  .app-shell {
+    --sh-nav-w: 74px;
+    --sh-rail-w: 186px;
+    --sh-gutter: 20px;
+  }
+  .sh-nav-item {
+    height: 54px;
+    font-size: 10.4px;
+  }
+  .sh-content {
+    padding: 18px var(--sh-gutter) 30px;
+  }
+  .sh-search {
+    flex-basis: 300px;
+  }
+}
+
+/* 中间栏改为顶部横向分类条，导航仍竖排在左 */
+@media (max-width: 900px) {
+  /* 只有设置页把分类栏横过来；音色库那一列是音色树，必须保持竖排 */
+  .app-shell[data-mode='settings'] .sh-pane {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .app-shell[data-mode='settings'] .sh-pane > .sh-rail {
+    grid-row: 1;
+    grid-column: 1;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--sh-line-soft);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .app-shell[data-mode='settings'] .sh-rail::-webkit-scrollbar {
+    display: none;
+  }
+  .app-shell[data-mode='settings'] .sh-rail-title,
+  .app-shell[data-mode='settings'] .sh-rail-foot,
+  .app-shell[data-mode='settings'] .sh-rail-dot,
+  .app-shell[data-mode='settings'] .sh-rail-sub {
+    display: none;
+  }
+  .app-shell[data-mode='settings'] .sh-rail-group {
+    flex-direction: row;
+    gap: 6px;
+  }
+  .app-shell[data-mode='settings'] .sh-rail-item {
+    width: auto;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 12.2px;
+    white-space: nowrap;
+  }
+  .app-shell[data-mode='settings'] .sh-rail-item.is-active::before {
+    display: none;
+  }
+  .app-shell[data-mode='settings'] .sh-rail-item.is-active {
+    background: var(--sh-accent-soft-2);
+  }
+  .app-shell[data-mode='settings'] .sh-rail-count {
+    display: none;
+  }
+  .app-shell[data-mode='settings'] .sh-pane > .sh-content {
+    grid-row: 2;
+    grid-column: 1;
+  }
+  .sh-page-head h1 {
+    font-size: 22px;
+  }
+  /* 小窗仍然贴右下角：改的是它的右边距，不是把它拉成横栏。 */
+  .app-shell .player-fold {
+    right: calc(var(--sh-gutter) + 2px);
+  }
+}
+
+/* 手机：导航也横过来，单列内容 */
+@media (max-width: 720px) {
+  .app-shell {
+    --sh-topbar-h: 58px;
+    --sh-gutter: 14px;
+  }
+  .sh-topbar {
+    gap: 10px;
+    padding: 0 12px;
+  }
+  .sh-brand-sub {
+    display: none;
+  }
+  .sh-brand-name {
+    font-size: 14.5px;
+  }
+  .sh-search {
+    position: static;
+    transform: none;
+    width: auto;
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+  }
+  .sh-search kbd {
+    display: none;
+  }
+  .sh-theme-toggle .sh-theme-label {
+    display: none;
+  }
+  .sh-theme-toggle {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+  .sh-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .sh-pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  .sh-nav-dock {
+    flex: none;
+    width: 100%;
+  }
+  .sh-nav {
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--sh-line-soft);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }  .sh-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .sh-nav-item {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 60px;
+    height: 46px;
+    border-radius: var(--sh-r-md);
+    font-size: 10.2px;
+  }
+  .sh-nav-item.is-active::before {
+    display: none;
+  }
+  .sh-nav-spacer,
+  .sh-nav-divider {
+    display: none;
+  }
+  .sh-rail {
+    flex: none;
+    padding: 8px 10px;
+  }
+  .app-shell[data-mode='app'] .sh-sidebar {
+    display: none;
+  }
+  .sh-content {
+    flex: 1;
+    min-height: 0;
+    padding: 14px var(--sh-gutter) 24px;
+  }
+  .app-shell[data-mode='app'] .sh-content-app {
+    padding: 0;
+  }
+  .sh-content-inner {
+    gap: 22px;
+  }
+  .sh-row,
+  .sh-row--wide-control {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 11px;
+    align-items: start;
+  }
+  .sh-row-control {
+    justify-content: flex-start;
+    width: 100%;
+  }
+  .sh-row-control .sh-seg.is-block {
+    width: 100%;
+  }
+  .sh-card-head,
+  .sh-card-body {
+    padding-left: 15px;
+    padding-right: 15px;
+  }
+  .sh-card-foot {
+    padding: 11px 15px;
+    flex-wrap: wrap;
+  }
+  .sh-card-foot-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+  .sh-storage-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .sh-storage-side {
+    justify-content: space-between;
+  }
+  .sh-page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+}
+
+/* 提示条现在固定在页面中部偏上（见 style.css 的 .toast），不再给播放条让位——
+   top 与 bottom 同时写会把气泡拉成一条竖条，所以这里原来的两条覆盖已删。 */
+
+/* ============================================================================
+ * 应用页接入：音色库 / 生成 / 引擎 / 日志 与设置页共用同一副壳
+ * 只做"接进壳"的适配（列宽、留白、卡片材质、按钮手感），不重写各组件的版式。
+ * ==========================================================================*/
+
+/* 品牌改成可点按钮（回音色库），外观仍是原来那一块 */
+.sh-brand {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.sh-brand:hover .sh-brand-name {
+  color: var(--sh-accent);
+}
+.sh-brand:focus-visible {
+  outline: 2px solid var(--sh-accent);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
+/* 应用模式：内容区不再自己滚（各页有自己的滚动容器） */
+.app-shell[data-mode='app'] .sh-content-app {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  min-width: 0;
+}
+.app-page {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 宽屏（2K / 4K）上，**要一行一行读**的那几页不跟着窗口一起变宽。
+   引擎面板是一列表单、日志是一张三列的流水——它们的内容宽度本来就有上限，
+   拉满 3500px 时输入框从左铺到右、日志正文一行能排两千多像素，眼睛要走一个
+   来回才读得完一句。收到 --sh-page-max 并居中。
+   卡片墙（音色库）**不在此列**：它靠网格自适应列数，铺满才能一屏多看几张。 */
+.app-page[data-page='engine'],
+.app-page[data-page='logs'] {
+  max-width: var(--sh-page-max);
+  margin-inline: auto;
+}
+/* 引擎设置是一列卡片（表单 860 + 卡片内边距）：页面再宽也只会把右边留空。
+   收到 980，卡片与页头才对得上同一条边。 */
+.app-page[data-page='engine'] {
+  max-width: 980px;
+  --sh-page-w: 980px;
+}
+/* 电脑端：内容列在内容区居中后，视口中心比内容区中心偏右
+   (导航 + 目录树) / 2；把这段半格从左边让出来，设置页才真的落在屏幕中央。
+   更窄的窗口没有这半格余量，保持内容区居中；4K 档几何不同，见下一条。 */
+@media (min-width: 1600px) and (max-width: 2399.98px) {
+  .app-page[data-page='engine'] {
+    margin-left: max(
+      0px,
+      calc((100% - var(--sh-page-w)) / 2 - (var(--sh-nav-w) + var(--sh-rail-w)) / 2)
+    );
+    margin-right: auto;
+  }
+}
+/* 4K 档整块面板已居中，导航列不再占内容区左边界；此时内容区中心
+   比视口中心多半列目录树，引擎页只补这一半。 */
+@media (min-width: 2400px) {
+  .app-page[data-page='engine'] {
+    margin-left: max(
+      0px,
+      calc((100% - var(--sh-page-w)) / 2 - var(--sh-rail-w) / 2)
+    );
+    margin-right: auto;
+  }
+}
+/* 生成页是三列工作台（卡片列 / 正文 / 参数）。上限收在 1800：
+   再宽正文就成一条读不完的长线（4K 上正文约 900px），三栏比例也不走样。 */
+.app-page[data-page='synth'] {
+  max-width: 1800px;
+  margin-inline: auto;
+}
+/* 窄到比上限还窄时，上限本来就不起作用（max-width 不会放大），不必再加查询。 */
+
+/* 第二列 = 音色树：去掉它自己的边框/底色，交给壳这一列 */
+.sh-sidebar {
+  padding: 0;
+  overflow: hidden;
+}
+.sh-sidebar .sider {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border-right: 0;
+}
+.sh-sidebar .sider-brand {
+  display: none;
+}
+.sh-sidebar .sider-body {
+  padding: 12px 10px 16px;
+}
+.sh-sidebar .sider-foot {
+  padding: 10px 12px;
+  border-top-color: var(--sh-line-soft);
+}
+
+/* ---- 音色树：一级一缩进，一条竖线把同层的兄弟连起来 ---- */
+.sh-sidebar .tree-node {
+  position: relative;
+}
+/* ├ 竖线：贯穿整行；同层最后一个只画到中线，收成 └ */
+.sh-sidebar .tree-node.has-guide::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--indent, 24px) - 7px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--sh-tree-line);
+  pointer-events: none;
+}
+.sh-sidebar .tree-node.has-guide.is-last::before {
+  bottom: 50%;
+}
+/* ─ 横杠：从竖线接到这一行的折角/文件夹。没有子项的行没有折角，
+   横杠就长一点，直接搭到文件夹图标上，不然中间空一截像断线。 */
+.sh-sidebar .tree-node.has-guide::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--indent, 24px) - 7px);
+  top: 50%;
+  width: 7px;
+  height: 1px;
+  background: var(--sh-tree-line);
+  pointer-events: none;
+}
+.sh-sidebar .tree-node.has-guide.is-leaf::after {
+  width: 29px;
+}
+.sh-sidebar .tree-caret {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--sh-text-4);
+  cursor: pointer;
+  transition: color var(--sh-t-fast) var(--sh-ease), background var(--sh-t-fast) var(--sh-ease);
+}
+.sh-sidebar .tree-caret svg {
+  transition: transform 170ms var(--sh-ease);
+}
+.sh-sidebar .tree-caret.is-open svg {
+  transform: rotate(90deg);
+}
+.sh-sidebar .tree-caret:hover {
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+}
+.sh-sidebar .tree-caret-space {
+  flex: none;
+  width: 15px;
+}
+/* 文件夹：实心带一点填充，不再是一根细线——细线在灰底上几乎看不出是什么 */
+.sh-sidebar .tree-folder {
+  flex: none;
+  color: var(--sh-folder);
+  fill: currentColor;
+  fill-opacity: 0.2;
+  transition: color var(--sh-t-fast) var(--sh-ease), fill-opacity var(--sh-t-fast) var(--sh-ease);
+}
+.sh-sidebar .tree-root .tree-folder {
+  fill-opacity: 0.32;
+}
+.sh-sidebar .tree-item:hover .tree-folder,
+.sh-sidebar .tree-item.active .tree-folder {
+  color: var(--sh-accent);
+  fill-opacity: 0.4;
+}
+
+/* 根目录那一行：当作一段的头，底色 + 边框 + 略高，子项才像"收在它下面" */
+.sh-sidebar .tree-root {
+  height: 38px;
+  margin: 2px 0 4px;
+  border: 1px solid var(--sh-line-soft);
+  background: var(--sh-glass-soft);
+}
+.sh-sidebar .tree-root.active {
+  border-color: rgba(47, 123, 255, 0.22);
+}
+.sh-sidebar .tree-item > .count {
+  flex: none;
+  min-width: 30px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--sh-glass-soft);
+  color: var(--sh-text-4);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.sh-sidebar .tree-root > .count {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+  font-weight: 600;
+}
+.sh-sidebar .tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 根目录那一行是父节点：字重压过子项，一眼看出它是"一层"而不是一条 */
+.sh-sidebar .tree-root .tree-name,
+.sh-sidebar .tree-root .engine-label {
+  font-weight: 600;
+}
+.sh-sidebar .tree-node.sub {
+  font-size: 13px;
+}
+
+/* 「全部音色」后面那一颗重扫：只留图标，行高不因此变高 */
+.sh-sidebar .tree-rescan {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  margin-left: -1px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sh-text-4);
+  cursor: pointer;
+  opacity: 0.75;
+  transition: color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    opacity var(--sh-t) var(--sh-ease);
+}
+.sh-sidebar .tree-item:hover .tree-rescan,
+.sh-sidebar .tree-rescan:focus-visible {
+  opacity: 1;
+}
+.sh-sidebar .tree-rescan:hover {
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+  opacity: 1;
+}
+.sh-sidebar .tree-rescan.is-spinning {
+  color: var(--sh-accent);
+  opacity: 1;
+}
+.sh-sidebar .tree-rescan.is-spinning svg {
+  animation: tree-spin 900ms linear infinite;
+}
+@keyframes tree-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 各页抬头与呼吸：与设置页的 24/20 一档 */
+/* 各页抬头与设置页的 24/20 一档：标题 20px、字距略微收紧 */
+.app-shell[data-mode='app'] .lib-head h1,
+.app-shell[data-mode='app'] .app-panel .panel-head h1,
+.app-shell[data-mode='app'] .synth-head h1 {
+  font-size: 20px;
+  letter-spacing: -0.012em;
+}
+.app-shell[data-mode='app'] .grid-wrap {
+  padding: 6px var(--sh-gutter) 28px;
+}
+.app-shell[data-mode='app'] .app-panel .panel-head,
+.app-shell[data-mode='app'] .synth-head {
+  padding: 18px var(--sh-gutter) 8px;
+}
+.app-shell[data-mode='app'] .app-panel .tabs {
+  padding: 0 var(--sh-gutter);
+}
+.app-shell[data-mode='app'] .app-panel .panel-body {
+  padding: 14px var(--sh-gutter) 28px;
+}
+
+/* 按钮：旧页面的 `.btn` 与设置页的 `.sh-btn.is-ghost` 是同一颗按钮。
+   高度、内边距、字重、悬停反馈都照这一份来——否则同一页里两颗"次要按钮"
+   会差 4px 高、字重也不同，看起来像两个组件库拼起来的。 */
+.app-shell .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--sh-r-sm);
+  border: 1px solid var(--sh-line);
+  background: var(--sh-glass-soft);
+  color: var(--sh-text-2);
+  font-size: 12.6px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition: background var(--sh-t) var(--sh-ease), border-color var(--sh-t) var(--sh-ease),
+    color var(--sh-t) var(--sh-ease), box-shadow var(--sh-t) var(--sh-ease),
+    transform var(--sh-t-fast) var(--sh-ease), opacity var(--sh-t) var(--sh-ease);
+}
+.app-shell .btn:hover:not(:disabled) {
+  background: var(--sh-glass-strong);
+  border-color: var(--sh-accent);
+  color: var(--sh-accent);
+}
+.app-shell .btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.app-shell .btn.primary {
+  color: var(--sh-accent-contrast);
+  background: linear-gradient(135deg, var(--sh-accent), var(--sh-accent-2));
+  border-color: transparent;
+  box-shadow: 0 10px 22px -12px rgba(47, 123, 255, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.app-shell .btn.primary:hover:not(:disabled) {
+  color: var(--sh-accent-contrast);
+  filter: brightness(1.04);
+  box-shadow: 0 14px 26px -12px rgba(47, 123, 255, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.app-shell .btn.danger {
+  color: var(--sh-danger);
+}
+.app-shell .btn.danger:hover:not(:disabled) {
+  border-color: var(--sh-danger);
+  color: var(--sh-danger);
+  background: var(--sh-danger-soft);
+}
+.app-shell .btn.mini {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11.8px;
+  border-radius: var(--sh-r-xs);
+}
+.app-shell .btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* 图标按钮：树行、卡片角上那些。尺寸统一到 26px 方格，
+   与 `.sh-btn.is-icon`（32px）是一族，只是小一号。 */
+.app-shell .icon-btn {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 4px;
+  border-radius: var(--sh-r-xs);
+  color: var(--sh-text-3);
+  background: transparent;
+  transition: color var(--sh-t-fast) var(--sh-ease), background var(--sh-t) var(--sh-ease);
+}
+.app-shell .icon-btn:hover {
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+}
+.app-shell .icon-btn.lit {
+  color: var(--star);
+}
+
+/* 音色卡片：轻玻璃，与设置卡片同一族 */
+.app-shell .card {
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.88) 0%,
+    rgba(255, 255, 255, 0.66) 60%,
+    rgba(246, 251, 255, 0.62) 100%
+  );
+  border-color: var(--sh-glass-border);
+  border-radius: 16px;
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: var(--sh-inset-hi), var(--sh-shadow-1);
+}
+:root[data-theme='dark'] .app-shell .card {
+  background: linear-gradient(165deg, rgba(25, 39, 62, 0.74), rgba(17, 28, 46, 0.6));
+}
+.app-shell .filter-select,
+.app-shell .search,
+.app-shell .tag-chip {
+  border-radius: 10px;
+}
+
+/* 播放小窗：右下角一颗**圆钮**，鼠标移到它上面就展开成一条坞，离开 260ms 后收回。
+   双击固定（常驻展开，盘面右上角出一枚角标），按住可拖到任意位置（存 vh.player.pos），
+   右键回到这里给的默认右下角。收起时它只占一个 48px 的角、内容不为它让位；
+   展开或固定时坞才要那一截让位（下面的 `:has(.player-fold.is-open)`）。 */
+.app-shell .player-fold {
+  position: fixed;
+  left: auto;
+  right: calc(var(--sh-gutter) + var(--sh-pane-offset) + 4px);
+  bottom: 22px;
+}
+/* 坞默认朝左伸（圆钮右边那 10px 是它和圆钮的缝）；圆钮被拖到靠左时改朝右，
+   `data-side` 由组件量过窗口宽度再定。 */
+.app-shell .pb-dock {
+  position: absolute;
+  right: calc(var(--player-chip) + 10px);
+  bottom: 0;
+  width: min(528px, calc(100vw - 32px));
+  max-width: 528px;
+  height: var(--player-h);
+  border-radius: 999px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(12px) scale(0.97);
+  transform-origin: right bottom;
+  pointer-events: none;
+  /* 收起时 visibility 延到动画末尾再翻：翻早了会切断淡出，也提前把按钮交回键盘。 */
+  transition:
+    opacity 170ms var(--sh-ease),
+    transform 210ms var(--sh-ease),
+    visibility 0s linear 210ms;
+}
+.app-shell .player-fold[data-side='r'] .pb-dock {
+  right: auto;
+  left: calc(var(--player-chip) + 10px);
+  transform-origin: left bottom;
+  transform: translateX(-12px) scale(0.97);
+}
+.app-shell .player-fold.is-open .pb-dock {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+.app-shell .player-fold.is-dragging .pb-dock {
+  transition: none;
+}
+/* 圆钮与坞是同一个面：颜色、毛玻璃、阴影一处说定，四套外观各自压平。 */
+.app-shell .player-fold :is(.pb-disc, .pb-dock) {
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(26px) saturate(180%);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  box-shadow: 0 18px 42px -22px rgba(19, 43, 79, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+:root[data-theme='dark'] .app-shell .player-fold :is(.pb-disc, .pb-dock) {
+  background: rgba(18, 29, 48, 0.62);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 42px -22px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.app-shell .pb-disc {
+  color: var(--sh-text-2);
+  transition: color var(--sh-t-fast) var(--sh-ease);
+}
+.app-shell .pb-chip:hover .pb-disc {
+  color: var(--sh-accent);
+}
+/* 焦点环画在盘面上：整颗圆钮只有一个可聚焦元素，环跟着它走。 */
+.app-shell .pb-chip {
+  outline: none;
+}
+.app-shell .pb-chip:focus-visible .pb-disc {
+  color: var(--sh-accent);
+  box-shadow: 0 18px 42px -22px rgba(19, 43, 79, 0.4), 0 0 0 3px var(--sh-accent-ring);
+}
+/* 播放中的呼吸：环在盘面的 ::before 上，压不过盘面自己的浮影。 */
+.app-shell .pb-disc::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+.app-shell .player-fold.is-playing .pb-disc::before {
+  animation: pb-chip-breath 2.6s var(--sh-ease) infinite;
+}
+@keyframes pb-chip-breath {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--sh-accent-soft);
+  }
+  50% {
+    box-shadow: 0 0 0 5px var(--sh-accent-soft);
+  }
+}
+/* 固定态的角标：一眼知道"这条不会自己收回去"。 */
+.app-shell .player-fold.is-pinned .pb-disc::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--sh-accent);
+}
+/* 坞上的按钮与进度条：浮起来以后手要够得着，热区比原来大一号 */
+.app-shell .pb-btn {
+  border-color: var(--sh-line);
+  background: var(--sh-glass-strong);
+  color: var(--sh-text-2);
+}
+.app-shell .pb-btn:hover:not(:disabled) {
+  border-color: var(--sh-accent);
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+}
+.app-shell .pb-btn.close {
+  color: var(--sh-text-4);
+}
+/* 「收藏」「指定」属于"正在放谁"，不属于传输键：小一号，但要看着就点得动——
+   纯图标＋描边＋底色，靠 title 与 aria-label 说清是谁。 */
+.app-shell .pb-btn.pb-act {
+  width: 28px;
+  height: 28px;
+  color: var(--sh-text-3);
+}
+.app-shell .pb-btn.pb-act:hover:not(:disabled) {
+  color: var(--sh-accent);
+}
+.app-shell .pb-btn.pb-act.lit {
+  border-color: var(--star);
+  color: var(--star);
+  background: color-mix(in srgb, var(--star) 14%, transparent);
+}
+.app-shell .pb-seek {
+  height: 12px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  accent-color: var(--sh-accent);
+}
+.app-shell .pb-seek::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 99px;
+  background: var(--sh-track);
+}
+.app-shell .pb-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 9px;
+  height: 9px;
+  margin-top: -3px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--sh-accent);
+  box-shadow: 0 1px 4px rgba(19, 43, 79, 0.35);
+  cursor: pointer;
+  transition: width 130ms var(--sh-ease), height 130ms var(--sh-ease);
+}
+.app-shell .pb-seek:hover::-webkit-slider-thumb {
+  width: 11px;
+  height: 11px;
+  margin-top: -4px;
+}
+.app-shell .pb-seek:disabled::-webkit-slider-thumb {
+  background: var(--sh-text-4);
+}
+.app-shell .pb-seek::-moz-range-track {
+  height: 3px;
+  border-radius: 99px;
+  background: var(--sh-track);
+}
+.app-shell .pb-seek::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--sh-accent);
+}
+.app-shell .pb-label {
+  color: var(--sh-text);
+}
+.app-shell .pb-sub,
+.app-shell .pb-time {
+  color: var(--sh-text-3);
+}
+.app-shell .pb-bub {
+  background: var(--sh-panel);
+  border: 1px solid var(--sh-line);
+  color: var(--sh-text-2);
+  box-shadow: 0 6px 16px -10px rgba(19, 43, 79, 0.5);
+}
+.pb-enter-active,
+.pb-leave-active {
+  transition: opacity 180ms var(--sh-ease), transform 220ms var(--sh-ease-out);
+}
+.pb-enter-from,
+.pb-leave-to {
+  opacity: 0;
+  transform: translateY(12px) scale(0.99);
+}
+/* 让位只在坞真的摊开时发生：收起时那颗 48px 的圆钮不值得整幅内容给它腾地方，
+   腾了反而在底部切出一条横线（那正是从前"看着像被底栏压住"的来源）。
+   设置页的滚动在 `.sh-content` 自己身上（应用页是 `.sh-content-app` 里的各页滚动）：
+   只给它加，应用页不加——那一层是整幅容器，加了就又切出一条横线。 */
+.app-shell.has-player:has(.player-fold.is-open) :is(
+    .grid-wrap,
+    .rows-wrap,
+    .rail-list,
+    .rail-chapters,
+    .synth-col-main,
+    .synth-side,
+    .logview-list
+  ) {
+  padding-bottom: var(--player-space);
+}
+.app-shell.has-player:has(.player-fold.is-open) .sh-content:not(.sh-content-app) {
+  padding-bottom: var(--player-space);
+}
+
+/* 换组时右侧轻轻上浮一下——硬切会像"点空了" */
+.sh-sec {
+  animation: sh-sec-in 240ms var(--sh-ease) both;
+}
+@keyframes sh-sec-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 720px) {
+  /* 窄屏：圆钮仍待在右下角，坞展开成一条贴底的横条（在圆钮上方）。
+     组件在这种宽度下不放开拖动——贴边的横条挪到哪儿都还挡着。 */
+  .app-shell .player-fold {
+    left: var(--sh-gutter);
+    right: var(--sh-gutter);
+    bottom: 16px;
+  }
+  .app-shell .pb-chip {
+    margin-left: auto;
+  }
+  .app-shell .pb-dock,
+  .app-shell .player-fold[data-side='r'] .pb-dock {
+    left: 0;
+    right: 0;
+    bottom: calc(var(--player-chip) + 8px);
+    width: auto;
+    max-width: none;
+  }
+  /* 收起时从底下浮上来一点，不再左右翻（翻给谁看呢，它已经铺满了）。 */
+  .app-shell .player-fold:not(.is-open) .pb-dock {
+    transform: translateY(8px) scale(0.98);
+  }
+  /* 名字与时间码都要地方：让位给标题，两颗动作键与传输键各小一号。 */
+  .app-shell .pb-ident {
+    max-width: none;
+  }
+  .app-shell .pb-btn {
+    width: 27px;
+    height: 27px;
+  }
+  .app-shell .pb-btn.play {
+    width: 30px;
+    height: 30px;
+  }
+  .app-shell .pb-btn.pb-act {
+    width: 26px;
+    height: 26px;
+  }
+}
+
+/* 导航上的角标（原先挂在左栏「日志」那一行，现在跟着导航走） */
+.sh-nav-badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--sh-warn);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--sh-glass-strong, rgba(255, 255, 255, 0.8));
+}
+
+/* 手机端：抬头放不下按钮时整行折下去，按钮铺满一行 */
+@media (max-width: 720px) {
+  .sh-sec-head {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  /* 放不下才折行：折下去时按钮靠右，不铺满整行 */
+  .sh-sec-meta {
+    margin-left: auto;
+  }
+}
+
+/* ============================================================================
+ * 音色详情：居中对话框
+ * 抬头是一段概览（大封面 / 名字 / 分类与来源 / 一排属性 chips），正文左右两栏
+ * （左：信息与位置，右：样例与生成），窄屏并成一栏。
+ *
+ * 取的是参考界面**层次关系**：先"这是谁"（大封面 + 名字 + 一排彩色属性），
+ * 再"能做什么"（样例、生成）。没取它的展示结构（页签、底部大按钮、装饰波形）：
+ * 这一页要又听又改，页签会把"听着改"的对照关系切断，而波形没有数据支撑。
+ * ==========================================================================*/
+.vh-root {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 30px;
+  background: rgba(16, 31, 56, 0.26);
+  backdrop-filter: blur(7px) saturate(120%);
+  -webkit-backdrop-filter: blur(7px) saturate(120%);
+}
+:root[data-theme='dark'] .vh-root {
+  background: rgba(4, 10, 20, 0.58);
+}
+
+/* 设置页里的编辑弹窗：抬头 / 可滚动主体 / 底部动作，三处（服务、词表、文案）共用。
+   主体自己滚，抬头与底部动作不动——表单再长，保存键也不该被推到视野外。 */
+.sh-dialog {
+  width: min(720px, 100%);
+}
+.sh-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+.sh-dialog-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--sh-text);
+}
+.sh-dialog-body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 20px 18px;
+  overflow-y: auto;
+}
+.sh-dialog-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--sh-line-soft);
+}
+
+.vh-modal {
+  width: min(740px, 100%);
+  max-height: min(86vh, 900px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
+  border: 1px solid var(--sh-glass-border);
+  /* 一点纵向渐变：上面更亮、下面收到页面底色里，边就不再是一条硬线。 */
+  background: linear-gradient(180deg, #fdfeff 0%, #f6faff 100%);
+  box-shadow: 0 42px 96px -44px rgba(15, 35, 65, 0.55), var(--sh-inset-hi);
+  overflow: hidden;
+  outline: none;
+}
+:root[data-theme='dark'] .vh-modal {
+  background: linear-gradient(180deg, #131f33 0%, #0f1929 100%);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+/* 各弹层的抬头都是「标题 + 关闭」两段，关闭键统一推到最右；
+   绝对定位的那颗（分章弹窗）不受影响。 */
+.vh-modal > header > .sh-btn.is-icon {
+  margin-left: auto;
+}
+
+/* ---- 抬头：这是谁 ---- */
+.vh-hero {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 22px 22px 18px 24px;
+  /* 右上角一团极淡的强调色光晕：抬头的边界由亮度差说，不靠一根分隔线。 */
+  background:
+    radial-gradient(120% 150% at 100% 0%, var(--sh-accent-soft) 0%, transparent 58%),
+    linear-gradient(180deg, rgba(233, 242, 255, 0.55), rgba(255, 255, 255, 0));
+}
+:root[data-theme='dark'] .vh-hero {
+  background:
+    radial-gradient(120% 150% at 100% 0%, rgba(47, 123, 255, 0.16) 0%, transparent 58%),
+    linear-gradient(180deg, rgba(24, 38, 60, 0.85), rgba(17, 28, 46, 0));
+}
+.vh-cover {
+  flex: none;
+  width: 76px;
+  height: 76px;
+  border-radius: 22px;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 30px;
+  font-weight: 700;
+  box-shadow: 0 12px 28px -18px rgba(16, 31, 56, 0.65);
+}
+/* 头像也是播放键：整颗头像是一颗按钮（与卡片上的那一套），徽标 hover / 键盘聚焦才
+   浮现、播放中常亮；没有主样例时不摆徽标，整颗头像退回展示（bare）。 */
+.vh-cover-btn {
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  line-height: 0;
+  border-radius: 22px;
+  cursor: pointer;
+}
+.vh-cover-btn.bare { cursor: default; }
+.vh-cover-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vh-cover-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  color: #fff;
+  background: var(--sh-scrim);
+  opacity: 0;
+  transition: opacity 0.12s ease, background-color 0.18s ease;
+}
+.vh-cover-btn:hover .vh-cover-play,
+.vh-cover-btn:focus-visible .vh-cover-play { opacity: 1; }
+/* 与卡片同一条规则：正在播只加深一档，不拿实色盖住头像。 */
+.vh-cover-play.playing { opacity: 1; background: var(--sh-scrim-on); }
+.vh-hero-main {
+  min-width: 0;
+  flex: 1;
+}
+.vh-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.vh-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.014em;
+  color: var(--sh-text);
+  line-height: 1.25;
+}
+/* 名字就是名称：点一下就地改。悬停浮出一层极淡的底，说明它是可点的，
+   但不加边框、不加铅笔图标——标题不该长得像个输入框。 */
+.vh-title.is-editable {
+  cursor: pointer;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border-radius: 8px;
+  transition: background var(--sh-t) var(--sh-ease);
+}
+.vh-title.is-editable:hover {
+  background: var(--sh-hover);
+}
+/* 标题那一格用的还是就地编辑组件：字号跟标题走，行高收一点。 */
+.vh-title-input {
+  width: 100%;
+  padding: 2px 6px;
+  margin-left: -6px;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.014em;
+  line-height: 1.25;
+  color: var(--sh-text);
+}
+/* 分类 / 来源：与下面那排属性 chip 分两层——它们是"归在哪"，不是"什么声音"。 */
+.vh-pill {
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.7;
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+.vh-pill.is-ghost {
+  background: transparent;
+  border: 1px solid var(--sh-line);
+  color: var(--sh-text-3);
+}
+/* 属性 chip：色调与表单里那几颗下拉一致（同一个"日语"在两处同色）。 */
+.vh-traits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 9px;
+}
+/* 这一行是**带底色的胶囊**（和样例行里那些标签同一套），但去掉前面的点与后面的箭头：
+   一条属性就是一颗安静的小胶囊，不长得像下拉框。空着写「＋ 语言」，表示这里能加。 */
+.vh-traits .vchip {
+  padding: 1px 8px;
+  border-color: transparent;
+  background: var(--tone-bg, var(--chip-gray-bg));
+  color: var(--tone-fg, var(--muted));
+  font-size: 11px;
+  font-weight: 500;
+  transition: color var(--sh-t) var(--sh-ease), box-shadow var(--sh-t) var(--sh-ease);
+}
+.vh-traits .vchip:hover {
+  box-shadow: 0 0 0 1px var(--tone-fg, var(--muted));
+}
+.vh-traits .vchip.is-blank {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--sh-line);
+  color: var(--sh-text-4);
+  font-weight: 400;
+}
+.vh-traits .vchip.is-blank:hover {
+  color: var(--sh-accent);
+  box-shadow: inset 0 0 0 1px var(--sh-accent-ring);
+}
+/* 点与箭头在弹窗里一律不画：属性的"能改"由悬停的一圈细边说明。 */
+.vh-modal .vchip-dot,
+.vh-modal .vchip-caret {
+  display: none;
+}
+/* 右上角那一排：打开目录 / 隐藏 / 移除 ｜ 收藏 / 关闭。都是图标 + 悬停说明。 */
+.vh-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.vh-actions-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--sh-line);
+}
+.vh-icon.is-danger:hover {
+  color: var(--sh-danger);
+  background: var(--sh-danger-soft);
+}
+.vh-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--sh-text-3);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--sh-t-fast) var(--sh-ease), background var(--sh-t-fast) var(--sh-ease);
+}
+.vh-icon:hover {
+  color: var(--sh-text);
+  background: var(--sh-hover);
+}
+.vh-icon.is-lit {
+  color: #d99a2b;
+}
+
+/* ---- 正文：两栏 ---- */
+/* 正文只有一列：管理动作都收进抬头右上角了，这里只负责"听"。
+   窄一档之后样例那一行也不挤——它本来就是本页唯一要读的东西。 */
+.vh-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 22px 22px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sh-line) transparent;
+}
+.vh-body::-webkit-scrollbar {
+  width: 10px;
+}
+.vh-body::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 99px;
+  background: var(--sh-line);
+  background-clip: content-box;
+}
+/* 段落标题：**直接落在正文面上**，不再包一层卡片。
+   音频条自己带边框与白底，外层再垫一块底板就成了「底板 + 条」的双层容器——
+   条与板之间那两圈内边距白白吃掉正文宽度，而这一页最窄的那块正是样例行。 */
+.vh-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.vh-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 2px;
+  color: var(--sh-text-3);
+}
+.vh-sec-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--sh-text-2);
+}
+/* 「生成样例」是标题行最右端的一颗按钮：它是"往这份列表里再加一条"的动作，
+   与标题同一行，不另占一段。`spacer` 把按钮顶到最右。 */
+.vh-sec-head .spacer {
+  flex: 1;
+}
+.vh-gen-btn {
+  position: relative;
+  flex: none;
+}
+/* 「顺序播放」与「生成样例」并排：一个只画图标（听这一份），一个写着字（往里加一条）。 */
+.vh-seq-btn {
+  flex: none;
+  padding: 3px 5px;
+}
+/* 参数调过就在这颗按钮上点一颗小点：参数收进窗口之后，这是标题行上
+   唯一能看出"这次不是全默认"的地方。 */
+.vh-gen-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+/* 属性都在抬头里改（见 `DetailPanel.vue`）：名字后面一颗性别圆标、一排可点的
+   语言/年龄/标签胶囊。这里只把圆标放大到与 21px 标题相称——18px 那档是卡片上的尺寸。 */
+.vh-title-row .vgender-btn {
+  width: 22px;
+  height: 22px;
+}
+.vh-title-row .vgender-btn svg {
+  width: 14px;
+  height: 14px;
+}
+/* 值那一行的箭头只在悬停/聚焦时浮现：常驻的 ▾ 会把每一颗胶囊都说成"下拉框"。 */
+.vh-traits .vchip-caret {
+  opacity: 0;
+  transition: opacity var(--sh-t) var(--sh-ease);
+}
+.vh-traits .vchip:hover .vchip-caret,
+.vh-traits .vchip:focus-visible .vchip-caret {
+  opacity: 0.5;
+}
+/* 就地可编辑的一段字：**没有输入框的样子**。
+   平时与正文同色同高、透明底；悬停浮出一层很淡的底，聚焦才给边框与光环——
+   "这里能改"由交互回答，不由一个常驻的方框宣告。 */
+.vinline {
+  display: block;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--sh-text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 6px 9px;
+  /* 文字左边界与同一列里的其它内容对齐（负边距抵掉内边距） */
+  margin-left: -9px;
+  outline: 0;
+  resize: none;
+  overflow: hidden;
+  transition: background var(--sh-t) var(--sh-ease), border-color var(--sh-t) var(--sh-ease),
+    box-shadow var(--sh-t) var(--sh-ease);
+}
+.vinline::placeholder {
+  color: var(--sh-text-4);
+}
+.vinline:hover {
+  background: var(--sh-hover);
+}
+/* 正在改：底色提亮 + 一圈很淡的环。挂在状态类上（不是 `:focus`），
+   原因见 `InlineText.vue` 里 `editing` 那段的注释。 */
+.vinline.is-editing,
+.vinline:focus {
+  outline: none;
+  background: var(--sh-field-focus);
+  border-color: var(--sh-accent-ring);
+  box-shadow: 0 0 0 3px var(--sh-accent-soft);
+}
+.vinline.is-multiline {
+  min-height: 34px;
+}
+/* 抬头里那段描述：紧接着名字，是这个音色"是什么味道"的一句话。
+   同一套无框编辑，字号比属性胶囊大、比标题小；宽度跟着段落走，不拉满整行。 */
+.vh-lead {
+  margin-top: 2px;
+  max-width: 66ch;
+  font-size: 13px;
+  line-height: 1.66;
+  color: var(--sh-text-2);
+}
+/* ---- 音频样例：文字在左、控制串在右 ----
+ * 左「这段在说什么」（说话内容一行 + 情绪与标签一行）/ 右「波形 · 秒数 · 播放 ·
+ * 主样例 · 更多」。
+ *
+ * 控制串整体贴右：它是一组**控制**，就该跟内容分开站——从前把圆钮摆在正中，
+ * 左边空一大块、右边又挤一串字。两段都 `align-items: center`，共用同一条水平
+ * 中轴线：文字不会比圆钮低半行，情绪标签也不会单独往下掉。
+ * 高度只由 `min-height` + 内边距定，不用固定 width、不用绝对定位拼。
+ */
+.sample-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sample {
+  display: grid;
+  /* 左列吃掉剩余宽度，右列按内容收：文字再长也只在自己的列里收（`minmax(0, …)`），
+     控制串的位置由它自己的内容定，两边互不推挤。 */
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 16px;
+  min-height: 56px;
+  padding: 7px 12px 7px 14px;
+  border: 1px solid var(--sh-line);
+  border-radius: 14px;
+  background: #ffffff;
+  cursor: pointer;
+  position: relative;
+  transition: border-color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    box-shadow var(--sh-t) var(--sh-ease);
+}
+.sample:hover {
+  border-color: var(--sh-accent-ring);
+  box-shadow: 0 12px 26px -24px rgba(19, 43, 79, 0.55);
+}
+.sample:focus-visible {
+  outline: 2px solid var(--sh-accent);
+  outline-offset: 2px;
+}
+/* 正在放的那一条：底色几乎不变，只把边提亮——播放状态由圆钮说，不再染色整条。 */
+.sample.is-playing {
+  border-color: var(--sh-accent-ring);
+  background: #fbfdff;
+}
+/* 主样例：浅蓝底 + 细蓝描边 + 左侧一根蓝色竖条。三点一起说"这一条被指定了"，
+   但**不带**「设为主样例」那类按钮的长相——状态与操作不能共用一个外观。 */
+.sample.is-main {
+  border-color: var(--sh-accent-ring);
+  background: linear-gradient(180deg, #f7fbff 0%, #eef6ff 100%);
+}
+.sample.is-main::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 11px;
+  bottom: 11px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--sh-accent);
+}
+
+/* ---- 左：两行 ----
+   第一行是说话内容（就地可改），第二行只有情绪与标签。两行同一条左边界，
+   行距 3px，整块在这条的中轴线上居中。 */
+.sample-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.sample .sample-text {
+  padding: 3px 6px;
+  margin-left: -6px;
+  font-size: 13.5px;
+  font-weight: 550;
+  line-height: 1.45;
+  color: var(--sh-text);
+  /* 一句话读不完时收成省略号，绝不换行、绝不挤压右侧操作区 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 第二行不换行：条的高度因此是统一的，圆钮与右栏也就不会跟着上下飘。
+   标签多到放不下时在左栏边界处截断（右栏与圆钮的位置优先保住）。 */
+.sample-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+.sample-meta .vchip {
+  flex: none;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+.sample-meta .vtag-field {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+/* 生成这一段时用的参数：一行灰字，**只读**——它是那次调用的记录，不是设置。 */
+.sample-params {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--sh-text-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 右：控制串（波形 → 秒数 → 播放 → 主样例 → 更多） ----
+   整体贴右、垂直居中：每一项的基线因此永远对得上。`flex: none` 一项都不许缩——
+   缩了就会先挤波形、再挤圆钮，位置就不稳了。 */
+.sample-side {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 10px;
+  flex: none;
+}
+/* 波形：从音频本身算出来的一片，上下对称。竖条那版在 46px 里塞 18 根 1px 的条，
+   每根都被压到亚像素，看着就是一把梳子；SVG 面积图不受分辨率限制。 */
+.vwave {
+  flex: none;
+  display: block;
+  position: relative;
+  width: 64px;
+  height: 26px;
+  color: var(--sh-accent);
+  opacity: 0.55;
+  transition: opacity var(--sh-t) var(--sh-ease);
+}
+.sample:hover .vwave {
+  opacity: 0.8;
+}
+.sample.is-playing .vwave {
+  opacity: 1;
+}
+.vwave svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* 上下两端淡出：中间实、两头虚，看起来是一段声音的轮廓，不是一块色块。 */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 26%, #000 74%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 26%, #000 74%, transparent 100%);
+}
+.vwave-fill {
+  fill: currentColor;
+  opacity: 0.34;
+}
+.vwave-edge {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+  opacity: 0.85;
+  /* 视口被横向拉伸，描边得按屏幕像素算，不然宽了会变成一条粗边。 */
+  vector-effect: non-scaling-stroke;
+}
+/* 已播的那一截：同一片形状再叠一层，比例由组件写 `clip-path` 截出来。
+   **底层压暗**而不是叠亮——亮起来的必须是"已经听过的那一段"，不是"整条更亮"。 */
+.vwave.is-part > svg:not(.vwave-on) {
+  opacity: 0.4;
+}
+.vwave-on {
+  position: absolute;
+  inset: 0;
+}
+.sample-dur {
+  min-width: 34px;
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--sh-text-3);
+  font-variant-numeric: tabular-nums;
+}
+/* 播放圆钮：柔和的蓝紫渐变 + 一层内高光 + 一圈有色投影。
+   平涂一个 #2f7bff 太"按钮"了；渐变让它在浅色面上有一点体积，像一颗按下会亮的实体键。 */
+.sample-play-btn {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  background:
+    radial-gradient(120% 120% at 32% 16%, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 58%),
+    linear-gradient(135deg, #6ba6ff 0%, #4a7bff 46%, #7c6cff 100%);
+  box-shadow:
+    0 10px 20px -12px rgba(58, 104, 255, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: transform var(--sh-t) var(--sh-ease), box-shadow var(--sh-t) var(--sh-ease),
+    filter var(--sh-t) var(--sh-ease);
+}
+/* 悬停 / 按下 / 播放中：三档都要看得出区别，否则点下去像没反应。 */
+.sample-play-btn:hover {
+  filter: brightness(1.06);
+  transform: scale(1.06);
+  box-shadow:
+    0 14px 26px -12px rgba(58, 104, 255, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.sample-play-btn:active {
+  transform: scale(0.94);
+}
+.sample-play-btn:focus-visible {
+  outline: 2px solid var(--sh-accent);
+  outline-offset: 3px;
+}
+/* 播放中：渐变换成偏紫的一档 + 外面套一圈很淡的环，形状不动（位置不能跳）。 */
+.sample.is-playing .sample-play-btn,
+.sample-play-btn.is-on {
+  background:
+    radial-gradient(120% 120% at 32% 16%, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 58%),
+    linear-gradient(135deg, #8f7dff 0%, #6a6cff 46%, #3fa8ff 100%);
+  box-shadow:
+    0 0 0 4px rgba(100, 122, 255, 0.14),
+    0 12px 24px -12px rgba(96, 104, 255, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+/* 主样例：**一颗按钮两副长相**。
+   没指定 = 灰描边、字灰；已指定 = 蓝紫渐变、白字、带勾，且点了也没用（`disabled`）。
+   字数不同（设为主样例 / 主样例），所以宽度给最小值、内容居中——
+   盒子一样宽，播放钮才不会被这一格推来推去。 */
+.sample-main {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 88px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--sh-line);
+  border-radius: 9px;
+  background: #ffffff;
+  color: var(--sh-text-3);
+  font-family: inherit;
+  font-size: 11.5px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--sh-t-fast) var(--sh-ease), border-color var(--sh-t-fast) var(--sh-ease),
+    background var(--sh-t-fast) var(--sh-ease), box-shadow var(--sh-t-fast) var(--sh-ease);
+}
+.sample-main:hover:not(:disabled) {
+  border-color: var(--sh-accent-ring);
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+.sample-main.is-on {
+  border-color: transparent;
+  background: linear-gradient(135deg, #5f9dff 0%, #6a6cff 55%, #8f7dff 100%);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 8px 18px -12px rgba(78, 110, 255, 0.95);
+}
+/* 已指定那颗不许点（要换就点别的那颗），但**不能变灰**——灰了就与"没指定"一个样。 */
+.sample-main.is-on:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.sample-more {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sh-text-3);
+  cursor: pointer;
+  transition: color var(--sh-t-fast) var(--sh-ease), background var(--sh-t-fast) var(--sh-ease);
+}
+.sample-more:hover {
+  color: var(--sh-text);
+  background: var(--sh-hover);
+  border-color: var(--sh-line);
+}
+.sample-more:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* 这几项住在 `body` 上的弹层里（`Popover` teleport 出去，不在 `.app-shell` 内），
+   所以只能取全局那套令牌：`--sh-*` 在 `.app-shell` 之外是空的，
+   写 `var(--sh-text-2)` 会一路落到继承值——从前这一列菜单其实没有自己的颜色。 */
+/* 菜单里两项一个长相：都是两个字、都是正文色（不是弱化色，也不是危险色）。
+   移除确实动磁盘，但那句话在确认框里说——菜单上染色会让两条看着像两类动作。 */
+.sample-menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.sample-menu-item:hover {
+  background: var(--hover);
+}
+.sample-menu-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+:root[data-theme='dark'] .sample,
+:root[data-theme='dark'] .sample:hover,
+:root[data-theme='dark'] .sample.is-playing {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+:root[data-theme='dark'] .sample:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+/* 深色下强调色的透明度得抬一档，否则"主样例"和别的几条看起来一样。 */
+:root[data-theme='dark'] .sample.is-main {
+  background: linear-gradient(180deg, rgba(47, 123, 255, 0.17), rgba(47, 123, 255, 0.09));
+  border-color: rgba(47, 123, 255, 0.42);
+}
+/* 没指定的那颗：深色底 + 亮一档的字；已指定的那颗两种主题共用同一套渐变。 */
+:root[data-theme='dark'] .sample-main:not(.is-on) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+:root[data-theme='dark'] .sample-main:hover:not(:disabled) {
+  background: rgba(47, 123, 255, 0.2);
+  border-color: rgba(47, 123, 255, 0.55);
+  color: #cfe0ff;
+}
+:root[data-theme='dark'] .vwave {
+  color: #7ea6ff;
+}
+.vh-body .readonly-line input {
+  border-color: var(--sh-line);
+  background: var(--sh-field);
+  color: var(--sh-text);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* ---- 进出场 ---- */
+.vh-modal-enter-active,
+.vh-modal-leave-active {
+  transition: opacity 180ms var(--sh-ease);
+}
+.vh-modal-enter-active .vh-modal,
+.vh-modal-leave-active .vh-modal {
+  transition: transform 240ms var(--sh-ease-out), opacity 200ms var(--sh-ease);
+}
+.vh-modal-enter-from,
+.vh-modal-leave-to {
+  opacity: 0;
+}
+.vh-modal-enter-from .vh-modal,
+.vh-modal-leave-to .vh-modal {
+  opacity: 0;
+  transform: translateY(12px) scale(0.985);
+}
+
+@media (max-width: 900px) {
+  .vh-root {
+    padding: 16px;
+  }
+  .vh-modal {
+    max-height: 92vh;
+  }
+  .vh-hero {
+    padding: 16px 14px 14px 16px;
+    gap: 13px;
+  }
+  /* 窄屏上"打开目录 / 隐藏 / 移除"三个动作会挤到名字旁边：让这一排自己折下去，
+     仍然贴右，不压在标题上。 */
+  .vh-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 150px;
+  }
+  .vh-cover {
+    width: 58px;
+    height: 58px;
+    border-radius: 17px;
+    font-size: 23px;
+  }
+  .vh-title {
+    font-size: 18px;
+  }
+  .vh-body {
+    padding: 8px 16px 22px;
+  }
+  .sample {
+    column-gap: 12px;
+    padding: 8px 10px 8px 12px;
+  }
+}
+
+@media (max-width: 700px) {
+  /* 窄屏先让波形走：它只是辅助信息，而播放圆钮与"说什么"这两样一个都不能少。 */
+  .vwave {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  /* 再窄一档：时长让位（它在右栏里最可省），主样例状态与播放圆钮保留。 */
+  .sample-dur {
+    display: none;
+  }
+  .sample-side {
+    gap: 6px;
+  }
+}
+
+/* 大屏（2K / 4K）：左栏那棵树也跟着长。214px 在 4K 上会把"明日方舟""处理后"
+   这类名字挤成两行，而且与旁边 330px 的卡片列不成比例。 */
+@media (min-width: 1700px) {
+  .app-shell {
+    --sh-rail-w: 260px;
+  }
+}
+@media (min-width: 2300px) {
+  .app-shell {
+    --sh-rail-w: 300px;
+  }
+}
+
+/* 生产方工作区：左栏上半是音色卡片，下半是章节列表。
+   卡片列自己会滚，章节列表固定占一段——两段各自滚，整列不滚。 */
+.sh-nav-glyph {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  background: currentColor;
+  -webkit-mask: var(--glyph) center / contain no-repeat;
+  mask: var(--glyph) center / contain no-repeat;
+}
+/* 创作页：结构树仍占壳的第二列；卡片列是内容区最左的一列，整列归音色栏。
+   章节栏在插件工作区里、正文右侧。 */
+.producer-layout {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  gap: 0;
+  padding: 0 clamp(22px, 2vw, 40px);
+}
+.producer-layout > .app-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.producer-cards {
+  flex: 0 0 206px;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 8px 0;
+  border-right: 1px solid var(--sh-line-soft);
+}
+.producer-cards > .synth-rail {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 4px 0 0;
+}
+/* 章节表与行表都要一行一行读，窗口再宽也不铺满。 */
+.app-page[data-page='producer'] {
+  max-width: 1800px;
+  margin-inline: auto;
+}
+/* audio.cpp 是单列运行时管理页：没有结构树与音色栏，整页收到一列表单的宽度，
+   不然宽屏上实例行的状态和端口会被推到屏幕两端。 */
+.app-page[data-page='producer'][data-producer='audiocpp'] {
+  max-width: var(--sh-page-max);
+}
+/* 导航列占了左侧半格：把这一半从左边让掉，窄下来的页面才落在屏幕中间。 */
+@media (min-width: 1600px) and (max-width: 2399.98px) {
+  .app-page[data-page='producer'][data-producer='audiocpp'] {
+    margin-left: max(0px, calc((100% - var(--sh-page-max)) / 2 - var(--sh-nav-w) / 2));
+    margin-right: auto;
+  }
+}
+
+/* 宽屏（2K / 4K）：三栏工作台（结构树 / 音色卡片 / 正文）整块居中，
+   不再让内容贴着左栏、右边空一大片。卡片列与生成页同一档宽度。 */
+@media (min-width: 2400px) {
+  .app-shell[data-mode='app'] .sh-pane {
+    width: 100%;
+    max-width: calc(var(--sh-rail-w) + 1800px + var(--sh-gutter) * 2);
+    margin-inline: auto;
+    /* 去掉导航列带来的半格偏移：三栏整块对准视口中心。 */
+    transform: translateX(calc(var(--sh-nav-w) / -2));
+  }
+}
+
+@media (min-width: 1700px) {
+  .producer-cards {
+    flex-basis: clamp(220px, 10vw, 330px);
+  }
+}
+
+/* 电脑端：卡片列与目录树接壤。1080p 上原先那 38px 页边把整排三栏推向右侧，
+   去掉左边距后卡片贴着树，主体落回视口中心附近。窄屏/手机仍保留原留白。 */
+@media (min-width: 1241px) {
+  .app-page[data-page='synth'] .synth-body {
+    padding-left: 0;
+  }
+  .app-page[data-page='producer'] .producer-layout {
+    padding-left: 0;
+  }
+  /* 卡片列只留分隔线，不再留右内边距：生成页与创作页的卡片因此同宽，
+     那 8px 不会变成卡片与分隔线之间的一条空带。 */
+  .app-page[data-page='producer'] .producer-cards {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}

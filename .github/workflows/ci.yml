@@ -1,0 +1,67 @@
+# 三件事分开跑：静态检查最快；界面类型与构建自成一套工具链；后端测试必须在 Windows 上跑
+# （DPAPI 密钥保护、GBK 批处理、托盘壳都只在 Windows 上成立）。
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# runner 默认控制台是 cp1252：带中文的断言消息与 print 在 Windows 上会 UnicodeEncodeError。
+env:
+  PYTHONUTF8: "1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check app/ tests/ scripts/
+
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: uv sync
+      # 界面要真建一次：`/` 与静态资源的用例读的是 `web/dist`，缺它等于跳过半个应用
+      # （`test_the_local_machine_never_needs_the_token` 就是这么红的：404 而不是 200）。
+      - name: 构建界面
+        run: uv run python scripts/ensure_web.py
+      # 合并、字幕、导出、响度这些用例要真跑 ffmpeg。runner 上没有，自己取——顺带说明
+      # 为什么不能只靠 skip：跳过的是「能不能合并」这类主路径，跳过等于永远不验。
+      - name: 取 ffmpeg
+        shell: pwsh
+        run: |
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"
+          $zip = Join-Path $env:RUNNER_TEMP "ffmpeg.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $out = Join-Path $env:RUNNER_TEMP "ffmpeg"
+          Expand-Archive -Path $zip -DestinationPath $out -Force
+          $exe = Get-ChildItem $out -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $exe) { throw "压缩包里没有 ffmpeg.exe" }
+          $exe.DirectoryName >> $env:GITHUB_PATH
+          & $exe.FullName -version | Select-Object -First 1
+      - run: uv run pytest
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build

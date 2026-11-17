@@ -1,0 +1,1241 @@
+/* ============================================================================
+ * 素瓷 · 青釉（data-look="celadon"）
+ *
+ * 一套"轻"的材质：冷白瓷面 + 一点青釉。
+ *   - 没有纸纹、印章、双线、网格；层次靠留白、釉色块和很软的青调阴影
+ *   - 线只留发丝级；面板是一张釉面白瓷，顶部有一道内高光
+ *   - 标题无衬线，数字用等宽；强调色只有青釉，按钮是釉色渐变
+ *   - 圆角 8–16px，控件是柔和的胶囊/圆角矩形，不切直角也不用发光
+ *
+ * 令牌仍在 :root 上覆盖；硬编码的渐变/圆角/模糊在这里按选择器收回。
+ * 选择器统一带 `:root[data-look='celadon'] .app-shell` 前缀：
+ * Vue scoped 样式是"类 + data-v"两票，前缀三票才能稳定压过它们。
+ * ==========================================================================*/
+
+:root[data-look='celadon'] {
+  /* ---- 颜色（浅色 · 瓷）---- */
+  --sh-text: #182a25;
+  --sh-text-2: #344b44;
+  --sh-text-3: #4c625a;
+  --sh-text-4: #5b6f67;
+
+  --sh-accent: #2a6f5e;
+  --sh-accent-2: #347e6b;
+  --sh-accent-soft: rgba(42, 111, 94, 0.1);
+  --sh-accent-soft-2: rgba(42, 111, 94, 0.18);
+  --sh-accent-ring: rgba(42, 111, 94, 0.22);
+  --sh-accent-contrast: #ffffff;
+
+  --sh-canvas: #eef4f1;
+  --sh-panel: #ffffff;
+  --sh-chip: #f1f6f3;
+  --sh-mask: rgba(16, 38, 32, 0.24);
+  --sh-mask-strong: rgba(16, 38, 32, 0.36);
+  --sh-toast-bg: #162a23;
+  --sh-toast-text: #f2faf6;
+
+  --sh-glass: rgba(255, 255, 255, 0.82);
+  --sh-glass-soft: #f7faf8;
+  --sh-glass-strong: #ffffff;
+  --sh-glass-border: rgba(255, 255, 255, 0.9);
+  --sh-line: rgba(24, 42, 37, 0.1);
+  --sh-line-soft: rgba(24, 42, 37, 0.065);
+  --sh-line-strong: rgba(24, 42, 37, 0.18);
+  --sh-tree-line: rgba(42, 111, 94, 0.24);
+  --sh-folder: #4c8f7d;
+  --sh-field: #edf3f0;
+  --sh-field-focus: #ffffff;
+  --sh-hover: #f3f8f5;
+  --sh-track: #dce8e2;
+
+  --sh-ok: #2b7a5f;
+  --sh-ok-soft: rgba(43, 122, 95, 0.12);
+  --sh-warn: #8d6a24;
+  --sh-warn-soft: rgba(141, 106, 36, 0.12);
+  --sh-danger: #a94a37;
+  --sh-danger-soft: rgba(169, 74, 55, 0.1);
+
+  /* 釉面高光与带青的投影：白面不是纯平，边缘有一道几乎看不见的釉光。 */
+  --sh-shadow-1: 0 1px 2px rgba(16, 38, 32, 0.04), 0 18px 36px -28px rgba(42, 111, 94, 0.45);
+  --sh-shadow-2: 0 28px 64px -36px rgba(16, 38, 32, 0.45);
+  --sh-shadow-pop: 0 10px 26px -18px rgba(16, 38, 32, 0.35);
+  --sh-inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  --sh-field-inset: inset 0 1px 2px rgba(16, 38, 32, 0.045);
+
+  /* ---- 形状：瓷器的边是磨圆的 ---- */
+  --sh-r-2xs: 7px;
+  --sh-r-xs: 9px;
+  --sh-r-sm: 10px;
+  --sh-r-md: 13px;
+  --sh-r-lg: 16px;
+  --sh-r-xl: 18px;
+  --sh-radius-card: 15px;
+  --sh-radius-inner: 10px;
+
+  --sh-font-mono: 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
+
+  /* 釉色按钮与顶部釉口 */
+  --sh-glaze: linear-gradient(180deg, #347e6b, #2a6f5e);
+  --sh-glaze-hi: linear-gradient(180deg, #3b8975, #2f7664);
+  --sh-glaze-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 6px 14px -9px rgba(42, 111, 94, 0.7);
+  --sh-glaze-shadow-hi: inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 8px 18px -10px rgba(42, 111, 94, 0.8);
+  --sh-rim: linear-gradient(90deg, transparent, var(--sh-accent-2) 16%, #b9e0d1 48%, transparent 86%);
+  --sh-rail-wash: linear-gradient(180deg, rgba(42, 111, 94, 0.055), rgba(42, 111, 94, 0) 240px);
+
+  --star: #a8862f;
+
+  /* 分类色：同一套色相压到瓷的冷调上，不抢青釉 */
+  --tone-gray-bg: #eef3f0;
+  --tone-gray-fg: #5a6d65;
+  --tone-blue-bg: #e6f0f2;
+  --tone-blue-fg: #3c6673;
+  --tone-indigo-bg: #e9ecf3;
+  --tone-indigo-fg: #4e5a74;
+  --tone-pink-bg: #f4e8e6;
+  --tone-pink-fg: #944f47;
+  --tone-amber-bg: #f4eedf;
+  --tone-amber-fg: #83662c;
+  --tone-coral-bg: #f5e7e2;
+  --tone-coral-fg: #9c5641;
+  --tone-teal-bg: #e2f0eb;
+  --tone-teal-fg: #2f6b5e;
+  --tone-green-bg: #e7f0e8;
+  --tone-green-fg: #42684f;
+  --tone-purple-bg: #ece9f1;
+  --tone-purple-fg: #5e5578;
+}
+
+/* 强调色预设和素瓷无关：青釉是这一套视觉的一部分。
+   直接写在 .app-shell 上，才压得过 theme.css 的 [data-accent] 预设。 */
+.app-shell[data-look='celadon'] {
+  --sh-accent: #2a6f5e;
+  --sh-accent-2: #347e6b;
+  --sh-accent-soft: rgba(42, 111, 94, 0.1);
+  --sh-accent-soft-2: rgba(42, 111, 94, 0.18);
+  --sh-accent-ring: rgba(42, 111, 94, 0.22);
+  --sh-accent-contrast: #ffffff;
+}
+
+/* ---- 深色 · 夜釉 ---- */
+:root[data-look='celadon'][data-theme='dark'] {
+  --sh-text: #e6efea;
+  --sh-text-2: #c2d2ca;
+  --sh-text-3: #a3b8af;
+  --sh-text-4: #93a9a0;
+
+  --sh-accent: #86cdb6;
+  --sh-accent-2: #9ad7c2;
+  --sh-accent-soft: rgba(134, 205, 182, 0.12);
+  --sh-accent-soft-2: rgba(134, 205, 182, 0.22);
+  --sh-accent-ring: rgba(134, 205, 182, 0.24);
+  --sh-accent-contrast: #10241d;
+
+  --sh-canvas: #101c18;
+  --sh-panel: #16241f;
+  --sh-chip: #1a2b25;
+  --sh-mask: rgba(0, 0, 0, 0.55);
+  --sh-mask-strong: rgba(0, 0, 0, 0.68);
+  --sh-toast-bg: #22362e;
+  --sh-toast-text: #eef8f3;
+
+  --sh-glass: rgba(22, 36, 31, 0.86);
+  --sh-glass-soft: #1a2b25;
+  --sh-glass-strong: #1d3029;
+  --sh-glass-border: rgba(134, 205, 182, 0.14);
+  --sh-line: rgba(230, 239, 234, 0.12);
+  --sh-line-soft: rgba(230, 239, 234, 0.07);
+  --sh-line-strong: rgba(230, 239, 234, 0.2);
+  --sh-tree-line: rgba(134, 205, 182, 0.3);
+  --sh-folder: #7cc4ae;
+  --sh-field: #1d2f28;
+  --sh-field-focus: #22372f;
+  --sh-hover: #1e312a;
+  --sh-track: #2a4138;
+
+  --sh-ok: #7cc9ad;
+  --sh-ok-soft: rgba(124, 201, 173, 0.14);
+  --sh-warn: #d3b276;
+  --sh-warn-soft: rgba(211, 178, 118, 0.14);
+  --sh-danger: #e19a8a;
+  --sh-danger-soft: rgba(225, 154, 138, 0.13);
+
+  --sh-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.28), 0 18px 34px -24px rgba(0, 0, 0, 0.75);
+  --sh-shadow-2: 0 30px 70px -38px rgba(0, 0, 0, 0.9);
+  --sh-shadow-pop: 0 12px 30px -20px rgba(0, 0, 0, 0.8);
+  --sh-inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --sh-field-inset: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+
+  --sh-glaze: linear-gradient(180deg, #9ad7c2, #79c4ad);
+  --sh-glaze-hi: linear-gradient(180deg, #a9e3cf, #88cfb8);
+  --sh-glaze-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 6px 16px -10px rgba(134, 205, 182, 0.5);
+  --sh-glaze-shadow-hi: inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 8px 20px -10px rgba(134, 205, 182, 0.6);
+  --sh-rim: linear-gradient(
+    90deg,
+    transparent,
+    var(--sh-accent-2) 16%,
+    #4f8f7c 48%,
+    transparent 86%
+  );
+  --sh-rail-wash: linear-gradient(180deg, rgba(134, 205, 182, 0.05), rgba(134, 205, 182, 0) 240px);
+
+  --tone-gray-bg: #22322c;
+  --tone-gray-fg: #a9bdb4;
+  --tone-blue-bg: #1d2f31;
+  --tone-blue-fg: #8fbcc4;
+  --tone-indigo-bg: #242b36;
+  --tone-indigo-fg: #a2aec6;
+  --tone-pink-bg: #2f2321;
+  --tone-pink-fg: #d99a90;
+  --tone-amber-bg: #2c2719;
+  --tone-amber-fg: #d3b276;
+  --tone-coral-bg: #2f231e;
+  --tone-coral-fg: #d99a80;
+  --tone-teal-bg: #1b2e28;
+  --tone-teal-fg: #8fc9b7;
+  --tone-green-bg: #223026;
+  --tone-green-fg: #9fc7a8;
+  --tone-purple-bg: #282534;
+  --tone-purple-fg: #b8acd0;
+}
+
+:root[data-look='celadon'][data-theme='dark'] .app-shell {
+  --sh-accent: #86cdb6;
+  --sh-accent-2: #9ad7c2;
+  --sh-accent-soft: rgba(134, 205, 182, 0.12);
+  --sh-accent-soft-2: rgba(134, 205, 182, 0.22);
+  --sh-accent-ring: rgba(134, 205, 182, 0.24);
+  --sh-accent-contrast: #10241d;
+}
+
+/* --------------------------------------------------------------- 画布与壳 -- */
+:root[data-look='celadon'] .app-shell {
+  color: var(--sh-text);
+  background-color: var(--sh-canvas);
+  background-image:
+    radial-gradient(900px 420px at 7% -12%, rgba(129, 190, 169, 0.22), transparent 62%),
+    radial-gradient(700px 340px at 97% -8%, rgba(218, 228, 217, 0.46), transparent 70%),
+    linear-gradient(180deg, #f5faf7 0%, #eef5f1 54%, #e8f1ec 100%);
+}
+
+:root[data-look='celadon'][data-theme='dark'] .app-shell {
+  background-color: var(--sh-canvas);
+  background-image:
+    radial-gradient(900px 420px at 7% -12%, rgba(63, 124, 104, 0.24), transparent 62%),
+    radial-gradient(700px 340px at 97% -8%, rgba(43, 70, 60, 0.34), transparent 70%),
+    linear-gradient(180deg, #0e1a16 0%, #101c18 52%, #0b1512 100%);
+}
+
+/* 釉口：这套风格唯一的"纹样"，只在顶边留一道极淡的釉光。 */
+:root[data-look='celadon'] .app-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 7;
+  height: 2px;
+  background: var(--sh-rim);
+  opacity: 0.62;
+  pointer-events: none;
+}
+:root[data-look='celadon'][data-theme='dark'] .app-shell::before {
+  opacity: 0.8;
+}
+
+/* 光来自瓷面本身，不需要原来的三团环境光斑。 */
+:root[data-look='celadon'] .app-shell .sh-ambient {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ 顶栏 -- */
+:root[data-look='celadon'] .app-shell .sh-topbar {
+  background: var(--sh-panel);
+  border-bottom: 1px solid var(--sh-line-soft);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 12px 28px -30px rgba(16, 38, 32, 0.4);
+}
+
+:root[data-look='celadon'] .app-shell .sh-brand-mark {
+  border-radius: 10px;
+  color: var(--sh-accent-contrast);
+  background: var(--sh-glaze);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 6px 14px -8px rgba(42, 111, 94, 0.7);
+}
+:root[data-look='celadon'] .app-shell .sh-brand-mark::after {
+  display: none;
+}
+:root[data-look='celadon'] .app-shell .sh-brand-name {
+  font-family: var(--sh-font);
+  font-size: 15.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+:root[data-look='celadon'] .app-shell .sh-brand-sub {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--sh-text-4);
+}
+
+:root[data-look='celadon'] .app-shell .sh-search {
+  border-radius: 999px;
+  background-color: var(--sh-field);
+  border-color: transparent;
+  box-shadow: var(--sh-field-inset);
+}
+:root[data-look='celadon'] .app-shell .sh-search:hover {
+  background-color: var(--sh-glass-soft);
+}
+:root[data-look='celadon'] .app-shell .sh-search:focus-within {
+  background-color: var(--sh-field-focus);
+  border-color: transparent;
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+:root[data-look='celadon'] .app-shell .sh-search kbd {
+  border-radius: 6px;
+  border-color: var(--sh-line);
+  border-bottom-width: 1px;
+  background: var(--sh-panel);
+}
+:root[data-look='celadon'] .app-shell .sh-search-clear {
+  border-radius: 50%;
+}
+:root[data-look='celadon'] .app-shell .sh-search-clear:hover {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+:root[data-look='celadon'] .app-shell .sh-theme-toggle {
+  border-radius: 999px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+:root[data-look='celadon'] .app-shell .sh-theme-toggle:hover {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+  box-shadow: none;
+}
+
+:root[data-look='celadon'] .app-shell .sh-banner {
+  background: var(--sh-warn-soft);
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+
+/* ------------------------------------------------------------ 主导航/分类 -- */
+:root[data-look='celadon'] .app-shell .sh-nav {
+  background: transparent;
+  border-right: 1px solid var(--sh-line-soft);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-look='celadon'] .app-shell .sh-nav-item {
+  border-radius: 12px;
+  font-size: 10px;
+  color: var(--sh-text-3);
+}
+:root[data-look='celadon'] .app-shell .sh-nav-item:hover {
+  background: var(--sh-accent-soft);
+  color: var(--sh-text);
+}
+:root[data-look='celadon'] .app-shell .sh-nav-item.is-active {
+  background: var(--sh-accent-soft);
+  border-color: transparent;
+  color: var(--sh-accent);
+  font-weight: 600;
+  box-shadow: none;
+}
+:root[data-look='celadon'] .app-shell .sh-nav-item.is-active svg {
+  color: var(--sh-accent);
+}
+:root[data-look='celadon'] .app-shell .sh-nav-item.is-active::before {
+  display: none;
+}
+:root[data-look='celadon'] .app-shell .sh-nav-badge {
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--sh-canvas);
+}
+
+:root[data-look='celadon'] .app-shell .sh-rail {
+  background: var(--sh-rail-wash);
+  border-right: 1px solid var(--sh-line-soft);
+}
+:root[data-look='celadon'] .app-shell .sh-rail-title {
+  font-size: 9.4px;
+  letter-spacing: 0.14em;
+  color: var(--sh-text-4);
+}
+:root[data-look='celadon'] .app-shell .sh-rail-item {
+  border-radius: 9px;
+}
+:root[data-look='celadon'] .app-shell .sh-rail-item:hover {
+  background: var(--sh-accent-soft);
+}
+:root[data-look='celadon'] .app-shell .sh-rail-item.is-active {
+  background: var(--sh-accent-soft);
+  border-color: transparent;
+  color: var(--sh-accent);
+  font-weight: 600;
+  box-shadow: none;
+}
+:root[data-look='celadon'] .app-shell .sh-rail-item.is-active svg {
+  color: var(--sh-accent);
+}
+:root[data-look='celadon'] .app-shell .sh-rail-item.is-active::before {
+  display: none;
+}
+:root[data-look='celadon'] .app-shell .sh-rail-card {
+  border-radius: 12px;
+  background: var(--sh-panel);
+  border-color: var(--sh-line-soft);
+  box-shadow: var(--sh-inset-hi), var(--sh-shadow-1);
+}
+
+/* -------------------------------------------------------------- 页面抬头 -- */
+:root[data-look='celadon'] .app-shell .sh-page-head h1 {
+  font-family: var(--sh-font);
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+:root[data-look='celadon'] .app-shell .sh-sec-icon {
+  border-radius: 10px;
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+  border: 1px solid transparent;
+}
+:root[data-look='celadon'] .app-shell .sh-sec-title {
+  font-family: var(--sh-font);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+:root[data-look='celadon'] .app-shell .sh-sec-sub {
+  color: var(--sh-text-3);
+  letter-spacing: 0.01em;
+}
+
+/* ------------------------------------------------------------------ 卡片 -- */
+:root[data-look='celadon'] .app-shell .sh-card {
+  border-radius: var(--sh-radius-card);
+  border: 1px solid var(--sh-line-soft);
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--sh-inset-hi), var(--sh-shadow-1);
+}
+:root[data-look='celadon'] .app-shell .sh-card-icon {
+  border-radius: 10px;
+  background: var(--sh-accent-soft);
+  border: 1px solid transparent;
+  color: var(--sh-accent);
+}
+:root[data-look='celadon'] .app-shell .sh-card-title {
+  font-family: var(--sh-font);
+  font-size: 14.6px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+:root[data-look='celadon'] .app-shell .sh-sec .sh-card > .sh-card-head {
+  border-bottom: 1px solid var(--sh-line-soft);
+  padding-bottom: 10px;
+}
+:root[data-look='celadon'] .app-shell .sh-card-foot {
+  background: transparent;
+  border-top: 1px solid var(--sh-line-soft);
+}
+
+:root[data-look='celadon'] .app-shell .sh-row {
+  border-top: 1px solid var(--sh-line-soft);
+}
+:root[data-look='celadon'] .app-shell .sh-row-title {
+  font-size: 12.8px;
+  font-weight: 600;
+}
+:root[data-look='celadon'] .app-shell .sh-row-desc,
+:root[data-look='celadon'] .app-shell .sh-hint {
+  color: var(--sh-text-3);
+}
+
+/* ------------------------------------------------------------------ 按钮 -- */
+:root[data-look='celadon'] .app-shell .sh-btn,
+:root[data-look='celadon'] .app-shell .btn {
+  border-radius: 9px;
+}
+:root[data-look='celadon'] .app-shell .sh-btn.is-primary,
+:root[data-look='celadon'] .app-shell .btn.primary {
+  color: var(--sh-accent-contrast);
+  background: var(--sh-glaze);
+  border-color: transparent;
+  box-shadow: var(--sh-glaze-shadow);
+}
+:root[data-look='celadon'] .app-shell .sh-btn.is-primary:hover:not(:disabled),
+:root[data-look='celadon'] .app-shell .btn.primary:hover:not(:disabled) {
+  background: var(--sh-glaze-hi);
+  border-color: transparent;
+  filter: none;
+  box-shadow: var(--sh-glaze-shadow-hi);
+}
+:root[data-look='celadon'] .app-shell .sh-btn.is-soft {
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+  border-color: transparent;
+}
+:root[data-look='celadon'] .app-shell .sh-btn.is-soft:hover:not(:disabled) {
+  background: var(--sh-accent-soft-2);
+}
+:root[data-look='celadon'] .app-shell .sh-btn.is-ghost,
+:root[data-look='celadon'] .app-shell .btn {
+  color: var(--sh-text-2);
+  background: var(--sh-field);
+  border-color: transparent;
+}
+:root[data-look='celadon'] .app-shell .sh-btn.is-ghost:hover:not(:disabled),
+:root[data-look='celadon'] .app-shell .btn:hover:not(:disabled) {
+  background: var(--sh-accent-soft);
+  border-color: transparent;
+  color: var(--sh-accent);
+}
+:root[data-look='celadon'] .app-shell .sh-btn.is-icon,
+:root[data-look='celadon'] .app-shell .icon-btn {
+  border-radius: 9px;
+  background: transparent;
+  color: var(--sh-text-3);
+}
+:root[data-look='celadon'] .app-shell .sh-btn.is-icon:hover:not(:disabled),
+:root[data-look='celadon'] .app-shell .icon-btn:hover {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+/* 实例卡右上角的运行按钮是主动作：素瓷也不收成透明图标。 */
+:root[data-look='celadon'] .app-shell .sh-btn.acp-run {
+  color: var(--sh-accent-contrast);
+  background: var(--sh-accent);
+  border-color: var(--sh-accent);
+}
+:root[data-look='celadon'] .app-shell .sh-btn.acp-run:hover:not(:disabled) {
+  color: var(--sh-accent-contrast);
+  background: var(--sh-accent-2);
+  border-color: var(--sh-accent-2);
+}
+:root[data-look='celadon'] .app-shell .sh-btn.acp-run.is-stop {
+  color: var(--sh-danger);
+  background: var(--sh-danger-soft);
+  border-color: var(--sh-danger-soft);
+}
+:root[data-look='celadon'] .app-shell .sh-btn.acp-run.is-stop:hover:not(:disabled) {
+  color: var(--sh-danger);
+  background: color-mix(in srgb, var(--sh-danger) 18%, transparent);
+  border-color: transparent;
+}
+:root[data-look='celadon'] .app-shell .sh-btn.is-danger {
+  color: var(--sh-danger);
+  background: var(--sh-danger-soft);
+  border-color: transparent;
+}
+
+/* ------------------------------------------------------------------ 控件 -- */
+:root[data-look='celadon'] .app-shell .sh-field {
+  border-radius: 9px;
+  border-color: transparent;
+  /* 只改底色：用 background 简写会把下拉自绘箭头的 no-repeat/定位一起冲掉，
+     箭头就会铺满整个框。 */
+  background-color: var(--sh-field);
+  box-shadow: var(--sh-field-inset);
+}
+:root[data-look='celadon'] .app-shell .sh-field:hover {
+  border-color: transparent;
+  background-color: var(--sh-glass-soft);
+}
+:root[data-look='celadon'] .app-shell .sh-field:focus {
+  border-color: transparent;
+  background-color: var(--sh-field-focus);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+:root[data-look='celadon'] .app-shell .sh-field[readonly] {
+  background-color: var(--sh-glass-soft);
+  box-shadow: none;
+}
+:root[data-look='celadon'] .app-shell select.sh-field {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%235b6f67' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+:root[data-look='celadon'][data-theme='dark'] .app-shell select.sh-field {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%2393a9a0' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+:root[data-look='celadon'] .app-shell .sh-toggle {
+  border-radius: 999px;
+  background: var(--sh-track);
+  border-color: transparent;
+  box-shadow: var(--sh-field-inset);
+}
+:root[data-look='celadon'] .app-shell .sh-toggle::after {
+  border-radius: 50%;
+  background: #f7fcfa;
+  box-shadow: 0 1px 3px rgba(16, 38, 32, 0.24);
+}
+:root[data-look='celadon'] .app-shell .sh-toggle[aria-checked='true'] {
+  background: var(--sh-glaze);
+  border-color: transparent;
+  box-shadow: 0 4px 12px -7px rgba(42, 111, 94, 0.75);
+}
+:root[data-look='celadon'] .app-shell .sh-toggle[aria-checked='true']::after {
+  background: var(--sh-accent-contrast);
+  box-shadow: none;
+}
+
+:root[data-look='celadon'] .app-shell .sh-seg {
+  border-radius: 11px;
+  background: var(--sh-field);
+  border-color: transparent;
+  padding: 3px;
+}
+:root[data-look='celadon'] .app-shell .sh-seg-btn {
+  border-radius: 8px;
+  font-size: 11.5px;
+}
+:root[data-look='celadon'] .app-shell .sh-seg-btn:hover {
+  background: var(--sh-accent-soft);
+  color: var(--sh-text);
+}
+:root[data-look='celadon'] .app-shell .sh-seg-btn[aria-checked='true'] {
+  color: var(--sh-accent);
+  background: var(--sh-panel);
+  box-shadow: 0 2px 8px -5px rgba(16, 38, 32, 0.4);
+}
+:root[data-look='celadon'][data-theme='dark'] .app-shell .sh-seg-btn[aria-checked='true'] {
+  background: var(--sh-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--sh-accent-ring);
+}
+
+:root[data-look='celadon'] .app-shell .sh-slider input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--sh-track);
+}
+:root[data-look='celadon'] .app-shell .sh-slider input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--sh-track);
+}
+:root[data-look='celadon'] .app-shell .sh-slider input[type='range']::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--sh-accent);
+}
+:root[data-look='celadon'] .app-shell .sh-slider input[type='range']::-webkit-slider-thumb {
+  width: 15px;
+  height: 15px;
+  margin-top: -5.5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--sh-accent);
+  background: var(--sh-panel);
+  box-shadow: 0 2px 6px -2px rgba(16, 38, 32, 0.35);
+}
+:root[data-look='celadon'] .app-shell .sh-slider input[type='range']::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1.5px solid var(--sh-accent);
+  background: var(--sh-panel);
+  box-shadow: 0 2px 6px -2px rgba(16, 38, 32, 0.35);
+}
+:root[data-look='celadon'] .app-shell .sh-slider input[type='range']:hover::-webkit-slider-thumb {
+  transform: none;
+}
+:root[data-look='celadon'] .app-shell .sh-slider-value {
+  font-family: var(--sh-font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sh-text-3);
+}
+
+:root[data-look='celadon'] .app-shell .sh-swatch {
+  border-radius: 50%;
+}
+:root[data-look='celadon'] .app-shell .sh-kbd {
+  border-radius: 6px;
+  background: var(--sh-panel);
+}
+
+/* 小标签统一胶囊：瓷上的标签是贴纸，不是盖章。 */
+:root[data-look='celadon'] .app-shell :is(.sh-chip, .tag-chip, .mark-chip, .tag-opt, .state-chip, .vh-pill, .rule-chip, .sh-nav-badge) {
+  border-radius: 999px;
+}
+:root[data-look='celadon'] .app-shell .tag-input {
+  border-radius: 9px;
+}
+
+/* ------------------------------------------------------------ 菜单/弹层 -- */
+:root[data-look='celadon'] .app-shell :is(.vpop, .row-menu-pop, .speaker-menu) {
+  border-radius: 12px;
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--sh-inset-hi), var(--sh-shadow-pop);
+}
+:root[data-look='celadon'] .app-shell :is(.vpop-clear, .row-menu-item, .speaker-menu button) {
+  border-radius: 8px;
+}
+:root[data-look='celadon'] .app-shell :is(.vpop-clear, .row-menu-item, .speaker-menu button):hover {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+:root[data-look='celadon'] .app-shell .vpop-custom input {
+  border-radius: 8px;
+  border-color: var(--sh-line-soft);
+  background-color: var(--sh-field);
+}
+
+/* ------------------------------------------------------------ 设置左侧树 -- */
+:root[data-look='celadon'] .app-shell .sh-sidebar .tree-root {
+  border-radius: 12px;
+  background: transparent;
+  border-color: transparent;
+}
+:root[data-look='celadon'] .app-shell .sh-sidebar .tree-item {
+  border-radius: 8px;
+}
+:root[data-look='celadon'] .app-shell .sh-sidebar .tree-item.active {
+  background: var(--sh-accent-soft);
+  /* 与另外两套外观同一条标记：左沿一道实色，淡底之外再给个结构性的信号 */
+  box-shadow: inset 3px 0 0 var(--sh-accent);
+  color: var(--sh-accent);
+  font-weight: 600;
+}
+:root[data-look='celadon'] .app-shell .sh-sidebar .tree-item > .count {
+  border-radius: 999px;
+  background: var(--sh-panel);
+  border: 1px solid var(--sh-line-soft);
+}
+
+/* ------------------------------------------------------------ 音色卡片列 -- */
+:root[data-look='celadon'] .app-shell .rail-fixed {
+  border-radius: 16px;
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-inset-hi), var(--sh-shadow-1);
+}
+:root[data-look='celadon'] .app-shell .rail-card {
+  border-radius: 12px;
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+}
+:root[data-look='celadon'] .app-shell .rail-card:hover:not(.on) {
+  /* 同纸墨：悬停只改底，不动边框（这块面板只剩一道底边，改色就成了下划线） */
+  background: var(--sh-accent-soft);
+}
+/* 录音那张卡不接点击：不亮悬停底色（选中态仍有强调）。 */
+:root[data-look='celadon'] .app-shell .rail-card.rec-card:not(.on):hover {
+  background: var(--sh-panel);
+}
+:root[data-look='celadon'] .app-shell .rail-card.on {
+  /* 选中只换底与左沿那道强调（后者在 style.css 里），不换边框色：
+     这块面板只剩一道底边，给它上色就成了下划线。 */
+  background: var(--sh-accent-soft);
+}
+/* 钉住的那张（参考音频）：同纸墨——把它的底从面板色捡回朱砂淡晕，
+   左沿那道朱砂在 style.css 里，悬停时底再深一档。 */
+:root[data-look='celadon'] .app-shell .rail-card.rail-frozen {
+  background: var(--seal-wash);
+  border-bottom-color: color-mix(in srgb, var(--seal) 30%, var(--sh-line));
+}
+:root[data-look='celadon'] .app-shell .rail-card.rail-frozen:hover {
+  background: var(--seal-wash-2);
+}
+:root[data-look='celadon'] .app-shell .rail-cover {
+  border-radius: 9px;
+}
+/* ------------------------------------------------------------ 书籍刊头 -- */
+:root[data-look='celadon'] .app-shell .producer-rail {
+  border-top-color: var(--sh-line-soft);
+}
+:root[data-look='celadon'] .app-shell .rail-book {
+  border-bottom-color: var(--sh-line-soft);
+}
+:root[data-look='celadon'] .app-shell .rail-book-mark {
+  border-radius: 9px;
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+  box-shadow: none;
+}
+:root[data-look='celadon'] .app-shell .rail-book-name {
+  font-family: var(--sh-font);
+  font-size: 13.6px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+:root[data-look='celadon'] .app-shell .rail-book-meta {
+  letter-spacing: 0.03em;
+}
+:root[data-look='celadon'] .app-shell .producer-rail .chapter-item {
+  border-radius: 8px;
+}
+:root[data-look='celadon'] .app-shell .producer-rail .chapter-row + .chapter-row {
+  border-top: 0;
+}
+:root[data-look='celadon'] .app-shell .producer-rail .chapter-row.is-active .chapter-item {
+  background: var(--sh-panel);
+  color: var(--sh-text);
+  box-shadow: inset 2px 0 0 var(--sh-accent-2), var(--sh-inset-hi), var(--sh-shadow-1);
+}
+:root[data-look='celadon'] .app-shell .producer-rail .chapter-title {
+  font-family: var(--sh-font);
+  font-size: 12px;
+}
+:root[data-look='celadon'] .app-shell .producer-rail .chapter-ord {
+  font-family: var(--sh-font-mono);
+  font-size: 9.5px;
+}
+:root[data-look='celadon'] .app-shell .producer-rail .chapter-stage {
+  border-radius: 50%;
+  width: 5px;
+  height: 5px;
+}
+
+/* ------------------------------------------------------------------ 表格 -- */
+:root[data-look='celadon'] .app-shell .producer-main,
+:root[data-look='celadon'] .app-shell .producer-side {
+  border-radius: 15px;
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+}
+:root[data-look='celadon'] .app-shell .producer-main {
+  box-shadow: var(--sh-inset-hi), var(--sh-shadow-1);
+}
+:root[data-look='celadon'] .app-shell .chapter-head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+:root[data-look='celadon'] .app-shell .chapter-name {
+  font-family: var(--sh-font);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+:root[data-look='celadon'] .app-shell .chapter-meta {
+  letter-spacing: 0.01em;
+}
+
+:root[data-look='celadon'] .app-shell .view-switch {
+  border-radius: 10px;
+  border-color: transparent;
+  background: var(--sh-field);
+  padding: 2px;
+}
+:root[data-look='celadon'] .app-shell .view-switch-btn {
+  border-radius: 8px;
+}
+:root[data-look='celadon'] .app-shell .view-switch-btn.on {
+  background: var(--sh-panel);
+  color: var(--sh-accent);
+  box-shadow: 0 2px 8px -5px rgba(16, 38, 32, 0.4);
+}
+:root[data-look='celadon'][data-theme='dark'] .app-shell .view-switch-btn.on {
+  background: var(--sh-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--sh-accent-ring);
+}
+
+:root[data-look='celadon'] .app-shell .rows-tools {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+:root[data-look='celadon'] .app-shell .rows-filter {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--sh-field);
+  padding: 3px;
+  gap: 3px;
+}
+:root[data-look='celadon'] .app-shell .filter-btn {
+  border-radius: 8px;
+  padding: 5px 9px;
+  color: var(--sh-text-4);
+}
+:root[data-look='celadon'] .app-shell .filter-btn:hover {
+  background: var(--sh-accent-soft);
+  color: var(--sh-text);
+}
+:root[data-look='celadon'] .app-shell .filter-btn.is-active {
+  background: var(--sh-panel);
+  color: var(--sh-text);
+  font-weight: 600;
+  box-shadow: 0 2px 8px -5px rgba(16, 38, 32, 0.4);
+}
+:root[data-look='celadon'] .app-shell .filter-btn.is-active .filter-count {
+  color: var(--sh-accent);
+}
+:root[data-look='celadon'][data-theme='dark'] .app-shell .filter-btn.is-active {
+  background: var(--sh-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--sh-accent-ring);
+}
+:root[data-look='celadon'] .app-shell .rows-batch {
+  border-radius: 10px;
+  border-color: var(--sh-accent-ring);
+  background: var(--sh-accent-soft);
+}
+:root[data-look='celadon'] .app-shell .batch-input {
+  border-radius: 8px;
+  border-color: transparent;
+  background-color: var(--sh-field);
+}
+:root[data-look='celadon'] .app-shell .field-sm {
+  border-radius: 8px;
+  border-color: transparent;
+  background-color: var(--sh-field);
+}
+:root[data-look='celadon'] .app-shell .rows-wrap {
+  border-top: 1px solid var(--sh-line-soft);
+  background: var(--sh-panel);
+}
+:root[data-look='celadon'] .app-shell .rows thead th {
+  height: 40px;
+  background: var(--sh-glass-soft);
+  border-bottom: 1px solid var(--sh-line);
+  color: var(--sh-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+:root[data-look='celadon'] .app-shell .rows th + th,
+:root[data-look='celadon'] .app-shell .rows td + td {
+  border-left: 0;
+}
+:root[data-look='celadon'] .app-shell .rows td {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+:root[data-look='celadon'] .app-shell .rows tbody tr.is-dialogue td {
+  background: color-mix(in srgb, var(--sh-ok) 20%, var(--sh-panel));
+}
+:root[data-look='celadon'] .app-shell .rows tbody tr.is-dialogue td:first-child {
+  box-shadow: inset 3px 0 0 var(--sh-ok);
+}
+:root[data-look='celadon'] .app-shell .rows tbody tr.is-dialogue .speaker-input {
+  color: var(--sh-ok);
+  font-weight: 600;
+}
+:root[data-look='celadon'] .app-shell .rows tbody tr.is-failed td {
+  background: var(--sh-danger-soft);
+}
+:root[data-look='celadon'] .app-shell .rows tbody tr.is-selected td {
+  background: var(--sh-accent-soft);
+}
+:root[data-look='celadon'] .app-shell .rows tbody tr:not(.is-selected):hover td {
+  background: var(--sh-accent-soft);
+}
+:root[data-look='celadon'] .app-shell .rows tbody tr.is-dialogue:not(.is-selected):hover td {
+  background: color-mix(in srgb, var(--sh-ok) 26%, var(--sh-panel));
+}
+/* 过期压过对白：底色仍是绿的（这行在说话），左缘换成警示色（这段不是现在的）。 */
+:root[data-look='celadon'] .app-shell .rows tbody tr.is-stale td:first-child {
+  box-shadow: inset 2px 0 0 var(--sh-warn);
+}
+:root[data-look='celadon'] .app-shell .ord-btn {
+  border-radius: 7px;
+  font-family: var(--sh-font-mono);
+  font-size: 10px;
+}
+:root[data-look='celadon'] .app-shell .ord-btn:hover {
+  border-color: transparent;
+  background: var(--sh-accent-soft);
+}
+:root[data-look='celadon'] .app-shell .ord-btn.is-selected {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+:root[data-look='celadon'] .app-shell .row-input {
+  border-radius: 8px;
+}
+:root[data-look='celadon'] .app-shell .row-input:focus {
+  background: var(--sh-field-focus);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+:root[data-look='celadon'] .app-shell .mark-mirror {
+  border-radius: 8px;
+}
+:root[data-look='celadon'] .app-shell .row-text-area {
+  border-radius: 9px;
+  border-color: transparent;
+  background-color: var(--sh-field);
+  font-size: 12.8px;
+  line-height: 1.75;
+}
+:root[data-look='celadon'] .app-shell .speaker-field {
+  border-radius: 8px;
+  border-color: transparent;
+  background-color: var(--sh-field);
+}
+:root[data-look='celadon'] .app-shell .speaker-menu {
+  border-radius: 12px;
+}
+/* 情绪胶囊只改形状：底色由 `.tone-*` 那一档分类色给，这里不设 background，
+   否则八种情绪会被一条皮肤规则抹成同一种颜色。 */
+:root[data-look='celadon'] .app-shell .emotion-cell {
+  border-radius: 999px;
+}
+:root[data-look='celadon'] .app-shell .emotion-cell:focus-within {
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+:root[data-look='celadon'] .app-shell .audio-btn {
+  border-radius: 50%;
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+:root[data-look='celadon'] .app-shell .audio-btn:hover {
+  filter: none;
+  background: var(--sh-accent-soft-2);
+}
+:root[data-look='celadon'] .app-shell .audio-btn.is-generate {
+  background: transparent;
+  color: var(--sh-accent);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--sh-accent-ring);
+}
+:root[data-look='celadon'] .app-shell .audio-btn.is-generate:hover {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+  border-style: solid;
+}
+:root[data-look='celadon'] .app-shell .audio-btn.is-danger {
+  background: var(--sh-danger-soft);
+  border: 0;
+  color: var(--sh-danger);
+}
+:root[data-look='celadon'] .app-shell .state-chip {
+  border-radius: 999px;
+}
+
+/* ------------------------------------------------------------ 章节阅读 -- */
+:root[data-look='celadon'] .app-shell .chapter-source-lines,
+:root[data-look='celadon'] .app-shell .chapter-source-text {
+  border-radius: 12px;
+  border-color: var(--sh-line-soft);
+  background: var(--sh-glass-soft);
+  font-size: 12.8px;
+  line-height: 1.85;
+}
+:root[data-look='celadon'] .app-shell .chapter-line {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+:root[data-look='celadon'] .app-shell .chapter-line.is-dialogue {
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--sh-ok) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--sh-ok);
+}
+:root[data-look='celadon'] .app-shell .chapter-line-ord {
+  font-family: var(--sh-font-mono);
+  font-size: 10px;
+}
+:root[data-look='celadon'] .app-shell .mark-token {
+  border-radius: 5px;
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+/* ---------------------------------------------------------------- 右栏 -- */
+:root[data-look='celadon'] .app-shell .side-title {
+  font-size: 9.6px;
+  letter-spacing: 0.12em;
+  color: var(--sh-text-4);
+}
+:root[data-look='celadon'] .app-shell .role-row {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+:root[data-look='celadon'] .app-shell .role-name {
+  font-family: var(--sh-font);
+  font-size: 12.8px;
+  font-weight: 600;
+}
+:root[data-look='celadon'] .app-shell .role-engine-select {
+  font-size: 11px;
+}
+
+:root[data-look='celadon'] .app-shell .producer-job {
+  border-radius: 10px;
+  border-color: var(--sh-accent-ring);
+  background: var(--sh-accent-soft);
+}
+:root[data-look='celadon'] .app-shell .producer-job .job-kind {
+  color: var(--sh-accent);
+}
+
+/* -------------------------------------------------------------- 空状态 -- */
+:root[data-look='celadon'] .app-shell .empty {
+  border-radius: 16px;
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--sh-inset-hi), var(--sh-shadow-1);
+}
+:root[data-look='celadon'] .app-shell .empty-icon {
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+/* ------------------------------------------------------------ 生成页 -- */
+:root[data-look='celadon'] .app-shell .synth-side {
+  border-radius: 15px;
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--sh-inset-hi), var(--sh-shadow-1);
+}
+:root[data-look='celadon'] .app-shell .chip-panel {
+  border-radius: 12px;
+  background: transparent;
+}
+:root[data-look='celadon'] .app-shell .instr-area,
+:root[data-look='celadon'] .app-shell .seed-row .field-input {
+  border-radius: 9px;
+  border-color: transparent;
+  background-color: var(--sh-field);
+}
+:root[data-look='celadon'] .app-shell .sref-bar,
+:root[data-look='celadon'] .app-shell .sref-play {
+  border-radius: 999px;
+}
+:root[data-look='celadon'] .app-shell .result-play {
+  border-radius: 50%;
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+/* -------------------------------------------------------------- 对话框 -- */
+:root[data-look='celadon'] .app-shell .vh-root {
+  background: rgba(16, 38, 32, 0.26);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-look='celadon'][data-theme='dark'] .app-shell .vh-root {
+  background: rgba(0, 0, 0, 0.66);
+}
+:root[data-look='celadon'] .app-shell .vh-modal {
+  border-radius: 16px;
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow-2);
+}
+:root[data-look='celadon'] .app-shell .vh-hero {
+  background: transparent;
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+:root[data-look='celadon'] .app-shell .vh-cover {
+  border-radius: 12px;
+  box-shadow: none;
+}
+:root[data-look='celadon'] .app-shell .vh-title {
+  font-family: var(--sh-font);
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+:root[data-look='celadon'] .app-shell :is(
+  .options-title,
+  .split-title,
+  .preview-title,
+  .analysis-title,
+  .import-title,
+  .confirm-title,
+  .assign-title,
+  .params-title,
+  .merge-title
+) {
+  font-family: var(--sh-font);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+:root[data-look='celadon'] .app-shell .audition > h3 {
+  font-family: var(--sh-font);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+:root[data-look='celadon'] .app-shell .vh-title.is-editable,
+:root[data-look='celadon'] .app-shell .vh-title-input {
+  border-radius: 8px;
+}
+:root[data-look='celadon'] .app-shell .vh-pill {
+  border-radius: 999px;
+}
+
+/* -------------------------------------------------------------- 播放条 -- */
+:root[data-look='celadon'] .app-shell .player-fold :is(.pb-disc, .pb-dock) {
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--sh-inset-hi), 0 20px 44px -30px rgba(16, 38, 32, 0.5);
+}
+:root[data-look='celadon'] .app-shell .pb-dock {
+  border-radius: 14px;
+}
+:root[data-look='celadon'] .app-shell .pb-btn {
+  border-radius: 50%;
+  background: transparent;
+}
+:root[data-look='celadon'] .app-shell .pb-btn:hover {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+:root[data-look='celadon'] .app-shell .pb-seek::-webkit-slider-runnable-track,
+:root[data-look='celadon'] .app-shell .pb-seek::-moz-range-track {
+  border-radius: 999px;
+  height: 4px;
+}
+:root[data-look='celadon'] .app-shell .pb-seek::-webkit-slider-thumb,
+:root[data-look='celadon'] .app-shell .pb-seek::-moz-range-thumb {
+  border-radius: 50%;
+  border: 1.5px solid var(--sh-accent);
+  background: var(--sh-panel);
+  box-shadow: 0 2px 6px -2px rgba(16, 38, 32, 0.35);
+}
+
+/* ------------------------------------------------------------------ 提示条 -- */
+/* toast 在 .app-shell 外：只用 :root 上的素瓷令牌，前缀到不了它。 */
+:root[data-look='celadon'] .toast {
+  border-radius: 10px;
+  border: 1px solid var(--sh-line);
+  background: var(--sh-toast-bg);
+  color: var(--sh-toast-text);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--sh-shadow-pop);
+}
+
+/* ---------------------------------------------------------- 焦点兜底 -- */
+/* 皮肤里那些"釉上的控件"规则（`.field-sm`、`.row-text-area`、`.instr-area` …）
+   特异性比组件高一档，会把控件自己写的 `:focus` 边框压掉：点进去只有一格淡淡的
+   底色，像没反应。这里按同一档把焦点补回来——**只补边框色**，环仍由控件自己那
+   一层给（不画第二圈）。 */
+:root[data-look='celadon'] .app-shell
+  :is(
+    .sh-field,
+    .instr-area,
+    .tag-input,
+    .aud-pick,
+    .row-input,
+    .field-input,
+    .field-textarea,
+    .field-sm,
+    .batch-input,
+    .logview-source,
+    .logview-needle,
+    .analysis-prompt,
+    .params-text,
+    .params-input,
+    .import-text
+  ):focus {
+  border-color: var(--sh-accent);
+}
+:root[data-look='celadon'] .app-shell .speaker-field:focus-within {
+  border-color: var(--sh-accent);
+}

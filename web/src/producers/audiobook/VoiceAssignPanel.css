@@ -1,0 +1,311 @@
+/* 面板本体：外壳（遮罩、标题、栏目切换）在 VoiceToolsDialog。 */
+.voice-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.auto-note {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.2px;
+  color: var(--sh-text-4);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.auto-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: hidden;
+}
+.plan-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.plan-bar-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.plan-bar-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+.plan-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-warn-soft);
+  color: var(--sh-warn);
+  font-size: 11.5px;
+}
+.plan-wrap {
+  flex: 1 1 auto;
+  min-height: 140px;
+  overflow: auto;
+  border: 1px solid var(--sh-line-soft);
+  border-radius: var(--sh-r-sm);
+}
+.plan-table {
+  width: 100%;
+  min-width: 900px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 11.8px;
+}
+.plan-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--sh-line);
+  background: var(--sh-panel);
+  color: var(--sh-text-4);
+  font-weight: 600;
+  text-align: left;
+}
+.plan-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--sh-line-soft);
+  vertical-align: middle;
+}
+.plan-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.plan-table tr.is-changed td.col-role {
+  box-shadow: inset 2px 0 0 var(--sh-accent);
+}
+.col-role {
+  width: auto;
+}
+.col-engine {
+  width: 172px;
+}
+.col-mode {
+  width: 118px;
+}
+.col-voice {
+  width: 284px;
+}
+.col-sample {
+  width: 152px;
+}
+.sample-none {
+  color: var(--sh-text-4);
+}
+.role-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--sh-text);
+}
+.role-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 行数与依据同一行：依据属于这个角色，就跟在名字下面，不另占一列。 */
+.role-meta {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 3px;
+  color: var(--sh-text-4);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+.role-meta > span {
+  white-space: nowrap;
+}
+/* 依据最多两行：单行时在角色栏里只剩几个字，看不出 AI 为什么挑这颗音色。 */
+.role-meta > .role-reason {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--sh-text-3);
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* AI 挑音色用的画像：一行省略，完整内容在悬停里。 */
+.role-profile {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--sh-text-4);
+  font-size: 10.5px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 画像下面那句身份与说话方式：两行封顶，再多就悬停看。 */
+.role-note {
+  margin-top: 1px;
+  overflow: hidden;
+  color: var(--sh-text-4);
+  font-size: 10.5px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* 设计描述框也长成「字段」：边框画在容器上，右侧留给 AI 按钮，
+   与音色格同一副长相。这几个类在本文件里另写一份——VoiceCombo 的
+   scoped 样式只作用于它自己的根，管不到父组件模板里的元素。 */
+.voice-field {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding-right: 3px;
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-field);
+  transition: border-color var(--sh-t-fast) var(--sh-ease), box-shadow var(--sh-t-fast) var(--sh-ease);
+}
+.voice-field:hover:not(.is-disabled) {
+  border-color: var(--sh-accent);
+}
+.voice-field:focus-within {
+  border-color: var(--sh-accent);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+.voice-field.is-disabled {
+  opacity: 0.55;
+}
+.voice-field-acts {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* 音色设计：这一格就是描述框，外观与音色输入框同一套，只是写的是话不是名字。 */
+.voice-design {
+  width: 100%;
+  height: 36px;
+  padding: 0 9px;
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-field);
+  color: var(--sh-text);
+  font: inherit;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  transition: border-color var(--sh-t-fast) var(--sh-ease), box-shadow var(--sh-t-fast) var(--sh-ease);
+}
+.voice-design::placeholder {
+  color: var(--sh-text-4);
+}
+.voice-design:hover:not(:disabled) {
+  border-color: var(--sh-accent);
+}
+.voice-design:focus {
+  outline: none;
+  border-color: var(--sh-accent);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+.voice-design:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+/* 进了字段容器：边框与焦点环都归容器，输入框只负责填字。 */
+.voice-field .voice-design {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+.voice-field .voice-design:hover:not(:disabled) {
+  border-color: transparent;
+}
+.voice-field .voice-design:focus {
+  box-shadow: none;
+}
+/* 音色格里的按钮就长在输入框内：一条与框同高的动作区，不是浮在旁边的圆点。 */
+.field-act {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sh-text-2);
+  cursor: pointer;
+  transition: background var(--sh-t-fast) var(--sh-ease), color var(--sh-t-fast) var(--sh-ease);
+}
+.field-act:hover:not(:disabled) {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+.field-act.is-busy {
+  color: var(--sh-accent);
+}
+.field-act:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.auto-empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--sh-line-soft);
+  border-radius: var(--sh-r-sm);
+  color: var(--sh-text-4);
+  font-size: 11.5px;
+  text-align: center;
+}
+.auto-section-label {
+  font-weight: 650;
+  color: var(--sh-text-2);
+}
+.auto-warnings {
+  flex: none;
+  margin: 0;
+  padding-left: 16px;
+  color: var(--sh-text-4);
+  font-size: 10.8px;
+  line-height: 1.6;
+}
+.auto-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--sh-line-soft);
+}
+.auto-foot-state {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--sh-text-4);
+}
+.spin {
+  animation: auto-spin 900ms linear infinite;
+}
+@keyframes auto-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoiceHub · 音色库</title>
+    <!-- 内联图标：省掉浏览器那条自动的 /favicon.ico 请求与它的 404 -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%236c5ce7'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='white'%3E%E2%99%AA%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <div id="app"></div>
+    <!-- 首屏就定主题，避免亮色一闪（HTML 先于模块脚本绘制）。与 store/shell.js 的 initTheme 同口径：
+         先认 vh-theme-mode（light/dark/system），再回落旧的 vh-theme。 -->
+    <script>
+      ;(function () {
+        try {
+          var mode = localStorage.getItem('vh-theme-mode')
+          var saved = localStorage.getItem('vh-theme')
+          var dark
+          if (mode === 'dark' || mode === 'light') dark = mode === 'dark'
+          else if (!mode && (saved === 'dark' || saved === 'light')) dark = saved === 'dark'
+          else dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch (e) {
+          /* 隐私模式下 localStorage 会抛——忽略，用默认浅色 */
+        }
+      })()
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

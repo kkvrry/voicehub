@@ -1,0 +1,980 @@
+.producer-panel {
+  overflow: hidden;
+  /* 创作页的密度只认外观设置：全局 data-density 在 theme.css 里覆写这几个值，
+     行表、章节、步骤卡与侧栏都从这里取，不各写一套固定间距。 */
+  --ws-side-pad: 14px 16px;
+  --ws-body-gap: 18px;
+  --ws-tools-gap: 8px;
+  --ws-row-h: 48px;
+  --ws-cell-py: 4px;
+  /* 表头、情绪胶囊、状态标签共用一档标签字：三处各自写字号，迟早有一处对不上 */
+  --ws-label-size: 11.5px;
+  --ws-label-weight: 600;
+  --ws-label-tracking: 0.02em;
+  --ws-line-py: 5px;
+  --ws-line-gap: 10px;
+  --ws-role-gap: 9px;
+  --ws-font: 12.5px;
+  --ws-chapter-font: 12px;
+  --ws-chapter-leading: 1.7;
+}
+.head-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+.producer-job {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 22px 0;
+  padding: 7px 12px;
+  border: 1px solid var(--sh-line-soft);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-glass-soft);
+  font-size: 12px;
+  color: var(--sh-text-2);
+}
+.job-kind {
+  font-weight: 600;
+  color: var(--sh-text);
+}
+.job-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--sh-accent);
+}
+.job-message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sh-text-4);
+}
+.producer-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 72px 24px;
+  text-align: center;
+}
+.empty-icon {
+  color: var(--sh-accent);
+  opacity: 0.85;
+}
+.empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sh-text);
+}
+.empty-note {
+  font-size: 12px;
+  color: var(--sh-text-4);
+}
+.producer-empty .sh-btn {
+  margin-top: 8px;
+}
+.producer-flow {
+  flex: none;
+  padding: 12px 22px 14px;
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+.producer-flow-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-bottom: 8px;
+}
+/* 音色管理挂在行表上方的最右侧：全书一次的事，不占任何一步的位置。 */
+.voice-tools-btn {
+  margin-left: auto;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--sh-text-3);
+}
+.voice-tools-btn:hover:not(:disabled),
+.voice-tools-btn:focus-visible {
+  color: var(--sh-accent);
+}
+.producer-flow-title {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--sh-text-3);
+}
+.producer-flow-note {
+  font-size: 10.6px;
+  color: var(--sh-text-4);
+}
+.producer-steps {
+  display: grid;
+  grid-template-columns: repeat(var(--producer-step-count, 6), minmax(0, 1fr));
+  gap: 8px;
+}
+.producer-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 76px;
+  padding: 10px 11px;
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-md);
+  background: var(--sh-glass-soft);
+  color: var(--sh-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--sh-t-fast), background var(--sh-t-fast),
+    box-shadow var(--sh-t-fast);
+}
+.producer-step:hover:not(:disabled) {
+  border-color: var(--sh-accent);
+  background: var(--sh-glass-strong);
+  box-shadow: var(--sh-shadow-1);
+}
+.producer-step:focus-visible {
+  outline: 2px solid var(--sh-accent-ring);
+  outline-offset: 1px;
+}
+.producer-step:disabled {
+  opacity: 0.58;
+  cursor: default;
+}
+.step-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+}
+.producer-step.is-blocked .step-icon {
+  color: var(--sh-text-4);
+  background: var(--sh-hover);
+}
+.step-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.step-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.step-ord {
+  flex: none;
+  font-size: 9.8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--sh-text-4);
+  font-variant-numeric: tabular-nums;
+}
+.step-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.2px;
+  font-weight: 650;
+  color: var(--sh-text);
+}
+.step-note {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 10.7px;
+  line-height: 1.45;
+  color: var(--sh-text-4);
+}
+@media (max-width: 1120px) {
+  .producer-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .producer-flow {
+    padding: 10px 14px 12px;
+  }
+  .producer-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 520px) {
+  .producer-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.producer-body {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 248px;
+  gap: var(--ws-body-gap);
+  align-content: stretch;
+}
+.split-dialog {
+  width: min(1180px, 94vw);
+  height: min(88vh, 920px);
+  padding: 0;
+  position: relative;
+}
+.split-dialog-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+}
+.split-dialog :deep(.split-panel) {
+  height: 100%;
+  padding: 18px 20px 16px;
+}
+.split-dialog :deep(.split-head) {
+  padding-right: 36px;
+}
+/* 工作区两栏各自是一张玻璃卡：左边是表格 / 原文，右边是角色音色。
+   卡片之外只剩步骤条——这样"这一步在做什么"与"这一步的数据"分得开。 */
+/* 主区是一张白纸：章节头、工具条、表格依次铺在上面。
+   表格不再套第二层卡——只用分隔线分列分行。 */
+.producer-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  container-type: inline-size;
+  border-radius: var(--sh-r-md);
+  border: 1px solid var(--sh-line);
+  background: var(--sh-panel);
+  overflow: hidden;
+  /* 铺满这一列：表格就是这一页的主体，不缩成一张浮在中间的小卡 */
+  align-self: stretch;
+  max-height: 100%;
+}
+.chapter-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 12px 16px 0;
+}
+.chapter-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sh-text);
+}
+/* 逐行试听：章名后一颗小圆钮。图标已经说明"放这一章"，文字留给悬停与读屏。 */
+.chapter-play {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--sh-accent) 26%, transparent);
+  border-radius: 50%;
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+  cursor: pointer;
+  transition: background var(--sh-t-fast) var(--sh-ease),
+    border-color var(--sh-t-fast) var(--sh-ease), color var(--sh-t-fast) var(--sh-ease);
+}
+.chapter-play:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+}
+.chapter-play:focus-visible {
+  outline: 2px solid var(--sh-accent-ring);
+  outline-offset: 2px;
+}
+.chapter-play:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.chapter-meta {
+  font-size: 11.5px;
+  color: var(--sh-text-4);
+}
+.chapter-head .sh-btn:first-of-type {
+  margin-left: 0;
+}
+.content-hint {
+  padding: 22px 16px;
+  font-size: 12.5px;
+  color: var(--sh-text-4);
+}
+.view-switch {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--sh-line-soft);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-field);
+}
+.view-switch-btn {
+  height: 24px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: var(--sh-r-xs);
+  background: transparent;
+  color: var(--sh-text-4);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.view-switch-btn.on {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+.view-switch-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.chapter-source {
+  /* 高度跟着正文长：行表量出的高度只当下限（切视图至少不变矮），
+     长正文由列表自己滚，不再用固定高度把内容裁掉。 */
+  margin: 12px 16px 14px;
+  flex: 1;
+  height: auto;
+  max-height: max(220px, calc(100dvh - 260px));
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chapter-source-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.chapter-source-meta {
+  font-size: 11.5px;
+  color: var(--sh-text-4);
+}
+.chapter-source-lines,
+.chapter-source-text {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px;
+  border: 1px solid var(--sh-line-soft);
+  border-radius: var(--sh-r-md);
+  background: var(--sh-glass-soft);
+  color: var(--sh-text-2);
+  font-size: var(--ws-chapter-font);
+  line-height: var(--ws-chapter-leading);
+}
+.chapter-source-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chapter-line {
+  display: grid;
+  grid-template-columns: 28px minmax(44px, 62px) minmax(0, 1fr);
+  gap: var(--ws-line-gap);
+  align-items: baseline;
+  padding: var(--ws-line-py) 0;
+  border-bottom: 1px dashed var(--sh-line-soft);
+}
+.chapter-line:last-child {
+  border-bottom: 0;
+}
+.chapter-line-ord {
+  color: var(--sh-text-4);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.chapter-line-speaker {
+  color: var(--sh-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chapter-line.is-dialogue {
+  background: color-mix(in srgb, var(--sh-ok) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--sh-ok);
+  border-radius: var(--sh-r-xs);
+}
+.chapter-line.is-dialogue .chapter-line-speaker {
+  color: var(--sh-ok);
+}
+.chapter-line-text {
+  color: var(--sh-text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 正文里的标签（[[笑]] / [[停顿:0.4]]）不是字：单独染个底色，免得被当成要念的内容。 */
+.mark-token {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--sh-accent) 18%, transparent);
+  color: var(--sh-accent);
+  font-size: 0.92em;
+}
+/* 工具栏控件：统一 28 高、8 圆角、11.8 字号，与表格里的控件同一档。 */
+.field-sm {
+  width: auto;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 11.8px;
+  border-radius: var(--sh-r-xs);
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+}
+/* 下拉的箭头画在右内边距里（`.sh-field` 给的是 30px）。这一档把内边距收到 8px，
+   文字就会压到箭头上——「插入标记…」和它的箭头挤成一团就是这么来的。 */
+select.field-sm {
+  padding-right: 26px;
+  background-position: right 7px center;
+}
+.field-sm:hover {
+  border-color: var(--sh-line);
+}
+.mark-picker {
+  max-width: 150px;
+}
+/* 工具栏：一行筛选 + 一行批量动作，中间不画分隔条，靠间距分组。 */
+.rows-tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ws-tools-gap);
+  padding: 10px 16px;
+}
+.rows-tools-top,
+.rows-tools-actions,
+.rows-batch {
+  display: flex;
+  align-items: center;
+  gap: var(--ws-tools-gap);
+  flex-wrap: wrap;
+}
+/* 筛选是胶囊组：选中档低饱和蓝底，未选中只留文字。 */
+.rows-filter {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--sh-line-soft);
+  border-radius: 999px;
+  background: var(--sh-panel);
+}
+.speaker-filter {
+  min-width: 124px;
+}
+.filter-btn {
+  border: 0;
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sh-text-3);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background var(--sh-t-fast) var(--sh-ease), color var(--sh-t-fast) var(--sh-ease);
+}
+.filter-btn:hover {
+  color: var(--sh-text-2);
+}
+.filter-btn.is-active {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+.filter-count {
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sh-text-4);
+}
+.filter-btn.is-active .filter-count {
+  color: var(--sh-accent);
+}
+.row-actions {
+  display: flex;
+  gap: 4px;
+}
+/* 批量条：一条浅色带，不另起卡片。 */
+.rows-batch {
+  padding: 6px 8px;
+  border: 1px solid var(--sh-accent-ring);
+  border-radius: var(--sh-r-xs);
+  background: var(--sh-accent-soft);
+}
+.batch-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sh-accent);
+  font-variant-numeric: tabular-nums;
+}
+.batch-input {
+  width: 128px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  color: var(--sh-text);
+  background: var(--sh-panel);
+  border: 1px solid var(--sh-line-soft);
+  border-radius: var(--sh-r-2xs);
+}
+/* 数据面：白底 + 灰蓝细线 + 极轻投影。表格是这一页唯一的数据容器，
+   里面不再分块，也不给每格加底色以外的东西。 */
+.rows-wrap {
+  flex: 1;
+  min-height: 160px;
+  border: 0;
+  border-top: 1px solid var(--sh-line-soft);
+  background: var(--sh-panel);
+  overflow: auto;
+}
+/* 不拆（或整章只剩一行）时这张表只有一行：把表的可用高度撑起来，
+   文本换成多行文本框，别把整章正文压在一条输入框里。 */
+.rows-wrap.is-single {
+  height: max(220px, calc(100dvh - 330px));
+}
+.rows {
+  width: 100%;
+  min-width: 700px;
+  table-layout: fixed;
+  /* 分开边框：粘住的表头才不会在滚动时丢掉自己的下边框 */
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--ws-font);
+}
+/* 表头：浅灰蓝底、下边一条主线，压在数据行之上。
+   表头是这一页的索引，要一眼看见：字号比正文小半档但更重、颜色更深，
+   不再与情绪胶囊 / 状态标签同一档（那一档是标签字，读的是行内）。 */
+.rows thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 40px;
+  padding: 0 12px;
+  text-align: left;
+  font-size: 12.2px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--sh-text-2);
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--sh-accent) 8%, var(--sh-panel));
+  border-bottom: 1px solid var(--sh-line);
+}
+/* 序号列的内容居中，表头跟着居中；其余各列都是左起，表头也左起 */
+.rows thead th:first-child {
+  text-align: center;
+}
+/* 纵向分隔线：只一格宽、低一档的线，用来分列不抢视线 */
+.rows th + th,
+.rows td + td {
+  border-left: 1px solid var(--sh-line-soft);
+}
+.rows td {
+  height: var(--ws-row-h);
+  padding: var(--ws-cell-py) 12px;
+  border-bottom: 1px solid var(--sh-line-soft);
+  vertical-align: middle;
+  color: var(--sh-text-2);
+  transition: background var(--sh-t-fast) var(--sh-ease);
+}
+.rows tr.spacer td {
+  height: auto;
+  padding: 0;
+  border: 0;
+}
+/* 对白行：**一眼能分辨**，不是"色温略不同"。
+   两层一起给——整行低比例绿底 + 左缘 3px 实线；旁白保持面板本色。
+   只加底色时在素瓷 / 纸墨里几乎看不出来（底色本来就带色），只加线又容易被
+   行首的序号按钮吃掉，所以两样都要。**不是渐变**：渐变到右端就淡没了，
+   一屏几十行里那一半与旁白长得一样。
+   取 `--sh-ok` 而不取强调色：强调色同时用于选中、光标与悬停，一色多义；
+   绿色只归"这是对话"这一个含义，选中的行仍能从蓝框/蓝底认出来。 */
+.rows tbody tr.is-dialogue td {
+  background: color-mix(in srgb, var(--sh-ok) 20%, var(--sh-panel));
+}
+.rows tbody tr.is-dialogue td:first-child {
+  box-shadow: inset 3px 0 0 var(--sh-ok);
+}
+/* 说话人那一格跟着用同色：扫视时先看到"这行有人说话"，再看到是谁。
+   **必须走 `:deep()`**：`.speaker-input` 在 SpeakerField 里，scoped 样式只会给
+   子组件的根节点带属性，写普通后代选择器压根匹配不上（皮肤那两套是全局规则，
+   所以它们生效、这一条不生效——同一件事两处表现不同）。 */
+.rows tbody tr.is-dialogue :deep(.speaker-input) {
+  color: var(--sh-ok);
+  font-weight: 600;
+}
+.rows tbody tr.is-failed td {
+  background: color-mix(in srgb, var(--sh-danger) 7%, transparent);
+}
+/* 过期：音频还在、还能听，只是不再对应当前角色 / 参数。不染底，只在左缘留一道窄条，
+   避免与失败的底色混成一档。 */
+.rows tbody tr.is-stale td:first-child {
+  box-shadow: inset 2px 0 0 var(--sh-warn);
+}
+.rows tbody tr.is-selected td {
+  background: var(--sh-accent-soft);
+}
+.rows tbody tr.is-selected td:first-child {
+  box-shadow: inset 2px 0 0 var(--sh-accent);
+}
+/* 光标所在行：删除与合并按这一行走，左侧留一道细条，不必先点行号。 */
+.rows tbody tr.is-caret td:first-child {
+  box-shadow: inset 2px 0 0 var(--sh-accent);
+}
+.rows tbody tr:last-child td {
+  border-bottom: 0;
+}
+/* 悬停比"对白行"再深一档：两者都取强调色，浅的那一档会被对话行吃掉，
+   鼠标滑过时反而看不出自己在哪一行。 */
+.rows tbody tr:not(.is-selected):hover td {
+  background: color-mix(in srgb, var(--sh-accent) 16%, var(--sh-panel));
+}
+/* 对白行的悬停沿用绿：换成蓝会让鼠标一滑过去"对白"就不见了。 */
+.rows tbody tr.is-dialogue:not(.is-selected):hover td {
+  background: color-mix(in srgb, var(--sh-ok) 26%, var(--sh-panel));
+}
+/* 列宽：序号 / 角色 / 情绪 / 音频固定，正文列吃满剩余宽度 */
+.col-ord {
+  width: 56px;
+  text-align: center;
+  color: var(--sh-text-4);
+}
+.col-speaker {
+  width: var(--ws-speaker-w, 112px);
+}
+.col-emotion {
+  width: var(--ws-emotion-w, 96px);
+}
+/* 表头切换：行里有引导指令时，这一列可切「情绪 / 引导」。 */
+.col-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid var(--sh-line-soft);
+  border-radius: 999px;
+  background: var(--sh-panel);
+  color: var(--sh-text-3);
+  font: inherit;
+  font-size: 11.8px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.col-switch:hover {
+  border-color: var(--sh-accent);
+  color: var(--sh-accent);
+}
+/* 引导指令一格：单行截断，点开就是这一行的参数弹窗。 */
+.instr-cell {
+  display: block;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--sh-text-2);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.instr-cell:hover {
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+}
+/* 没有引导指令的行退回显示情绪：颜色压一档，一眼看出这不是指令。 */
+.instr-cell.is-fallback {
+  color: var(--sh-text-4);
+}
+/* 字幕行的原时间码：缩在行号下面，不占新列（书稿项目没有这一行） */
+.ord-time {
+  display: block;
+  margin-top: 1px;
+  font-size: 9.5px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--sh-text-4);
+  opacity: 0.75;
+}
+/* 音频列只放图标：播放/生成、参数、更多操作三颗，删掉状态文字后按需收窄。 */
+.col-audio {
+  width: 116px;
+}
+/* 原文缺字：缩在行号下面一颗红三角，与时间码同一处，不另占一列 */
+.ord-warn {
+  display: flex;
+  justify-content: center;
+  margin-top: 1px;
+  color: var(--sh-danger);
+}
+.ord-btn {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-r-2xs);
+  background: transparent;
+  color: var(--sh-text-4);
+  font: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background var(--sh-t-fast) var(--sh-ease), color var(--sh-t-fast) var(--sh-ease),
+    border-color var(--sh-t-fast) var(--sh-ease);
+}
+.ord-btn:hover {
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+  color: var(--sh-text-2);
+}
+.ord-btn.is-selected {
+  border-color: transparent;
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+}
+.row-text {
+  line-height: 1.55;
+}
+.row-input.row-text-input {
+  font-size: var(--ws-font);
+}
+/* 输入框里的标签高亮：底下的输入框保留全部文字与光标，上面的镜像只负责
+   把 [[…]] 那几段染底。镜像里的字是透明的，所以两层不会重影；
+   字号、行高、内边距、边框必须与输入框逐项一致，否则底色会错行。 */
+.mark-field {
+  position: relative;
+  min-width: 0;
+}
+.mark-mirror {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-r-2xs);
+  color: transparent;
+  font: inherit;
+  font-size: var(--ws-font);
+  line-height: 1.55;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+}
+.mark-mirror .mark-hit {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--sh-accent) 20%, transparent);
+}
+.mark-field.is-tall {
+  display: block;
+}
+.rows.is-single td {
+  vertical-align: top;
+  padding-top: 10px;
+}
+.row-text-area {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 450px);
+  min-height: 260px;
+  padding: 8px 10px;
+  border: 1px solid var(--sh-line-soft);
+  border-radius: var(--sh-r-xs);
+  background: var(--sh-field);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  resize: vertical;
+  scrollbar-gutter: stable;
+}
+.row-text-area:focus {
+  border-color: var(--sh-accent);
+}
+.mark-mirror.is-tall {
+  padding: 8px 10px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  scrollbar-gutter: stable;
+}
+.mark-mirror.is-tall .mark-hit {
+  border-radius: 3px;
+}
+/* 音频格：主操作在最左，参数与三点菜单随后，不再挂状态文字 */
+.audio-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.audio-btn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--sh-accent), var(--sh-accent-2));
+  color: var(--sh-accent-contrast);
+  cursor: pointer;
+  transition: filter var(--sh-t-fast) var(--sh-ease), transform var(--sh-t-fast) var(--sh-ease);
+}
+.audio-btn:hover {
+  filter: brightness(1.07);
+}
+.audio-btn:active {
+  transform: scale(0.96);
+}
+.audio-btn.is-danger {
+  background: var(--sh-danger-soft);
+  color: var(--sh-danger);
+  border: 1px solid color-mix(in srgb, var(--sh-danger) 32%, transparent);
+}
+.audio-btn.is-generate {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+  border: 1px solid color-mix(in srgb, var(--sh-accent) 26%, transparent);
+}
+.audio-btn.is-generate:hover {
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+  border-color: transparent;
+}
+/* 过期：仍可播放，用警示色把"这段不是现在的"标出来；不删旧音频。 */
+.audio-btn.is-stale {
+  background: var(--sh-warn-soft);
+  color: var(--sh-warn);
+  border: 1px solid color-mix(in srgb, var(--sh-warn) 30%, transparent);
+}
+.audio-btn.is-stale:hover {
+  background: var(--sh-warn);
+  color: var(--sh-panel);
+  border-color: transparent;
+}
+.audio-btn.is-busy {
+  cursor: progress;
+}
+/* 参数键比主操作轻一档：无底色，悬停才浮出来，避免与播放键抢注意力 */
+.audio-params {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--sh-r-2xs);
+  background: transparent;
+  color: var(--sh-text-4);
+  cursor: pointer;
+  transition: background var(--sh-t-fast) var(--sh-ease), color var(--sh-t-fast) var(--sh-ease);
+}
+.audio-params:hover:not(:disabled) {
+  background: var(--sh-chip);
+  color: var(--sh-accent);
+}
+.audio-params:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.spin {
+  animation: audio-spin 900ms linear infinite;
+}
+@keyframes audio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.audio-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* 单元格里的输入：透明底、聚焦出主色环——平时只看见文字 */
+.row-input {
+  width: 100%;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: calc(var(--ws-font) - 0.4px);
+  line-height: 1.55;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--sh-r-2xs);
+  transition: border-color var(--sh-t-fast) var(--sh-ease), background var(--sh-t-fast) var(--sh-ease);
+}
+/* 悬停不另描一层框：整行已经有底色，格里再画一个框会变成"框中框"。
+   可编辑的提示交给光标与聚焦态。 */
+.row-input:focus {
+  outline: none;
+  border-color: var(--sh-accent);
+  background: var(--sh-panel);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+.rows-empty {
+  padding: 22px 10px !important;
+  text-align: center;
+  font-size: 11.8px;
+  color: var(--sh-text-4);
+}
+/* 右列是章节栏：与主区同一张白纸，表格与目录并排。
+   卡片不自己滚动——章节列表在里面滚，刊头留在顶上。 */
+.producer-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: var(--sh-r-md);
+  border: 1px solid var(--sh-line);
+  background: var(--sh-panel);
+  align-self: stretch;
+  max-height: 100%;
+  overflow: hidden;
+}
+/* 章节阅读区跟着可用宽度收：先缩角色列，再窄就把角色挪到正文上方，
+   正文始终整行可读，不靠横向裁切。 */
+@container (max-width: 640px) {
+  .chapter-line {
+    grid-template-columns: 24px minmax(40px, 52px) minmax(0, 1fr);
+    gap: 6px;
+  }
+}
+@container (max-width: 460px) {
+  .chapter-line {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+  .chapter-line-ord {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .chapter-line-speaker {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .chapter-line-text {
+    grid-column: 1 / -1;
+    padding-top: 2px;
+  }
+}
+@media (max-width: 1100px) {
+  .producer-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* 窄屏：目录排到正文上面，并给个高度上限——它不能把表格挤出屏。 */
+  .producer-side {
+    order: -1;
+    max-height: 240px;
+  }
+}

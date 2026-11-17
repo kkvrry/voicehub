@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 敏感配置（含 API 密钥），不入库
+text_analyzer_config.json
+
+# 运行时产物
+text_analyzer_progress.json
+settings.ini
+
+# IDE
+.idea/
+.vscode/
+
+# 工具与测试缓存
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# PyInstaller 打包产物（build/ 是中间文件，dist/ 是可直接分发的目录与 zip）
+dist/
+build/
+*.spec.bak
+
+# 打包前拉下来的 ffmpeg / ffprobe（由 packaging/build.py 准备，体积大不入库）。
+# 应用图标 voicehub.ico 例外：源码态的托盘也读它，入库才能跨机器保持一致。
+packaging/vendor/
+
+# 新项目的运行时产物（状态库/缓存/日志；库与缓存在 %LOCALAPPDATA%，这里兜底）
+.audiobook/
+*.db
+*.db-wal
+*.db-shm
+
+# 冒烟脚本（scripts/smoke_web.py）建的那本测试书
+.smoke/
+
+# 助手的工作记忆与临时文件（不是项目源码）
+.workbuddy/
+
+# Excel 锁文件（打开时生成 ~$xxx.xlsx）
+~$*.xlsx
+~$*.xls
+
+# pytest 自定临时目录（--basetemp 用；跑完测试留下的杂物。目录名叫什么都一并兜住）
+.pytest-*/
+
+# 演示/截图用的临时目录
+.demo/
+.pytest-run/
+
+# VoiceHub 运行时数据：config.json 里有真实 API 密钥，另有 hub.db、缓存音频与日志。
+# 它跟着项目目录走（start.bat 里 `%~dp0data`），但不入版本库。
+data/
+tmp/
+
+# 宣传与视觉素材（录屏、海报、设计稿；体积大且属产物，不入库）
+promo/
+vibe_images/
+
+# 前端依赖与构建产物
+node_modules/
+web/dist/
+
+# 演示库与 ASR 权重：测试/按需下载，不入库
+demo_library/
+models/asr/
+
+# 截图工作目录（scripts/shot.mjs 的输出，docs/screenshots/ 里的才是交付物）
+.shots/
