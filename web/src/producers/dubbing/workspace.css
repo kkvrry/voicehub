@@ -1,0 +1,58 @@
+.dub button {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* 配音工作区的共用外框：三列一致的头、底与卡片边。
+   组件内部样式仍在各自 SFC 里；这里只放跨组件的那几层。 */
+
+.dub-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-md);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow-1);
+  overflow: hidden;
+}
+
+.dub-col-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+}
+
+.dub-col-head .t {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--sh-text-3);
+}
+
+.dub-col-head .n {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--sh-text-4);
+}
+
+.dub-mini {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--sh-text-4);
+}
+
+.dub-mini:hover {
+  background: var(--sh-chip);
+  color: var(--sh-accent);
+}

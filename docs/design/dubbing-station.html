@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>配音工作流 · 设计稿</title>
+<style>
+  /* 令牌与 web/src/settings/theme.css 同一取值。 */
+  :root {
+    --font: 'Segoe UI Variable Text', 'Segoe UI', Inter, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    --mono: 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
+    --canvas: #eaf2fd;
+    --panel: #fdfeff;
+    --chip: #eef4fc;
+    --line: rgba(122, 156, 202, 0.22);
+    --line-soft: rgba(122, 156, 202, 0.13);
+    --text: #101f38;
+    --text-2: #3c516e;
+    --text-3: #5a6f8d;
+    --accent: #2f7bff;
+    --accent-soft: rgba(47, 123, 255, 0.1);
+    --accent-ring: rgba(47, 123, 255, 0.26);
+    --accent-2: #7c6cff;
+    --ok: #0e9d74;
+    --ok-soft: rgba(14, 157, 116, 0.12);
+    --warn: #c07a1d;
+    --warn-soft: rgba(192, 122, 29, 0.13);
+    --danger: #d9574b;
+    --danger-soft: rgba(217, 87, 75, 0.12);
+    --hover: rgba(255, 255, 255, 0.6);
+    --shadow: 0 1px 2px rgba(19, 43, 79, 0.05), 0 14px 34px -26px rgba(19, 43, 79, 0.55);
+    --stage: #131b2b;
+    --glow-1: rgba(150, 202, 255, 0.45);
+    --glow-2: rgba(185, 172, 255, 0.34);
+    color-scheme: light;
+  }
+  html[data-theme='dark'] {
+    --canvas: #070d18;
+    --panel: #121c2c;
+    --chip: #1a2740;
+    --line: rgba(120, 165, 235, 0.2);
+    --line-soft: rgba(120, 165, 235, 0.1);
+    --text: #e9f1ff;
+    --text-2: #c2d1e8;
+    --text-3: #98abc7;
+    --accent: #62a2ff;
+    --accent-soft: rgba(98, 162, 255, 0.14);
+    --accent-ring: rgba(98, 162, 255, 0.3);
+    --accent-2: #9b8cff;
+    --ok: #39d3a4;
+    --ok-soft: rgba(57, 211, 164, 0.14);
+    --warn: #f0b162;
+    --warn-soft: rgba(240, 177, 98, 0.14);
+    --danger: #ff8577;
+    --danger-soft: rgba(255, 133, 119, 0.14);
+    --hover: rgba(255, 255, 255, 0.05);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 40px -28px rgba(0, 0, 0, 0.9);
+    --stage: #05090f;
+    --glow-1: rgba(38, 94, 186, 0.4);
+    --glow-2: rgba(84, 63, 168, 0.32);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; font-family: var(--font); font-size: 13px; line-height: 1.5;
+    color: var(--text); background: var(--canvas); overflow: hidden; -webkit-font-smoothing: antialiased;
+  }
+  svg { display: block; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
+
+  .draft {
+    position: fixed; inset: 0 0 auto 0; height: 30px; z-index: 20; display: flex; align-items: center; gap: 8px;
+    padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: 11px; color: var(--text-3);
+  }
+  .draft .lb { letter-spacing: .06em; }
+  .draft .grow { flex: 1; }
+  .draft .sep { width: 1px; height: 12px; background: var(--line); margin: 0 2px; }
+  .draft button { height: 20px; padding: 0 9px; border-radius: 999px; font-size: 11px; color: var(--text-2); }
+  .draft button:hover { background: var(--chip); }
+  .draft button.is-on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  .app {
+    display: grid; grid-template-columns: 88px minmax(0, 1fr);
+    height: calc(100vh - 30px); margin-top: 30px;
+    background-image:
+      radial-gradient(900px 620px at 4% -8%, var(--glow-1), transparent 62%),
+      radial-gradient(760px 520px at 98% 2%, var(--glow-2), transparent 64%);
+  }
+
+  .nav { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 0 10px; border-right: 1px solid var(--line); background: var(--panel); }
+  .nav-item { width: 72px; padding: 9px 0 7px; border-radius: 12px; display: grid; justify-items: center; gap: 4px; color: var(--text-3); font-size: 11px; letter-spacing: .02em; }
+  .nav-item:hover { background: var(--hover); color: var(--text-2); }
+  .nav-item.is-on { background: var(--accent-soft); color: var(--accent); }
+  .nav-item.is-on .nav-label { font-weight: 600; }
+  .nav-sep { width: 40px; height: 1px; background: var(--line); margin: 8px 0; }
+  .nav-spacer { flex: 1; }
+
+  .shell { display: flex; flex-direction: column; min-width: 0; }
+
+  .topbar { height: 56px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 18px; border-bottom: 1px solid var(--line); }
+  .topbar h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  .topbar .vsep { width: 1px; height: 18px; background: var(--line); }
+  .proj .n { font-size: 12.5px; color: var(--text-2); }
+  .proj .m { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .grow { flex: 1; }
+  .tpl { height: 24px; padding: 0 2px 0 7px; border-radius: 6px; border: 1px solid var(--line); background: var(--chip); color: var(--text-2); font: inherit; font-size: 11.5px; }
+  .tpl:hover { border-color: var(--accent-ring); color: var(--accent); }
+  .engine { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--chip); font-size: 11.5px; color: var(--text-2); }
+  .engine .pip { width: 5px; height: 5px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+  .ghost { height: 28px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); font-size: 12px; color: var(--text-2); }
+  .ghost:hover { border-color: var(--accent-ring); color: var(--accent); }
+
+  .work { flex: 1; min-height: 0; display: grid; grid-template-columns: 264px minmax(0, 1fr) 300px; }
+
+  /* ---------------- 左：源 + 角色 ---------------- */
+  .side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .side-head { height: 36px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 16px; }
+  .side-head .t { font-size: 11.5px; font-weight: 600; letter-spacing: .06em; color: var(--text-3); }
+  .side-head .n { margin-left: auto; font-size: 11px; color: var(--text-3); }
+
+  .src { margin: 0 12px 10px; border-radius: 11px; border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+  .thumb { position: relative; aspect-ratio: 16 / 9; background: var(--stage); display: grid; place-items: center; }
+  .thumb::after { content: ''; position: absolute; inset: 0; background: radial-gradient(120% 80% at 30% 20%, rgba(98,162,255,.24), transparent 60%), radial-gradient(90% 70% at 80% 90%, rgba(155,140,255,.18), transparent 60%); }
+  .thumb .play { position: relative; z-index: 1; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.9); color: #0b1420; }
+  .thumb .dur { position: absolute; right: 6px; bottom: 5px; z-index: 1; padding: 0 4px; border-radius: 4px; background: rgba(6,12,22,.66); color: #eaf2ff; font-family: var(--mono); font-size: 9.5px; }
+  .src-body { padding: 8px 10px 9px; }
+  .src-body .n { font-size: 12.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .src-body .m { margin-top: 1px; font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .src-tags { display: flex; gap: 4px; margin-top: 6px; }
+  .src-tags span { font-size: 9.5px; padding: 0 5px; border-radius: 4px; background: var(--chip); color: var(--text-3); }
+
+  .cast { flex: 1; min-height: 0; overflow: auto; padding: 0 6px 10px; }
+  .stats { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 0 12px 12px; border-radius: 9px; overflow: hidden; border: 1px solid var(--line); background: var(--line-soft); }
+  .stats div { background: var(--panel); padding: 7px 10px; display: flex; align-items: baseline; gap: 5px; }
+  .stats b { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--text); }
+  .stats span { font-size: 10.5px; color: var(--text-3); }
+  .role { padding: 7px 9px 8px; border-radius: 9px; border: 1px solid transparent; }
+  .role:hover { background: var(--hover); }
+  .role.is-on { background: var(--accent-soft); border-color: var(--accent-ring); }
+  .role-top { display: flex; align-items: center; gap: 7px; }
+  .dots { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+  .role-name { font-size: 12.2px; }
+  .role-mode { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; height: 19px; padding: 0 6px; border-radius: 5px; background: var(--chip); font-size: 10px; color: var(--text-2); }
+  .role-mode.tts { background: var(--accent-soft); color: var(--accent); }
+  .role-mode.rvc { background: rgba(155,140,255,.16); color: var(--accent-2); }
+  .role-mode.keep { background: var(--chip); color: var(--text-3); }
+  .role-sub { margin-top: 3px; padding-left: 14px; font-size: 10.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ---------------- 中：预览 + 下区（时间轴 / 字幕 切换） ---------------- */
+  .stage-col { display: grid; grid-template-rows: minmax(0, 1fr) 340px; min-height: 0; }
+  .preview { display: grid; place-items: center; padding: 8px 18px 4px; min-height: 0; }
+  .frame { position: relative; flex: none; border-radius: 11px; overflow: hidden; background: var(--stage); border: 1px solid var(--line); }
+
+  .panel { display: flex; flex-direction: column; min-height: 0; padding: 0 18px 8px; }
+  .panel-bar { flex: none; height: 36px; display: flex; align-items: center; gap: 8px; }
+  .modes { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--chip); border: 1px solid var(--line); }
+  .modes button { height: 22px; padding: 0 10px; border-radius: 6px; font-size: 11.5px; color: var(--text-3); display: inline-flex; align-items: center; gap: 5px; }
+  .modes button.is-on { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .14); }
+  .p-hint { font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .panel-body { flex: 1; min-height: 0; position: relative; }
+  .panel-body > * { position: absolute; inset: 0; }
+  #view-seg { display: none; }
+  body.mode-seg #view-tl { display: none; }
+  body.mode-seg #view-seg { display: flex; }
+  body.mode-seg .tl-only { display: none; }
+  .frame::after { content: ''; position: absolute; inset: 0; background: radial-gradient(110% 80% at 35% 25%, rgba(98,162,255,.22), transparent 62%), radial-gradient(80% 70% at 85% 95%, rgba(155,140,255,.16), transparent 60%); }
+  .frame .badge { position: absolute; top: 8px; left: 10px; z-index: 1; font-size: 9.5px; color: rgba(233,241,255,.7); font-family: var(--mono); letter-spacing: .04em; }
+  .frame .center { position: absolute; inset: 0; display: grid; place-items: center; z-index: 1; }
+  .frame .center button { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.92); color: #0b1420; box-shadow: 0 10px 30px -12px rgba(0,0,0,.7); }
+  .frame .sub { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 1; max-width: 86%; padding: 2px 8px; border-radius: 5px; background: rgba(5,10,18,.64); color: #eef4ff; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; gap: 6px; align-items: baseline; }
+  .frame .sub b { font-weight: 600; color: #9bd0ff; font-size: 10.5px; }
+  .overlay { position: absolute; top: 7px; right: 7px; z-index: 2; display: inline-flex; padding: 2px; border-radius: 7px; background: rgba(8,14,24,.6); }
+  .overlay button { height: 20px; padding: 0 8px; border-radius: 5px; font-size: 10px; color: rgba(233,241,255,.66); }
+  .overlay button.is-on { background: rgba(255,255,255,.9); color: #0b1420; font-weight: 600; }
+
+  .play { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; box-shadow: 0 6px 14px -8px var(--accent); }
+  html[data-theme='dark'] .play { color: #06101f; }
+  .time { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .time span { color: var(--text-3); font-size: 11px; }
+  .tl-bar .grow { flex: 1; }
+  .tool { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 7px; border-radius: 6px; font-size: 11px; color: var(--text-3); }
+  .tool:hover { background: var(--hover); color: var(--text); }
+
+  .tl-card { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+  .ruler-row { flex: none; display: grid; grid-template-columns: 54px minmax(0, 1fr); height: 22px; border-bottom: 1px solid var(--line); }
+  .ruler { position: relative; margin: 0 10px; }
+  .tick { position: absolute; top: 5px; font-size: 9px; font-family: var(--mono); color: var(--text-3); }
+  .tick::after { content: ''; position: absolute; left: 0; top: 12px; width: 1px; height: 3px; background: var(--line); }
+
+  .lanes { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .lane { flex: 1 1 0; min-height: 28px; display: grid; grid-template-columns: 54px minmax(0, 1fr); border-bottom: 1px dashed var(--line-soft); }
+  .lane:last-child { border-bottom: 0; }
+  .lane-label { display: flex; align-items: center; padding-left: 11px; font-size: 10.5px; color: var(--text-3); }
+  .lane-track { position: relative; margin: 0 10px; display: flex; align-items: center; }
+  .clip { position: absolute; top: 50%; transform: translateY(-50%); height: calc(100% - 12px); border-radius: 4px; display: flex; align-items: center; padding: 0 6px; overflow: hidden; }
+  .clip .wave { position: absolute; inset: 3px; background-image: repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 4px); opacity: .16; }
+  .clip .lbl { position: relative; z-index: 1; font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .clip.mute { background: var(--chip); color: var(--text-3); border: 1px dashed var(--line); }
+  .clip.lead { background: rgba(155,140,255,.13); color: var(--accent-2); border: 1px solid rgba(155,140,255,.28); }
+  .clip.bed { background: var(--ok-soft); color: var(--ok); border: 1px solid rgba(57,211,164,.26); }
+  .clip.music { background: var(--warn-soft); color: var(--warn); border: 1px solid rgba(240,177,98,.26); }
+  .cue-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .pending { position: absolute; top: 50%; transform: translateY(-50%); height: calc(100% - 20px); border-radius: 4px; border: 1px dashed var(--line); display: flex; align-items: center; padding: 0 6px; font-size: 9.5px; color: var(--text-3); }
+  .playhead { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--accent); z-index: 3; }
+  .playhead::before { content: ''; position: absolute; top: -1px; left: -3px; border: 3.5px solid transparent; border-top-color: var(--accent); }
+
+  /* ---------------- 段落表（与时间轴共用一块区域） ---------------- */
+  .seg-table { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+  .seg-row, .seg-h { display: grid; grid-template-columns: 34px 156px 42px 84px minmax(0, 1fr) 78px; align-items: center; gap: 8px; padding: 0 10px; }
+  .seg-h { flex: none; height: 24px; border-bottom: 1px solid var(--line); font-size: 10px; color: var(--text-3); letter-spacing: .04em; }
+  .seg-body { flex: 1; min-height: 0; overflow: auto; }
+  .seg-row { height: 44px; border-bottom: 1px dashed var(--line-soft); position: relative; }
+  .seg-row:hover { background: var(--hover); }
+  .seg-row.is-on { background: var(--accent-soft); }
+  .seg-row.is-on::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--accent); }
+  .seg-i { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
+  .seg-tc { font-family: var(--mono); font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .seg-tc em { font-style: normal; color: var(--text-3); padding: 0 3px; }
+  .seg-d { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); text-align: right; }
+  .seg-x { font-size: 12.2px; line-height: 1.55; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 20px; padding: 0 6px; border-radius: 5px; background: var(--chip); font-size: 10px; color: var(--text-2); }
+  .who i { width: 6px; height: 6px; border-radius: 2px; flex: none; }
+  .fit { font-size: 10px; color: var(--text-3); }
+  .fit.ok { color: var(--ok); }
+  .fit.warn { color: var(--warn); }
+
+  /* ---------------- 右：工作流 ---------------- */
+  .flow { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+  .flow-head { height: 36px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; }
+  .flow-head .t { font-size: 11.5px; font-weight: 600; letter-spacing: .06em; color: var(--text-3); }
+  .flow-head .n { margin-left: auto; font-size: 10.5px; color: var(--text-3); }
+  .nodes { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 6px; }
+  .node { padding: 7px 8px 8px 7px; border-radius: 8px; border: 1px solid transparent; }
+  .node:hover { background: var(--hover); }
+  .node.is-run { background: var(--accent-soft); border-color: var(--accent-ring); }
+  .node.is-off { opacity: .55; }
+  .node-top { display: flex; align-items: baseline; gap: 6px; }
+  .node-i { font-family: var(--mono); font-size: 9.5px; color: var(--text-3); }
+  .node-n { font-size: 12px; color: var(--text); }
+  .node-st { margin-left: auto; font-size: 10px; color: var(--text-3); white-space: nowrap; }
+  .node-st.ok { color: var(--ok); }
+  .node-st.run { color: var(--accent); }
+  .ports { margin-top: 2px; font-family: var(--mono); font-size: 9.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ports b { font-weight: 400; color: var(--text-2); }
+  .node .bar { height: 2px; border-radius: 2px; background: var(--line-soft); margin-top: 6px; overflow: hidden; }
+  .node .bar i { display: block; height: 100%; background: var(--accent); }
+  .add-node { margin: 6px 2px 0; height: 28px; border-radius: 7px; border: 1px dashed var(--line); color: var(--text-3); font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .add-node:hover { border-color: var(--accent-ring); color: var(--accent); }
+
+  .flow-foot { flex: none; padding: 10px 14px 12px; border-top: 1px solid var(--line); }
+  .artifacts { display: flex; gap: 4px; margin-bottom: 8px; font-size: 10px; color: var(--text-3); }
+  .artifacts span { flex: 1; text-align: center; padding: 3px 0; border-radius: 5px; background: var(--chip); font-family: var(--mono); }
+  .primary { width: 100%; height: 32px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 600; box-shadow: 0 8px 18px -12px var(--accent); }
+  html[data-theme='dark'] .primary { color: #06101f; }
+  .primary:hover { filter: brightness(1.06); }
+  .others { display: flex; gap: 5px; margin-top: 6px; }
+  .others button { flex: 1; height: 24px; border-radius: 6px; border: 1px solid var(--line); font-size: 11px; color: var(--text-2); background: var(--chip); }
+  .others button:hover { border-color: var(--accent-ring); color: var(--accent); }
+  .out-hint { margin-top: 6px; font-size: 10px; color: var(--text-3); text-align: center; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="draft" role="group" aria-label="设计稿控制">
+  <span class="lb">配音工作流 · 设计稿</span>
+  <span class="sep"></span>
+  <button id="t-light">浅色</button>
+  <button id="t-dark" class="is-on">深色</button>
+  <span class="grow"></span>
+  <span>稿面 1440 × 900 · 令牌取自 web/src/settings/theme.css</span>
+</div>
+
+<div class="app">
+  <nav class="nav" aria-label="主导航">
+    <a class="nav-item" href="#">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 5.5h5v13H4z"/><path d="M11 5.5h4v13h-4z"/><path d="M17 5.5h3v13h-3z"/></svg>
+      <span class="nav-label">音色库</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3l1.8 4.8 4.8 1.8-4.8 1.8L12 16.2 10.2 11.4 5.4 9.6 10.2 7.8z"/><path d="M18 16l.9 2.3L21 19l-2.1.7L18 22l-.9-2.3L15 19l2.1-.7z"/></svg>
+      <span class="nav-label">生成</span>
+    </a>
+    <a class="nav-item is-on" href="#" aria-current="page">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10.5l5-3v9l-5-3z"/></svg>
+      <span class="nav-label">配音</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v18H6.5A2.5 2.5 0 0 1 4 18.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v18h4.5a2.5 2.5 0 0 0 2.5-2.5z"/></svg>
+      <span class="nav-label">创作</span>
+    </a>
+    <div class="nav-spacer"></div>
+    <div class="nav-sep"></div>
+    <a class="nav-item" href="#">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M10 3v3M14 3v3M10 18v3M14 18v3M3 10h3M3 14h3M18 10h3M18 14h3"/></svg>
+      <span class="nav-label">引擎</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h3"/></svg>
+      <span class="nav-label">日志</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.1 2.1M16.4 16.4l2.1 2.1M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1"/></svg>
+      <span class="nav-label">设置</span>
+    </a>
+  </nav>
+
+  <div class="shell">
+    <header class="topbar">
+      <h1>配音</h1>
+      <span class="vsep"></span>
+      <div class="proj">
+        <span class="n">第二集 城市之光.mp4</span>
+        <span class="m">12:30 · 1920×1080 · 30 fps · 1 条音轨</span>
+      </div>
+      <span class="grow"></span>
+      <span class="engine"><span class="pip"></span>audio.cpp · timbre</span>
+      <span class="engine"><span class="pip"></span>Qwen3-ASR</span>
+      <button class="ghost">另存为工作流</button>
+    </header>
+
+    <div class="work">
+      <!-- ------------------------------------------------ 源与角色 -->
+      <aside class="side">
+        <div class="side-head"><span class="t">源</span></div>
+
+        <div class="src">
+          <div class="thumb">
+            <span class="play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6L19 12z"/></svg></span>
+            <span class="dur">12:30</span>
+          </div>
+          <div class="src-body">
+            <div class="n">第二集 城市之光.mp4</div>
+            <div class="m">H.264 · AAC 44.1 kHz 立体声</div>
+            <div class="src-tags"><span>1 条音轨</span><span>已分出 2 轨</span></div>
+          </div>
+        </div>
+
+        <div class="side-head"><span class="t">角色</span><span class="n">4 位 · 逐段生效</span></div>
+        <div class="cast">
+          <div class="role">
+            <div class="role-top">
+              <span class="dots" style="background:#62a2ff"></span>
+              <span class="role-name">陈默</span>
+              <span class="role-mode rvc" id="chen-mode">变声
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+              </span>
+            </div>
+            <div class="role-sub" id="chen-sub">青年男声 · 保时长 · 42 段</div>
+          </div>
+
+          <div class="role is-on">
+            <div class="role-top">
+              <span class="dots" style="background:#9b8cff"></span>
+              <span class="role-name">林嫣</span>
+              <span class="role-mode tts">TTS
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+              </span>
+            </div>
+            <div class="role-sub">清亮女声 · 61 段</div>
+          </div>
+
+          <div class="role">
+            <div class="role-top">
+              <span class="dots" style="background:#39d3a4"></span>
+              <span class="role-name">旁白</span>
+              <span class="role-mode tts">TTS
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+              </span>
+            </div>
+            <div class="role-sub">低缓叙述 · 74 段</div>
+          </div>
+
+          <div class="role">
+            <div class="role-top">
+              <span class="dots" style="background:#f0b162"></span>
+              <span class="role-name">环境人声</span>
+              <span class="role-mode keep">原声
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+              </span>
+            </div>
+            <div class="role-sub">不处理 · 37 段</div>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div><b>214</b><span>段</span></div>
+          <div><b>64</b><span>已生成</span></div>
+          <div><b>3</b><span>顺延</span></div>
+          <div><b>150</b><span>待生成</span></div>
+        </div>
+      </aside>
+
+      <!-- ------------------------------------------------ 预览 / 时间轴 / 段落 -->
+      <main class="stage-col">
+        <div class="preview">
+          <div class="frame" id="frame">
+            <span class="badge">预览 · 12:30</span>
+            <div class="overlay" role="group" aria-label="字幕叠加">
+              <button>关</button>
+              <button>文本</button>
+              <button class="is-on">文本 + 角色</button>
+            </div>
+            <div class="center"><button title="播放" aria-label="播放"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6L19 12z"/></svg></button></div>
+            <div class="sub"><b>林嫣</b><span>“你到哪儿了？”那边问，背景里有碗碟的声响。</span></div>
+          </div>
+        </div>
+
+        <section class="panel">
+          <div class="panel-bar">
+            <div class="modes" role="tablist" aria-label="下区视图">
+              <button class="is-on" data-mode="tl" role="tab" aria-selected="true">时间轴</button>
+              <button data-mode="seg" role="tab" aria-selected="false">字幕</button>
+            </div>
+            <button class="play" title="播放" aria-label="播放"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.2v13.6L19 12z"/></svg></button>
+            <span class="time" id="cur">03:12,500 <span>/ 12:30</span></span>
+            <span class="grow"></span>
+            <span class="p-hint" id="p-hint">5 轨 · 214 段</span>
+            <button class="tool tl-only" title="缩小"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+            <button class="tool tl-only" title="放大"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+            <button class="tool tl-only" title="吸附到段边界">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4v16M18 4v16M6 12h12"/></svg>
+              吸附
+            </button>
+          </div>
+
+          <div class="panel-body">
+            <div class="tl-card" id="view-tl">
+              <div class="ruler-row">
+                <span></span>
+                <div class="ruler" id="ruler"></div>
+              </div>
+              <div class="lanes">
+                <div class="lane" title="抽音轨（解复用，未分离，含人声）">
+                  <span class="lane-label">原声</span>
+                  <div class="lane-track">
+                    <div class="clip mute" style="left:0;width:100%"><span class="wave"></span><span class="lbl">静音（已替换）</span></div>
+                  </div>
+                </div>
+                <div class="lane" title="分轨产物：人声">
+                  <span class="lane-label">人声</span>
+                  <div class="lane-track">
+                    <div class="clip lead" style="left:0;width:100%"><span class="wave"></span><span class="lbl">vocals · 已分离</span></div>
+                  </div>
+                </div>
+                <div class="lane" title="分轨产物：原片音乐、环境与音效">
+                  <span class="lane-label">伴奏</span>
+                  <div class="lane-track">
+                    <div class="clip bed" style="left:0;width:100%"><span class="wave"></span><span class="lbl">bed · −6 dB</span></div>
+                  </div>
+                </div>
+                <div class="lane" title="逐段产物：TTS 与变声合成后的配音">
+                  <span class="lane-label">配音</span>
+                  <div class="lane-track" id="voice-lane"></div>
+                </div>
+                <div class="lane" title="生成或引入的新音乐，只对齐总时长">
+                  <span class="lane-label">配乐</span>
+                  <div class="lane-track">
+                    <div class="clip mute" style="left:0;width:100%"><span class="lbl">未启用 · 加一步「配乐」后出现</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="seg-table" id="view-seg">
+              <div class="seg-h">
+                <span>#</span><span>起止</span><span style="text-align:right">时长</span><span>角色</span><span>文本</span><span>贴合</span>
+              </div>
+              <div class="seg-body" id="seg-body"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- ------------------------------------------------ 工作流 -->
+      <aside class="flow">
+        <div class="flow-head">
+          <span class="t">工作流</span>
+          <select class="tpl" id="tpl" aria-label="工作流模板">
+            <option>变声重制</option>
+            <option>重配</option>
+          </select>
+          <span class="n" id="flow-hint">9 节点</span>
+        </div>
+
+        <div class="nodes">
+          <div class="node">
+            <div class="node-top"><span class="node-i">01</span><span class="node-n" data-node="extract">解复用</span><span class="node-st ok">完成</span></div>
+            <div class="ports"><b>media</b> → audio.mix</div>
+          </div>
+
+          <div class="node">
+            <div class="node-top"><span class="node-i">02</span><span class="node-n" data-node="stems">人声分离</span><span class="node-st ok">完成</span></div>
+            <div class="ports">audio.mix → <b>audio.vocal + audio.bed</b></div>
+          </div>
+
+          <div class="node">
+            <div class="node-top"><span class="node-i">03</span><span class="node-n" data-node="asr">转录</span><span class="node-st ok">完成</span></div>
+            <div class="ports">audio.vocal → <b>cues</b> · 214 段</div>
+          </div>
+
+          <div class="node is-run" id="node-run">
+            <div class="node-top"><span class="node-i">04</span><span class="node-n" id="run-name" data-node="rvc">变声</span><span class="node-st run">运行中</span></div>
+            <div class="ports" id="run-ports">audio.vocal + casting → <b>audio.vocal</b> · 42 段</div>
+            <div class="bar"><i style="width:38%"></i></div>
+          </div>
+
+          <div class="node" id="node-alt">
+            <div class="node-top"><span class="node-i">05</span><span class="node-n" id="alt-name" data-node="tts">配音</span><span class="node-st" id="alt-st">排队中</span></div>
+            <div class="ports" id="alt-ports">cues + casting → <b>audio.vocal</b> · 135 段</div>
+          </div>
+
+          <div class="node is-off">
+            <div class="node-top"><span class="node-i">06</span><span class="node-n" data-node="music">配乐</span><span class="node-st">未启用</span></div>
+            <div class="ports">— → audio.music</div>
+          </div>
+
+          <div class="node">
+            <div class="node-top"><span class="node-i">07</span><span class="node-n" data-node="align">贴齐</span><span class="node-st">等待上游</span></div>
+            <div class="ports" id="align-ports">cues + audio.vocal ×2 → <b>track</b></div>
+          </div>
+
+          <div class="node">
+            <div class="node-top"><span class="node-i">08</span><span class="node-n" data-node="mix">混音</span><span class="node-st">等待上游</span></div>
+            <div class="ports">track + audio.bed → <b>audio.mix</b></div>
+          </div>
+
+          <div class="node">
+            <div class="node-top"><span class="node-i">09</span><span class="node-n" data-node="mux">封装</span><span class="node-st">等待上游</span></div>
+            <div class="ports">audio.mix + media → <b>video</b></div>
+          </div>
+
+          <button class="add-node">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            加一步 · 只列可接上的操作
+          </button>
+        </div>
+
+        <div class="flow-foot">
+          <div class="artifacts"><span>cues.json</span><span>track.json</span><span>mix.wav</span></div>
+          <button class="primary">导出成片</button>
+          <div class="others"><button>音轨 M4A</button><button>字幕 SRT</button></div>
+          <div class="out-hint">out/第二集 城市之光.mp4 · 预估 186 MB</div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const TOTAL = 750;
+  const SPEAKERS = [
+    { key: 'chen', name: '陈默', color: '#62a2ff', mode: 'rvc', target: '青年男声' },
+    { key: 'lin', name: '林嫣', color: '#9b8cff', mode: 'tts', target: '清亮女声' },
+    { key: 'nar', name: '旁白', color: '#39d3a4', mode: 'tts', target: '低缓叙述' },
+    { key: 'env', name: '环境人声', color: '#f0b162', mode: 'keep', target: '' }
+  ];
+
+  const pad = (v, n = 2) => String(v).padStart(n, '0');
+  const tc = (sec) => {
+    const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    const ms = Math.round((sec - Math.floor(sec)) * 1000);
+    return `${pad(m)}:${pad(s)},${pad(ms, 3)}`;
+  };
+
+  // 刻度
+  const ruler = document.getElementById('ruler');
+  for (let m = 0; m <= 12; m++) {
+    const el = document.createElement('span');
+    el.className = 'tick';
+    el.style.left = `${(m * 60) / TOTAL * 100}%`;
+    el.textContent = `${pad(m)}:00`;
+    ruler.appendChild(el);
+  }
+
+  // 段落数据：214 段，前 30% 已生成
+  let t = 0, i = 0, seed = 20261116;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const cues = [];
+  while (t < TOTAL - 0.5) {
+    const d = Math.min(TOTAL - t, 2.4 + rnd() * 3.4);
+    const sp = SPEAKERS[i % 7 === 0 ? 3 : (i % 3 === 0 ? 0 : (i % 3 === 1 ? 1 : 2))];
+    cues.push({ s: t, d, sp });
+    i++;
+    t += d + 0.05;
+  }
+  const doneAt = TOTAL * 0.3;
+
+  // 配音轨：色带用 canvas 绘，段宽不足 6px 时不建 DOM
+  const lane = document.getElementById('voice-lane');
+  const canvas = document.createElement('canvas');
+  canvas.className = 'cue-canvas';
+  lane.appendChild(canvas);
+  const draw = () => {
+    const w = lane.clientWidth, h = lane.clientHeight;
+    if (!w || !h) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const band = h - 12, top = (h - band) / 2;
+    for (const c of cues) {
+      if (c.s >= doneAt) break;
+      ctx.fillStyle = c.sp.color;
+      ctx.globalAlpha = c.sp.mode === 'keep' ? 0.35 : 0.78;
+      ctx.fillRect(c.s / TOTAL * w, top, Math.max(1, c.d / TOTAL * w - 0.5), band);
+    }
+  };
+  draw();
+  new ResizeObserver(draw).observe(lane);
+
+  // 待生成
+  const rest = cues.filter((c) => c.s >= doneAt).length;
+  const pending = document.createElement('div');
+  pending.className = 'pending';
+  pending.style.left = `${doneAt / TOTAL * 100}%`;
+  pending.style.width = `calc(${100 - doneAt / TOTAL * 100}% - 2px)`;
+  pending.textContent = `待生成 ${rest} 段`;
+  lane.appendChild(pending);
+
+  // 播放头放在第 43 段
+  const selIdx = 42;
+  const head = document.createElement('div');
+  head.className = 'playhead';
+  head.style.left = `${cues[selIdx].s / TOTAL * 100}%`;
+  lane.appendChild(head);
+  document.getElementById('cur').innerHTML = `${tc(cues[selIdx].s)} <span>/ 12:30</span>`;
+
+  // 段落表
+  const TEXTS = [
+    '他站在天桥上看了一会儿，风把外套吹得鼓起来。',
+    '口袋里的手机震了第三次，他才接起来。',
+    '“你到哪儿了？”那边问，背景里有碗碟的声响。',
+    '“桥下。”他说，“再五分钟。”',
+    '雨是在这时候落下来的，先是几滴，接着连成一片。',
+    '他把帽子压低，沿着台阶走进了那片光里。'
+  ];
+  const body = document.getElementById('seg-body');
+  // 表内 6 行的角色固定下来，与预览里那句字幕（林嫣）对得上。
+  const ROW_SP = [1, 2, 1, 3, 2, 0];
+  for (let k = 0; k < 6; k++) {
+    const c = cues[40 + k];
+    const sp = SPEAKERS[ROW_SP[k]];
+    const row = document.createElement('div');
+    row.className = 'seg-row' + (40 + k === selIdx ? ' is-on' : '');
+    const fitted = k === 2;
+    row.innerHTML = `
+      <span class="seg-i">${pad(41 + k, 3)}</span>
+      <span class="seg-tc">${tc(c.s)}<em>→</em>${tc(c.s + c.d)}</span>
+      <span class="seg-d">${c.d.toFixed(2)}s</span>
+      <span><span class="who"><i style="background:${sp.color}"></i>${sp.name}</span></span>
+      <span class="seg-x">${TEXTS[k]}</span>
+      <span class="fit ${fitted ? 'warn' : 'ok'}">${fitted ? '加速 1.12×' : '贴合'}</span>`;
+    body.appendChild(row);
+  }
+
+  // 预览按可用高度取 16:9
+  const previewBox = document.querySelector('.preview');
+  const frame = document.getElementById('frame');
+  const fitFrame = () => {
+    const w = previewBox.clientWidth - 36;
+    const h = previewBox.clientHeight - 12;
+    if (w <= 0 || h <= 0) return;
+    const width = Math.min(w, h * 16 / 9);
+    frame.style.width = `${width}px`;
+    frame.style.height = `${width * 9 / 16}px`;
+  };
+  fitFrame();
+  new ResizeObserver(fitFrame).observe(previewBox);
+
+  // 下区：时间轴与字幕共用一块区域，切换显示，不常显
+  const modeBtns = document.querySelectorAll('.modes button');
+  const pHint = document.getElementById('p-hint');
+  modeBtns.forEach((b) => {
+    b.onclick = () => {
+      const seg = b.dataset.mode === 'seg';
+      document.body.classList.toggle('mode-seg', seg);
+      modeBtns.forEach((x) => {
+        x.classList.toggle('is-on', x === b);
+        x.setAttribute('aria-selected', String(x === b));
+      });
+      pHint.textContent = seg ? '214 段 · 64 已生成 · 编辑即提交' : '5 轨 · 214 段';
+      draw();
+    };
+  });
+
+  // 稿控制：主题与模板
+  const setOn = (a, b) => { a.classList.remove('is-on'); b.classList.add('is-on'); };
+  const l = document.getElementById('t-light'), d = document.getElementById('t-dark');
+  l.onclick = () => { document.documentElement.dataset.theme = 'light'; setOn(d, l); };
+  d.onclick = () => { document.documentElement.dataset.theme = 'dark'; setOn(l, d); };
+
+  // ---- 模板：工作流列的下拉，决定节点状态、端口、角色归属与主按钮 ----
+  const TPL = {
+    '变声重制': {
+      states: {
+        extract: ['完成', 'ok'], stems: ['完成', 'ok'], asr: ['完成', 'ok'],
+        rvc: ['运行中', 'run'], tts: ['排队中', ''], music: ['未启用', 'off'],
+        align: ['等待上游', ''], mix: ['等待上游', ''], mux: ['等待上游', '']
+      },
+      ports: {
+        tts: 'cues + casting → <b>audio.vocal</b> · 135 段',
+        align: 'cues + audio.vocal ×2 → <b>track</b>'
+      },
+      cast: ['rvc', '变声', '青年男声 · 保时长 · 42 段'],
+      primary: '导出成片', hint: '9 节点 · 2 路配音'
+    },
+    '重配': {
+      states: {
+        extract: ['完成', 'ok'], stems: ['完成', 'ok'], asr: ['完成', 'ok'],
+        rvc: ['未启用', 'off'], tts: ['运行中', 'run'], music: ['未启用', 'off'],
+        align: ['等待上游', ''], mix: ['等待上游', ''], mux: ['等待上游', '']
+      },
+      ports: {
+        tts: 'cues + casting → <b>audio.vocal</b> · 214 段',
+        align: 'cues + audio.vocal → <b>track</b>'
+      },
+      cast: ['tts', 'TTS', '沉静男声 · 214 段'],
+      primary: '导出成片', hint: '9 节点 · 1 路配音'
+    },
+  };
+
+  const roleEls = [...document.querySelectorAll('.role')];
+  const roleSnap = roleEls.map((r) => {
+    const m = r.querySelector('.role-mode');
+    return { mode: m.className, label: m.firstChild.textContent, sub: r.querySelector('.role-sub').textContent };
+  });
+  const setRole = (i, mode, label, sub) => {
+    const r = roleEls[i];
+    const m = r.querySelector('.role-mode');
+    m.className = `role-mode ${mode}`;
+    m.firstChild.textContent = label;
+    r.querySelector('.role-sub').textContent = sub;
+  };
+
+  const applyTpl = (name) => {
+    const t = TPL[name] || TPL['变声重制'];
+    for (const key in t.states) {
+      const [text, cls] = t.states[key];
+      const node = document.querySelector(`[data-node="${key}"]`).closest('.node');
+      const st = node.querySelector('.node-st');
+      st.textContent = text;
+      st.className = 'node-st' + (cls ? ` ${cls}` : '');
+      node.classList.toggle('is-run', cls === 'run');
+      node.classList.toggle('is-off', cls === 'off');
+      const bar = node.querySelector('.bar');
+      if (bar) bar.style.display = cls === 'off' ? 'none' : '';
+    }
+    for (const key in t.ports) {
+      const node = document.querySelector(`[data-node="${key}"]`).closest('.node');
+      node.querySelector('.ports').innerHTML = t.ports[key];
+    }
+    roleEls.forEach((_, i) => setRole(i, roleSnap[i].mode, roleSnap[i].label, roleSnap[i].sub));
+    if (t.cast) setRole(0, ...t.cast);
+    else roleEls.forEach((_, i) => setRole(i, 'keep', '原声', '不参与'));
+    document.querySelector('.primary').textContent = t.primary;
+    document.getElementById('flow-hint').textContent = t.hint;
+  };
+
+  const tplSel = document.getElementById('tpl');
+  tplSel.onchange = () => applyTpl(tplSel.value);
+  applyTpl(tplSel.value);
+
+  if (location.hash.includes('light')) l.click();
+  if (location.hash.includes('dub')) { tplSel.value = '重配'; applyTpl('重配'); }
+  if (location.hash.includes('seg')) document.querySelector('.modes button[data-mode="seg"]').click();
+})();
+</script>
+</body>
+</html>

@@ -139,6 +139,38 @@ async function uploadAudio(path, audio, fields = {}) {
 }
 
 /**
+ * 通用 multipart 上传。音视频导入按 GB 计，所以默认**不设超时**——
+ * 界面靠后端进度与取消，而不是把一个传了半天的请求掐掉。
+ * @param {string} path
+ * @param {File | Blob} file
+ * @param {Record<string, string>} [fields]
+ * @param {number} [timeout] 毫秒；0 = 不设上限
+ * @returns {Promise<any>}
+ */
+export async function uploadFile(path, file, fields = {}, timeout = 0) {
+  const form = new FormData()
+  const name = /** @type {{ name?: string }} */ (file).name || 'file'
+  form.append('file', file, name)
+  for (const [key, value] of Object.entries(fields)) form.append(key, String(value))
+  let resp
+  try {
+    resp = await fetch(path, {
+      method: 'POST',
+      body: form,
+      signal: timeout > 0 ? AbortSignal.timeout(timeout) : undefined,
+    })
+  } catch (error) {
+    if (isTimeout(error)) throw new Error('上传超时：本地服务没有响应。')
+    throw error
+  }
+  if (resp.status === 401) throw toLogin()
+  if (!resp.ok) {
+    throw new Error(await errorMessage(resp))
+  }
+  return resp.json()
+}
+
+/**
  * @param {Record<string, any>} params
  * @returns {string}
  */
