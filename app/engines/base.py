@@ -35,6 +35,7 @@ from app.domain.models import LANGUAGE_CHOICES
 from app.domain.request_spec import SPEC_FIELDS
 from app.domain.uischema import ui_hints
 from app.engines.mapping import EngineMapping, transform_label
+from app.engines.traits import detect_language
 
 __all__ = [
     "CAPABILITY_LABELS",
@@ -63,6 +64,7 @@ __all__ = [
     "language_items",
     "language_names",
     "param_label",
+    "supported_language_codes",
     "ui_hints",
 ]
 
@@ -110,6 +112,21 @@ def language_items(caps: Capabilities) -> list[dict[str, str]]:
             continue
         items.append({"code": code, "name": name})
     return items
+
+
+def supported_language_codes(caps: Capabilities) -> frozenset[str]:
+    """这台引擎真正能念的语言代码：``languages`` 加方言说法归一成的代码。
+
+    方言语种（``dialects``）登记的是界面说法（``四川话``），用户选的是代码
+    （``cmn-cd``）；两边要对上，靠 ``traits`` 那张写法表。归一不出代码的方言
+    （如 ``东北话``）不进集合——统一词表里也没有对应的可选项。
+    """
+    codes = set(caps.languages)
+    for label in caps.dialects:
+        code = detect_language(label)
+        if code:
+            codes.add(code)
+    return frozenset(codes)
 
 
 #: 平台限流（RPM / 配额）的错误码。网关据此退避重试并给同一引擎降温，
@@ -188,7 +205,7 @@ CAPABILITY_LABELS: dict[str, tuple[str, str]] = {
 #: ``describe()["capabilities"]`` 不逐项下发的字段：语言面在顶层 ``languages`` 里，
 #: 样本容器只给核心校验用。其余字段**自动**随能力包下发——加字段不用再改第二处。
 _CAPABILITY_FIELDS_HIDDEN = frozenset(
-    {"sample_formats", "languages", "dialects", "cross_lingual", "language_note"}
+    {"sample_formats", "languages", "dialects", "cross_lingual", "language_note", "language_hint"}
 )
 
 #: 引擎页面分区的说法与说明（页签照它画，中文只在这一处写）。
@@ -265,6 +282,9 @@ class Capabilities:
     dialects: tuple[str, ...] = ()
     #: 「支持语言」那一栏的说明（卡片副标题），一句话：清单比官方窄在哪、方言走哪条路。
     language_note: str = ""
+    #: 选了未逐项登记的语言/方言时给生成页的一句话：说明这一格为什么没发、
+    #: 结果实际由什么决定。空 = 按「不支持」处理并列出引擎名。
+    language_hint: str = ""
 
     @property
     def is_cloud(self) -> bool:
@@ -483,6 +503,15 @@ class EnginePlugin(ABC):
 
     def capabilities(self) -> Capabilities:
         return Capabilities()
+
+    def supports_language(self, code: str) -> bool:
+        """声明里能不能念这个语言代码（方言说法已归一成代码再比）。
+
+        只认 ``capabilities`` 这一个产地：网关据此剔掉不支持的 ``language``，
+        前端据此在「语言」栏列出这台引擎。词表外的代码不在这里拦——600+ 语言
+        的引擎可能认得统一词表没收的代码，交给插件自己判断。
+        """
+        return code in supported_language_codes(self.capabilities())
 
     def configured_concurrency(self, cfg: BaseModel) -> int:
         """这台引擎当前配置允许同时跑几条；0 = 没配，由调用方决定。
@@ -705,10 +734,13 @@ class EnginePlugin(ABC):
             # items 已去掉同时算方言的那几个，两处不重复摆同一个词。
             "languages": {
                 "codes": list(caps.languages),
+                # 界面判「所选语言这台认不认」用这一份：方言说法已归一成代码。
+                "supported_codes": sorted(supported_language_codes(caps)),
                 "items": language_items(caps),
                 "dialects": list(caps.dialects),
                 "cross_lingual": caps.cross_lingual,
                 "note": caps.language_note,
+                "hint": caps.language_hint,
             },
             "settings_schema": self.settings_schema().model_json_schema(),
             "secret_fields": sorted(self.secret_fields()),

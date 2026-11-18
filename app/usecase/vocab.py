@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.domain.models import EMOTION_CHOICES, EMOTION_GROUPS
@@ -55,21 +56,38 @@ def _default_emotions() -> list[str]:
     return [word for word, _ in EMOTION_CHOICES]
 
 
+def _preset_key(text: str) -> str:
+    """预设正文的归一形式：去空白与标点、忽略大小写。
+
+    短名不同、句子相同（「朗读」与「旁白」都写「有声书旁白…」）是同一条；
+    标点差异（句号/感叹号）也不该在菜单里占两行。
+    """
+    return re.sub(r"[\s，。；！？、,.!?;:：\"'“”‘’()（）\[\]【】<>《》-]+", "", text or "").lower()
+
+
 def _default_instructions() -> list[dict[str, str]]:
-    """**所有已发现**引擎 ``instructions.json`` 的并集：按引擎顺序、短名去重（先出现的算数）。
+    """**所有已发现**引擎 ``instructions.json`` 的并集：按引擎顺序、短名与正文去重。
 
     与启停无关。这一格是自由文本，预设在语义上就是"可以照抄的一句话"，不指向哪台
     引擎；按已启用收束只会让一张静态的说法表随开关增减——停用一台，候选里凭空虚少
     一段，读起来像被删了。发给不认这一格的引擎也无害：装配时按插件声明的参数表
     过滤掉（``usecase/gateway.py``），不报错。
+
+    正文去重是后加的：以前只按短名，两家插件用不同短名写同一句话时菜单里会出现
+    两条一模一样的说法。先出现的算数（引擎按 key 排序，``fish_audio`` 在
+    ``kitta`` 之前），后来者即使换了短名也不重复摆。
     """
     merged: list[dict[str, str]] = []
-    seen: set[str] = set()
+    seen_labels: set[str] = set()
+    seen_texts: set[str] = set()
     for plugin in list_engines().values():
         for label, text in plugin.field_presets().get("instruction", ()):
-            if label in seen:
+            key = _preset_key(text)
+            if label in seen_labels or (key and key in seen_texts):
                 continue
-            seen.add(label)
+            seen_labels.add(label)
+            if key:
+                seen_texts.add(key)
             merged.append({"label": label, "text": text})
     return merged
 

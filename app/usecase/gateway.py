@@ -26,8 +26,10 @@ from app.engines.base import (
     EnginePlugin,
     SynthesisRequest,
     SynthesisResult,
+    language_names,
 )
 from app.engines.registry import detect_engine
+from app.engines.traits import detect_language
 from app.infra.loghub import CHANNEL
 from app.infra.requestctx import current_request_id
 from app.usecase import pronunciation, reference
@@ -73,6 +75,47 @@ def _settle_extra(
     return replace(request, extra=kept), (
         ("parameter_ignored", f"{engine.label} 不接受参数 {names}，已忽略；{hint}"),
     )
+
+
+def _settle_language(
+    engine: EnginePlugin, request: SynthesisRequest
+) -> tuple[SynthesisRequest, tuple[tuple[str, str], ...]]:
+    """语言不在引擎声明里时剔掉那一格，按「不指定」发送。
+
+    落点存在不等于支持每一种取值：OmniVoice 收 ``language``，但服务端只认它
+    语言表里的代码，``cmn-xa`` 这类统一词表里的方言点会直接 500。与其让整批
+    合成撞在服务端，不如按声明先剔掉——引擎自己会按正文判断，少一格提示比
+    整段失败更接近用户想要的结果。
+
+    只有统一词表认得出的代码才判：``th`` 这类词表外代码交给插件，600+ 语言的
+    引擎可能认得它，核心不替它关门。
+    """
+    notes: list[tuple[str, str]] = []
+    extra = dict(request.extra)
+    for key, feature in (("language", "正文语言"), ("reference_language", "参考语言")):
+        raw = str(extra.get(key) or "").strip()
+        if not raw:
+            continue
+        code = detect_language(raw)
+        if not code or engine.supports_language(code):
+            continue
+        extra.pop(key, None)
+        label = language_names((code,))[0]
+        notes.append(
+            (
+                "language_ignored",
+                f"{engine.label} 不支持{feature}「{label}」，按不指定发送。",
+            )
+        )
+        CHANNEL.debug(
+            f"{feature}未发送：{engine.key} 不支持「{label}」。",
+            source="gateway",
+            engine=engine.key,
+            request_id=current_request_id(),
+        )
+    if not notes:
+        return request, ()
+    return replace(request, extra=extra), tuple(notes)
 
 
 #: 引导指令的旧写法 → 规范名。``speaker`` 是旧版字段名，``instruct`` 是映射表里的
@@ -476,13 +519,15 @@ async def _route(
     cfg = settings_for(engine)
     # 两路风格只说一路：这一步要在下面那行「发送参数」之前，日志才是真发出去的样子。
     request = _settle_expression(engine, request)
+    # 不支持的正文/参考语言按「不指定」发：先剔掉，插件就不会把它翻进请求体。
+    request, language_notes = _settle_language(engine, request)
     # 准备参考音频（转格式 / 截取 / 补逐字稿）是慢操作，丢进线程跑，避免卡住事件循环。
     request, prep_notes = await asyncio.to_thread(
         reference.prepare, service, engine, request, library_voice_id=voice_id, cfg=cfg
     )
     # 引擎只收到它声明过的扩展参数：白名单与 describe() 下发的是同一份。
     request, extra_notes = _settle_extra(engine, request)
-    prep_notes = (*prep_notes, *extra_notes)
+    prep_notes = (*language_notes, *prep_notes, *extra_notes)
     # 实际发出去的参数（统一形状）：排查"我调了它没生效"时，第一个要看的就是这一行。
     CHANNEL.info(
         "发送参数："

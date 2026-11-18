@@ -23,6 +23,7 @@ from app.engines.mapping import EngineMapping, ParamMapping
 from app.usecase.gateway import (
     _call_engine,
     _settle_extra,
+    _settle_language,
     normalize_voice,
     synthesize,
     validate_against_spec,
@@ -854,3 +855,48 @@ def test_declared_extra_keys_are_left_alone():
     settled, notes = _settle_extra(FakeParamEngine(), request)
     assert settled is request
     assert notes == ()
+
+
+class FakeLanguageEngine(FakeCloudEngine):
+    """语言面写死两门 + 一个方言点，用来钉「不支持就不发」的口径。"""
+
+    key = "fake_lang"
+    label = "假语言引擎"
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities(languages=("zh", "yue"), dialects=("四川话",))
+
+
+def test_an_unsupported_language_is_dropped_not_sent():
+    request = _param_request(language="cmn-xa")
+    settled, notes = _settle_language(FakeLanguageEngine(), request)
+    assert "language" not in settled.extra
+    code, message = notes[0]
+    assert code == "language_ignored"
+    assert "西安话" in message and "按不指定" in message
+
+
+def test_a_supported_language_is_left_alone():
+    # 写法与代码都认：粤语 → yue，四川话 → cmn-cd。
+    for value in ("粤语", "yue", "四川话"):
+        request = _param_request(language=value)
+        settled, notes = _settle_language(FakeLanguageEngine(), request)
+        assert settled is request, value
+        assert notes == (), value
+
+
+def test_a_language_outside_the_shared_table_is_left_to_the_plugin():
+    """统一词表不收的代码不替引擎关门：600+ 语言的引擎可能认得它。"""
+    request = _param_request(language="th")
+    settled, notes = _settle_language(FakeLanguageEngine(), request)
+    assert settled is request
+    assert notes == ()
+
+
+def test_an_unsupported_reference_language_is_dropped_too():
+    request = _param_request(reference_language="cmn-xa")
+    settled, notes = _settle_language(FakeLanguageEngine(), request)
+    assert "reference_language" not in settled.extra
+    code, message = notes[0]
+    assert code == "language_ignored"
+    assert "参考语言" in message

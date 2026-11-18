@@ -226,6 +226,11 @@ class MinimaxEngine(EnginePlugin):
                     f"（它认得：{'、'.join(emotion_choices()[: len(EMOTION_MAP)])} 等"
                     f" {len(emotion_choices())} 个说法）。"
                 )
+            elif name == "language":
+                notes.append(
+                    f"MiniMax 没有「{raw}」对应的语言增强值，这一项未发送"
+                    f"（按引擎设置的语言增强处理）。"
+                )
             else:
                 notes.append(f"MiniMax 用不了「{name}」（收到 {raw or '空值'}），这一项已忽略。")
         return tuple(notes)

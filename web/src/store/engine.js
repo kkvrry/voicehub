@@ -172,6 +172,54 @@ export function unsupportedEmotionEngines(engines) {
 }
 
 /**
+ * 勾选里不支持所选语言的引擎。判据只认插件下发的
+ * ``languages.supported_codes``（方言说法已在后端归一成代码）。
+ * 后端没给这一份时不画：宁可不提示，也不替引擎猜它认不认。
+ * 带 ``languages.hint`` 的引擎不列在这里——它把「为什么没发、结果由什么决定」
+ * 交给下面那条提示，不当成一句「不支持」。
+ *
+ * @param {any[]} engines
+ * @param {string} code
+ */
+export function unsupportedLanguageEngines(engines, code) {
+  const wanted = String(code || '').trim()
+  if (!wanted) return []
+  return (engines || []).filter((engine) => {
+    const supported = engine?.languages?.supported_codes
+    return (
+      Array.isArray(supported) &&
+      !supported.includes(wanted) &&
+      !String(engine?.languages?.hint || '').trim()
+    )
+  })
+}
+
+/**
+ * 所选语言不在声明里、但引擎给了说明的那几台：返回 ``{label, hint}``。
+ * 提示文字由插件下发（例如 OmniVoice 的方言由参考音频决定），前端只负责摆出来。
+ *
+ * @param {any[]} engines
+ * @param {string} code
+ */
+export function languageHintEngines(engines, code) {
+  const wanted = String(code || '').trim()
+  if (!wanted) return []
+  return (engines || [])
+    .filter((engine) => {
+      const supported = engine?.languages?.supported_codes
+      return (
+        Array.isArray(supported) &&
+        !supported.includes(wanted) &&
+        Boolean(String(engine?.languages?.hint || '').trim())
+      )
+    })
+    .map((engine) => ({
+      label: engine.label || engine.key || '',
+      hint: String(engine.languages.hint).trim(),
+    }))
+}
+
+/**
  * 正文里那排语气词标签要画的几段——后端（``GET /api/v1/marks``）已算好跨引擎结果：
  * 「通用」= 所有支持语气词的引擎都认的交集（一台都不认的不计入，否则交集恒为空）；
  * 各引擎组 = 它认但不在交集里的那几条。

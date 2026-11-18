@@ -28,8 +28,8 @@
 | 合成参数 | `seed` | 种子 | int | — | -1 或 0–2147483647 | 否 | -1 = 每次随机；走 `extra` |
 | 静默 | `lead_silence` | 前静默 | number | 秒 | 0–10 | 否 | 本段之前 |
 | 静默 | `lag_silence` | 后静默 | number | 秒 | 0–10 | 否 | 本段之后 |
-| 语言 | `language` | 正文语言 | str | — | BCP-47 主语言子标签 | 否 | 正文所用语言 |
-| 语言 | `reference_language` | 参考语言 | str | — | 同上 | 否 | 参考音频所用语言 |
+| 语言 | `language` | 正文语言 | str | — | BCP-47 主语言子标签 | 否 | 正文所用语言；引擎声明不认时按未要求处理，不发送 |
+| 语言 | `reference_language` | 参考语言 | str | — | 同上 | 否 | 参考音频所用语言；同样按引擎声明剔除 |
 | 输出 | `format` | 格式 | str | — | wav / mp3 / flac / pcm / ogg / aac | 否 | 空 = 未指定 |
 | 输出 | `sample_rate` | 采样率 | int | Hz | 16000 / 24000 / 32000 / 44100 | 否 | |
 | 输出 | `bitrate` | 码率 | int | bps | 32000–320000，步进 8000 | 否 | |

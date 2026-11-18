@@ -110,7 +110,7 @@
 | `max_concurrency` | 路由 | 有声书并发上限 |
 | `instruction_control` | 展示 | 「引导指令」能力标签 |
 | `emotion_control` | 展示 | 「情绪控制」能力标签 |
-| `languages` / `dialects` / `cross_lingual` / `language_note` | 展示 | 「支持语言」一栏与能力标签 |
+| `languages` / `dialects` / `cross_lingual` / `language_note` / `language_hint` | 展示 / 路由 | 「支持语言」一栏与能力标签；前两者归一成的 `supported_codes` 决定网关发不发 `language`；`language_hint` 替代「不支持」名单 |
 
 界面上三种克隆实现（`voice_cloning` / `sample_cloning` / `reference_audio`）只显示**一条**「音色克隆」，说明按实现选：平台注册 id、样本复刻、或每次随请求提供参考音频。`reference_audio` 只在「引擎要求」里出现（参考音频必填 / 可选 / 格式 / 时长），不再冒充能力。
 
@@ -148,7 +148,7 @@ app/engines/builtin/<key>/
   icon.svg           平台图标（可选，缺省用中性图标）
 ```
 
-- 引导指令预设是"可以照抄的一句话"，合并后全局共用：按全部已发现插件的 `instructions.json` 合并且按短名去重，与启停无关。不认这一格的引擎在装配时被剔掉，所以别家写得再具体也不会出错——写给自己这台听得懂的说法即可。
+- 引导指令预设是"可以照抄的一句话"，合并后全局共用：按全部已发现插件的 `instructions.json` 合并，按短名与正文去重（标点差异也算同一句），与启停无关。不认这一格的引擎在装配时被剔掉，所以别家写得再具体也不会出错——写给自己这台听得懂的说法即可。
 
 - 内置发现按 `__init__.py` 认定子目录（引擎、识别、对话模型、向量模型同一套），导入包；包的 `__init__` 必须把插件类带到模块顶层。生产方插件写在 `plugin.py` 里，发现判据不同（`app/producers/registry.py`）。
 - 第三方包在 `pyproject.toml` 声明 `voicehub.engines` entry point，同名覆盖内置。
@@ -208,6 +208,8 @@ app/engines/builtin/<key>/
 
 `unsupported()` 回答「规范里有、这台没有落点」的项及原因，参数映射页按它画「—」。`dynamic_mappings()` 只回答「有落点但映射表表达不了」的项，不参与装配；它与映射表一起组成 `accepted_extra_keys()`，网关照这份白名单过滤 `extra`。`value_choices()` 只给枚举描述，不参与门禁：认不出的值由映射的 `drop_unmapped` 决定是剔除还是报错。
 
+语言格另有一道声明检查：`capabilities().languages` 与 `dialects` 归一成的代码合起来是这台引擎认得的集合（`describe()` 的 `languages.supported_codes` 下发同一份）。网关（`usecase.gateway._settle_language`）在装配前剔掉集合外的 `language` / `reference_language`，按不指定发送并在 `notes` 回报；生成页「语言」栏按同一份列出不支持的引擎。声明了 `language_hint` 的引擎不列进「不支持」名单：它用一个 `languages.hint` 说明为什么没发、结果实际由什么决定（如 OmniVoice 的方言口音由参考音频决定），提示摆在生成页音频条下面。统一词表外的代码不判——词表只覆盖界面能选的那些，600+ 语言的插件可能认得更多。
+
 ### 4.4 参数语义对齐
 
 映射不是「名字翻译」，是「先证明同一个功能，再决定落点」。同名不同义是最高风险的错误：`speaker` 在统一层是 `instruction` 的历史别名，在别家可能指预置音色名；`volume` 可能一家是倍率、另一家是 0–10 档位。按名字直译时，错的那次通常不会报错，只会念错或静默失效。
@@ -227,7 +229,7 @@ app/engines/builtin/<key>/
 |---|---|---|
 | 同一功能、同一刻度 | 直接映射 | `speed` → MiniMax `voice_setting.speed`（同为 0.5–2.0 倍率） |
 | 同一功能、不同刻度 | `transform` 换算 | `pitch` 倍率 → MiniMax 半音；`guidance_scale` 0–1 → BreezeTTS CFG 0–8 |
-| 同一功能、平台更窄 | 收窄枚举或区间；认不出按策略剔除或报错 | 情绪：MiniMax 八档，认不出剔掉并说明；语言：认不出直接拦截 |
+| 同一功能、平台更窄 | 收窄枚举或区间；认不出按策略剔除或报错 | 情绪：MiniMax 八档，认不出剔掉并说明；语言：声明里没有的代码剔掉，按不指定发送 |
 | 同一功能、映射表表达不了 | `dynamic_mappings()` 说明落点，装配留在插件 | `seed` 负数在插件里抽样；BreezeTTS 的「参考音频或引导至少给一个」 |
 | 平台没有这个功能 | `unsupported()` 写原因，界面显示「—」 | GPT-SoVITS 没有 `lead_silence` / `lag_silence` |
 | 一个统一参数对应多个原生字段 | 插件装配，`dynamic_mappings()` 只描述 | 情绪与引导在不同平台各走不同机制 |
@@ -254,7 +256,7 @@ app/engines/builtin/<key>/
 
 - `skip_empty` 默认 True：空值不发送。`0` 不是空值，照发；`-1` 是种子自己的哨兵值，由插件抽成非负整数并在 `notes` 回报抽到的值。
 - 区间校验分两层：`SPEC_FIELDS` 的 `min` / `max` 是界面滑块边界；平台更窄的硬区间由插件在发前守卫（MiniMax 的语速、音量、音高）。统一层不替平台截断，也不静默钳制。
-- 认不出的枚举：情绪可以剔（整章不因一个词失败），语言必须拦（发错语言比不发更糟）。两种策略都要在 `notes` 或错误文案里说清，不能静默。
+- 认不出的枚举：情绪可以剔（整章不因一个词失败）；语言同样可以剔——把服务端不认的代码发过去会整段失败，而引擎自己会按正文判断，剔掉这一格更接近“不指定”。两种策略都要在 `notes` 里说清，不能静默。
 - `value_choices()` 只给界面候选与逐行打标，不是白名单；真正是否接受由映射与插件守卫决定。
 
 #### 本仓库的对照例子
@@ -266,7 +268,8 @@ app/engines/builtin/<key>/
 | `emotion` 中文词 | MiniMax | 八档枚举；「中性」落 `fluent`，「平静」落 `calm`；认不出的剔掉并说明 |
 | `emotion` 中文词 | BreezeTTS | 没有原生情绪字段，写成一句 `options.instruction`；认不出的词进模板，不丢 |
 | `emotion` 中文词 | Kitta Audio | 写成「情绪：X。」并到 `instruction` 前面；同义先归一，认不出的原样保留 |
-| `language` 代码 | MiniMax | 转 `language_boost` 枚举；认不出直接拦截 |
+| `language` 代码 | OmniVoice | 只发语言表里的代码（`yue` 等）；`cmn-xa` 这类方言点不在表里，剔掉并按不指定发送，生成页提示口音由参考音频决定 |
+| `language` 代码 | MiniMax | 转 `language_boost` 枚举；认不出剔掉这一格，退回设置里的语言增强值 |
 | `lead_silence` / `lag_silence` | GPT-SoVITS | 无落点；句间停顿由 `fragment_interval` 配置控制，不能拿它冒充前后静默 |
 | `seed` -1 | BreezeTTS / DotsTTS | 插件抽非负数再发，抽到的值写回 `notes` |
 | `format` 空串 | MiniMax | 不发送，由 `audio_format` 配置补；空串不等于 wav |

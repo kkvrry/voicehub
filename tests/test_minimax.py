@@ -475,10 +475,13 @@ class TestBuildBody:
     def test_language_becomes_language_boost(self):
         assert self._body(language="yue")["language_boost"] == "Chinese,Yue"
 
-    def test_a_language_with_no_boost_value_is_refused_not_dropped(self):
-        """**给了又默默丢掉**比报错更难查——要"不增强"这个结果就把那一格空着。"""
-        with pytest.raises(EngineError, match="语言增强"):
-            self._body(language="xx")
+    def test_a_language_with_no_boost_value_is_dropped_and_reported(self):
+        """不认的代码不拦整段：这一格剔掉，退回引擎设置，并在 notes 里说清。"""
+        engine = MinimaxEngine()
+        req = SynthesisRequest(text="你好", voice_id="MX_1", extra={"language": "xx"})
+        body, notes = engine.build_body_with_notes(_cfg(), req)
+        assert body["language_boost"] == "auto"  # 引擎设置里的默认，不是上游那个值
+        assert any("语言增强值" in note for note in notes)
 
     def test_output_shape_lands_in_audio_setting(self):
         body = self._body(sample_rate=24000, bitrate=128000, channels=2)

@@ -3,7 +3,8 @@
 **它的路靠"这次给了什么"分开**（``clon`` 只是同一个实现的别名）：
 
 - 只给正文 → 引擎自己挑一把声音；
-- 给参考音频（可带逐字稿）→ 克隆。
+- 给参考音频（必须带逐字稿）→ 克隆；缺逐字稿时 audio.cpp 直接回 500，
+  核心会在发送前用识别引擎补上。
 
 **为什么不接 ``options.instruct``**：那一格是**封闭的属性词表**（性别/年龄/音调/
 耳语/口音/方言，逗号分隔，同类互斥），既不是自由"引导指令"，也收不下自由"音色描述"
@@ -61,7 +62,9 @@ MAPPING = EngineMapping(
         ParamMapping(
             "reference_audio", "voice_ref", note="参考音频；本机绝对路径，WAV。"
         ),
-        ParamMapping("reference_text", "reference_text", note="参考音频的逐字稿。"),
+        ParamMapping(
+            "reference_text", "reference_text", note="参考音频的逐字稿；克隆路径必填。"
+        ),
         ParamMapping("language", "options.language", note="正文语言；留空由引擎自动判断。"),
         ParamMapping("speed", "options.speed", note="语速倍率，1.0 为原速。"),
     ),
@@ -166,6 +169,7 @@ class OmniVoiceEngine(EnginePlugin):
                 "官方 600+ 种；语言只是正文提示，不会翻译正文。"
                 "参考音频的口音会主导输出，粤语请用粤语正文和粤语参考样例。"
             ),
+            language_hint="语言只是正文提示，方言口音由参考音频决定。",
             # 粤语按本项目的口径算方言（与 CosyVoice3 同一处理），语言行不再重复它。
             dialects=("粤语",),
         )
@@ -176,8 +180,10 @@ class OmniVoiceEngine(EnginePlugin):
             requires=(),
             formats=("wav",),
             reference_formats=("wav",),
-            # 逐字稿是加分项，不是门槛。
-            needs_transcript=False,
+            # audio.cpp 的原生克隆在给了参考音频时必须有逐字稿，缺了回
+            # ``native voice clone currently requires reference_text …``（500）；
+            # 声明在这里，核心会在发送前用识别引擎补上并写回样例。
+            needs_transcript=True,
         )
 
     def mapping(self) -> EngineMapping:

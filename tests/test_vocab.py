@@ -44,13 +44,37 @@ class TestDefaults:
         assert data["emotions"]["effective"] == DEFAULT_EMOTIONS
         assert data["emotions"]["hidden"] == []
         assert data["emotions"]["custom"] == []
-        # 引导指令：各家引擎的预设摆在同一份里（不按引擎分组），标签去重。
+        # 引导指令：各家引擎的预设摆在同一份里（不按引擎分组），短名与正文都去重。
         labels = _labels(data["instructions"])
-        assert "春风得意" in labels, "MiMo 的预设要在"
-        assert "屏息低语" in labels, "BreezeTTS 2 的预设要在"
+        assert "喜出望外" in labels, "MiMo 的预设要在"
+        assert "耳语" in labels, "Fish Audio 的预设要在"
         assert "平心静气" in labels, "IndexTTS2 的预设也要在"
         assert len(labels) == len(set(labels)), "同标签只留一条"
+        texts = [item["text"] for item in data["instructions"]["defaults"]]
+        assert len(texts) == len(set(texts)), "同一句话只留一条"
         assert data["instructions"]["effective"] == data["instructions"]["defaults"]
+
+    def test_instruction_texts_are_deduplicated_across_labels(self, monkeypatch):
+        """短名不同、句子相同（只差标点）只留先出现的那条。"""
+        from app.usecase import vocab as vocab_uc
+
+        class _Plugin:
+            def __init__(self, items):
+                self.items = items
+
+            def field_presets(self):
+                return {"instruction": self.items}
+
+        monkeypatch.setattr(
+            vocab_uc,
+            "list_engines",
+            lambda: {
+                "a": _Plugin((("甲", "慢一点。"), ("乙", "快一点。"))),
+                "b": _Plugin((("丙", "慢一点！"), ("丁", "轻一点。"))),
+            },
+        )
+        items = vocab_uc._default_instructions()
+        assert [item["label"] for item in items] == ["甲", "乙", "丁"]
 
     def test_reading_writes_nothing(self, client, data_dir: Path):
         """读一次不该顺手落盘：写过的文件从此就是"用户改过的"，
@@ -76,7 +100,7 @@ class TestDefaults:
             for label, _text in plugin.field_presets().get("instruction", ())
         }
         assert set(labels) == declared
-        assert {"春风得意", "屏息低语", "平心静气"} <= set(labels)
+        assert {"喜出望外", "耳语", "平心静气"} <= set(labels)
 
     def test_emotions_are_grouped_for_the_ui(self, client, data_dir: Path):
         """分组只是摆法：拼起来必须与生效值逐项相同，否则下拉会少词或多词。"""
@@ -116,15 +140,15 @@ class TestRenamedDefaults:
             "/api/v1/vocab",
             json={
                 "instructions": {
-                    "renamed": {"波澜不惊": "旁白腔"},
-                    "custom": [{"label": "波澜不惊", "text": "像纪录片旁白。"}],
+                    "renamed": {"平心静气": "旁白腔"},
+                    "custom": [{"label": "平心静气", "text": "像纪录片旁白。"}],
                 }
             },
         ).json()
         section = saved["instructions"]
         hit = [item for item in section["effective"] if item["label"] == "旁白腔"]
         assert hit == [{"label": "旁白腔", "text": "像纪录片旁白。"}]
-        assert "波澜不惊" not in [item["label"] for item in section["effective"]]
+        assert "平心静气" not in [item["label"] for item in section["effective"]]
 
     def test_renaming_an_unknown_default_is_ignored(self, client):
         saved = client.put(
@@ -217,14 +241,14 @@ class TestInstructionDelta:
         wanted = "平稳、清楚、克制，像纪录片旁白。（我的版本）"
         saved = client.put(
             "/api/v1/vocab",
-            json={"instructions": {"custom": [{"label": "波澜不惊", "text": wanted}]}},
+            json={"instructions": {"custom": [{"label": "平心静气", "text": wanted}]}},
         ).json()
         section = saved["instructions"]
-        hit = [item for item in section["effective"] if item["label"] == "波澜不惊"]
-        assert hit == [{"label": "波澜不惊", "text": wanted}]
+        hit = [item for item in section["effective"] if item["label"] == "平心静气"]
+        assert hit == [{"label": "平心静气", "text": wanted}]
         # 位置就是默认那一条的位置：覆盖不是"删掉默认、追加自定义"。
         assert section["effective"].index(hit[0]) == section["defaults"].index(
-            next(i for i in section["defaults"] if i["label"] == "波澜不惊")
+            next(i for i in section["defaults"] if i["label"] == "平心静气")
         )
 
     def test_hiding_a_default_label(self, client):

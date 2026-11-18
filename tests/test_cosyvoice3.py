@@ -13,7 +13,8 @@
    结果说明里报"未发送"；情绪没有枚举，但会翻成一句 instruct 发出去。
 5. **方言/语言也走 instruct**（官方示例是「用四川话说这句话」），不是单独参数；
 6. **正文发声事件用方括号原生标签**（``[laughter]`` / ``[breath]`` / ``[cough]`` /
-   ``[sigh]``），而 ``<|endofprompt|>`` 不能发——这一层会把它前面的指令念出来。
+   ``[sigh]``），而 ``<|endofprompt|>`` 不能发——这一层会把它前面的指令念出来；
+   中文指令超过 20 字也会被念出后半段，插件在标点处截断并报出省略。
 """
 
 from __future__ import annotations
@@ -279,7 +280,7 @@ class TestBody:
         """没有情绪枚举，但 instruct 模板收自由文本：情绪翻成一句再发。"""
         body = _engine().build_body(_cfg(), _req(emotion="愤怒"))
         assert body["options"]["template_name"] == "instruct"
-        assert body["options"]["instruct"] == "生气地质问，声音提高，语速加快，句尾往上顶。"
+        assert body["options"]["instruct"] == "生气地质问，声音提高，语速加快。"
 
     def test_emotion_instruction_follows_the_text_language(self):
         body = _engine().build_body(
@@ -298,6 +299,30 @@ class TestBody:
             _cfg(), _req(emotion="愤怒", extra={"instruction": "轻声、放慢"})
         )
         assert body["options"]["instruct"] == "轻声、放慢"
+
+    def test_a_long_instruction_is_clipped_at_a_clause(self):
+        """长指令的后半段会被念进音频；截在标点上，并报出未发送的部分。"""
+        full = "语气发紧，语速偏快，句子之间几乎不停，像有件急事压着。"
+        body, notes = _engine().build_body_with_notes(
+            _cfg(), _req(extra={"instruction": full})
+        )
+        assert body["options"]["instruct"] == "语气发紧，语速偏快，句子之间几乎不停。"
+        joined = "".join(notes)
+        assert "引导指令" in joined
+        assert "其余未发送" in joined
+
+    def test_a_short_instruction_is_not_clipped(self):
+        body, notes = _engine().build_body_with_notes(
+            _cfg(), _req(extra={"instruction": "轻声、放慢"})
+        )
+        assert body["options"]["instruct"] == "轻声、放慢"
+        assert not any("其余未发送" in note for note in notes)
+
+    def test_a_decimal_point_is_not_a_sentence_break(self):
+        body = _engine().build_body(
+            _cfg(), _req(extra={"instruction": "语速调到 1.5 倍，语气发紧。"})
+        )
+        assert body["options"]["instruct"] == "语速调到 1.5 倍，语气发紧。"
 
     def test_emotion_is_not_reported_as_unsent(self):
         _, notes = _engine().build_body_with_notes(_cfg(), _req(emotion="开心"))
@@ -323,7 +348,7 @@ class TestBody:
             _cfg(), _req(emotion="愤怒", extra={"language": "cmn-cd"})
         )
         instruct = body["options"]["instruct"]
-        assert instruct.startswith("用四川话说这句话。")
+        assert instruct.startswith("用四川话说这句话，")
         assert "生气地质问" in instruct
 
     def test_an_explicit_instruction_joins_the_dialect_and_wins_over_emotion(self):
@@ -335,7 +360,7 @@ class TestBody:
             ),
         )
         instruct = body["options"]["instruct"]
-        assert instruct == "用四川话说这句话。 轻声、放慢"
+        assert instruct == "用四川话说这句话，轻声、放慢"
         assert "生气" not in instruct
 
     def test_the_library_delimiter_is_removed(self):
@@ -354,9 +379,7 @@ class TestBody:
         )
         assert body["input"] == "他停下脚步，回头看了她一眼。"
         assert body["options"]["template_name"] == "instruct"
-        assert body["options"]["instruct"] == (
-            "用吃惊、上扬的语气说话，句首提高，像刚反应过来。"
-        )
+        assert body["options"]["instruct"] == "用吃惊、上扬的语气说话，句首提高。"
 
     def test_a_wrapper_wins_over_the_emotion_field(self):
         body = _engine().build_body(
@@ -425,7 +448,7 @@ class TestBody:
             _cfg(), _req(text="<fast>他停下脚步。</fast>", emotion="开心")
         )
         instruct = body["options"]["instruct"]
-        assert instruct.startswith("请用尽可能快地语速说一句话。")
+        assert instruct.startswith("请用尽可能快地语速说一句话，")
         assert "明亮" in instruct
 
     def test_an_explicit_instruction_wins_over_a_direct_wrapper(self):

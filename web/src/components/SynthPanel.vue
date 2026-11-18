@@ -229,9 +229,12 @@
           </div>
 
           <!-- 这两句说的是"按下去会发生什么"，属于这一块，不是页脚。 -->
-          <div v-if="warning || refNote" class="engine-hints">
+          <div v-if="warning || refNote || languageHints.length" class="engine-hints">
             <span v-if="warning" class="hint" data-tone="warn">{{ warning }}</span>
             <span v-if="refNote" class="hint">{{ refNote }}</span>
+            <span v-for="item in languageHints" :key="item.label" class="hint">
+              {{ item.label }}：{{ item.hint }}
+            </span>
           </div>
         </section>
       </div>
@@ -280,7 +283,14 @@
         </section>
 
         <section class="synth-block">
-          <h2 class="block-title">语言</h2>
+          <div class="block-title-row is-tags">
+            <h2 class="block-title">语言</h2>
+            <UnsupportedEngines
+              :names="languageSilent"
+              feature="正文语言"
+              effect="这一项不会发给它，按不指定处理"
+            />
+          </div>
           <ParamFields
             :fields="fieldsByKeys(['language', 'reference_language'])"
             :values="store.synth.values"
@@ -354,6 +364,29 @@ const instructionSilent = computed(() =>
   actions
     .unsupportedCapabilityEngines(pickedEngines.value, 'instruction_control')
     .map((engine) => engine.label)
+)
+
+/** 所选正文语言归一成代码：值通常是代码；旧数据可能是说法，先按词表归一。 */
+const selectedLanguageCode = computed(() => {
+  const raw = String(store.synth.values.language || '').trim()
+  if (!raw) return ''
+  /** @type {Array<[string, string]>} */
+  const pairs = store.tree.vocab?.languages || []
+  const hit = pairs.find(([code, label]) => code === raw || label === raw)
+  return hit ? hit[0] : raw
+})
+
+/** 所选正文语言不在哪些勾选引擎的声明里：后端下发的 supported_codes 是唯一判据。
+ *  带 languages.hint 的引擎不列在这里——它用下面那条说明替代「不支持」。 */
+const languageSilent = computed(() =>
+  actions
+    .unsupportedLanguageEngines(pickedEngines.value, selectedLanguageCode.value)
+    .map((engine) => engine.label)
+)
+
+/** 声明外语言的解释（如 OmniVoice 的方言由参考音频决定）：摆在音频条下面。 */
+const languageHints = computed(() =>
+  actions.languageHintEngines(pickedEngines.value, selectedLanguageCode.value)
 )
 
 /**

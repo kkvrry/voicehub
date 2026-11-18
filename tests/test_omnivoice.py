@@ -6,10 +6,12 @@
 这一家最容易写错的地方：
 
 1. **两条路靠输入分开**：只给正文 / 给参考音频，没有 ``template_name`` 这类开关；
-2. **不对接 ``options.instruct``**：那是封闭属性词表，自由「引导指令」与自由
+2. **克隆必须带逐字稿**：给了参考音频而 ``reference_text`` 为空，audio.cpp 直接
+   回 500；由 ``synthesis_spec().needs_transcript`` 声明，核心在发送前补；
+3. **不对接 ``options.instruct``**：那是封闭属性词表，自由「引导指令」与自由
    「音色描述」都接不进来（服务端 500），两样都如实报"未发送"，音色只由参考音频决定；
-3. **种子省略是"沿用会话随机状态"**，所以 ``-1`` 不是抽一个，而是**不发这一格**；
-4. 语气词是正文里的方括号标签（``[laughter]`` / ``[sigh]``），由 ``mark_map`` 翻译。
+4. **种子省略是"沿用会话随机状态"**，所以 ``-1`` 不是抽一个，而是**不发这一格**；
+5. 语气词是正文里的方括号标签（``[laughter]`` / ``[sigh]``），由 ``mark_map`` 翻译。
 """
 
 from __future__ import annotations
@@ -194,12 +196,12 @@ class TestCapabilities:
     def test_single_concurrency(self):
         assert _engine().capabilities().max_concurrency == 1
 
-    def test_reference_is_optional(self):
-        """只给正文也能合成（引擎自己挑一把声音）。"""
+    def test_reference_is_optional_but_clone_needs_transcript(self):
+        """只给正文也能合成；一旦给参考音频克隆，逐字稿是硬要求。"""
         spec = _engine().synthesis_spec()
         assert spec.requires == ()
         assert "voice_design" not in _engine().accepted_extra_keys()
-        assert spec.needs_transcript is False
+        assert spec.needs_transcript is True
 
 
 # --------------------------------------------------------------------------- #
@@ -217,6 +219,10 @@ class TestBody:
     def test_a_reference_goes_to_voice_ref(self):
         body = _engine().build_body(_cfg(), _req())
         assert body["voice_ref"] == _REF
+
+    def test_a_transcript_goes_to_reference_text(self):
+        body = _engine().build_body(_cfg(), _req(reference_text="他停下脚步。"))
+        assert body["reference_text"] == "他停下脚步。"
 
     def test_an_unreadable_reference_is_refused(self, tmp_path: pathlib.Path):
         with pytest.raises(EngineError, match="读不到参考音频"):

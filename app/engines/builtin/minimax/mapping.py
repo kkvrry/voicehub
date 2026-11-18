@@ -189,9 +189,9 @@ def _emotion(value: object) -> str | None:
     悄悄剔掉的话，用户听到"没情绪"而以为自己要的是"激动"——
     那种错是查不出来的。映射表里这一格开了 ``drop_unmapped`` 就是这个意思。
 
-    与 ``language`` 相反的口径是**刻意的**：情绪是"可读说明"，同一个意思有好几种
-    中文说法（所以有 :data:`EMOTION_SYNONYMS`）；``language`` 是 BCP-47 标准码，
-    写错了是**填错**，不是方言差别——填错就该说，好让他改。
+    语言也走剔除（见 :func:`_language_boost`），理由不同：``language`` 是 BCP-47
+    标准码，写错了是填错；但为一个"增强提示"让整段合成失败代价太大，剔掉后由平台
+    按正文自动判断。两种剔除都要在 ``notes`` 里留痕。
     """
     text = str(value).strip()
     if text in EMOTION_ENUM:  # 上游直接给的就是平台枚举（规范允许原样透传）
@@ -226,25 +226,16 @@ def _pitch(value: object) -> int:
     return transform_of("int")(exact)
 
 
-def _language_boost(value: object) -> str:
-    """语言代码 → ``language_boost``。
+def _language_boost(value: object) -> str | None:
+    """语言代码 → ``language_boost``。**翻不出来返回 None** = 这一格剔掉，其余照发。
 
-    认不出就**报错**，与情绪同一条口径：这一项是"增强"（填了它，模型遇到该语言时
-    更稳，但不阻止它念别的语言），所以"认不出"看起来可以"算了"——但那等于把上游
-    明确提的一个要求悄悄丢掉，而下一次它会在别的地方变成一个查不出来的小差别。
-    要的就是"没增强"这个结果的话，把那一格空着即可（空 = 没要求，不发）。
+    这一项只是"增强"（填了它，模型遇到该语言时更稳，但不阻止它念别的语言）。
+    为一个提示字段让整段合成失败、把前面几行的钱也搭进去，代价太大；剔掉后由
+    平台按正文自动判断。**必须留痕**：``apply_mapping`` 收进 ``dropped``，
+    调用方回一句「这一项未发送」，不能悄悄消失。
     """
     code = str(value).strip().lower()
-    mapped = LANGUAGE_BOOST_MAP.get(code)
-    if mapped:
-        return mapped
-    raise EngineError(
-        "MiniMax 没有「"
-        + code
-        + "」对应的语言增强值——它认的是 "
-        + "、".join(sorted({v for v in LANGUAGE_BOOST_MAP.values()}))
-        + "。把「正文语言」空着就能照常合成（不增强而已）。没有发出去。"
-    )
+    return LANGUAGE_BOOST_MAP.get(code) or None
 
 
 register_transform("minimax_emotion", _emotion, label="中文词 → 平台枚举")
@@ -327,12 +318,13 @@ MAPPING = EngineMapping(
             transform="minimax_pitch",
             note="倍率换算为半音；平台只收整数，取最近的整半音。",
         ),
-        # 语言增强：认不出**报错不发**（与情绪相反，理由见 :func:`_emotion` 末尾）。
+        # 语言增强：认不出**剔掉这一格**（与情绪同一策略，理由见 :func:`_language_boost`）。
         ParamMapping(
             "language",
             "language_boost",
             transform="minimax_language",
-            note="语言代码转为平台语言枚举；无法识别时拦截请求。",
+            drop_unmapped=True,
+            note="语言代码转为平台语言枚举；无法识别时移除本项并说明。",
             warning=True,
         ),
         ParamMapping("format", "audio_setting.format", note="输出容器格式。"),

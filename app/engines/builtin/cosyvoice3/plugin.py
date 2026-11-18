@@ -22,6 +22,12 @@
 **不要发 ``<|endofprompt|>``**：那是 Python 库的分隔符；audio.cpp 这层收指令原文，
 带上它模型会把指令当正文念出来（实测）。插件遇到时会去掉。
 
+**中文指令按 20 字截断**：instruct 模板把指令放在 prompt 一侧，但模型对长指令的
+边界并不稳——超过约 20 字后，后半段会被当成正文念在目标文本前面（实测：36 字的
+「用西安话说这句话。 语气发紧…」原样念出；19 字的「用西安话说这句话，语气发紧，
+语速偏快。」不念）。插件先把中间的句号/分号并成逗号，再在标点处截到 20 字以内，
+并在结果说明里写明未发送的部分；宁可少一句风格描述，也不让指令进入音频。
+
 **其余落点**（audio.cpp 的 ``/v1/audio/speech``）：
 
 - 正文 → ``input``；参考音频 → ``voice_ref``（本机绝对路径）；逐字稿 →
@@ -268,6 +274,54 @@ _WRAPPER_DIRECTIONS: dict[str, str] = {
 _WRAPPER_RE = re.compile(r"<([^<>\s]+)>(.*?)</\1>", re.IGNORECASE | re.DOTALL)
 _LAUGHING_RE = re.compile(r"<laughing>(.*?)</laughing>", re.IGNORECASE | re.DOTALL)
 
+#: 中文 instruct 的字符上限（标点算一个字符）。
+#:
+#: 这一家的 instruct 把指令放在 prompt 一侧；短句能稳住，长句的后半段会被模型
+#: 当正文念出来。实测 36 字的「用西安话说这句话。 语气发紧，语速偏快，句子之间
+#: 几乎不停，像有件急事压着。」会把「语气发紧…」原样念在目标文本前；19 字的
+#: 「用西安话说这句话，语气发紧，语速偏快。」在多个种子下都不念。截在标点上，
+#: 保留前半段最要紧的风格，其余在 ``notes`` 里报出来。
+_INSTRUCT_MAX_CHARS = 20
+
+#: 只用来判断"要不要按中文字数截断"；英文指令的字符密度不同，不套这个上限。
+_CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+
+
+def _fit_instruction(text: str) -> tuple[str, bool]:
+    """把中文指令收成一句话，并截到 :data:`_INSTRUCT_MAX_CHARS` 以内。
+
+    返回 ``（发出去的指令, 是否有省略）``。中间的句号/分号改逗号（这一家的长句与
+    多句会被念成正文）；整条都不超限时原样返回；第一段就超限时硬截（否则整条都
+    发不出去）；英文指令不截（没有实测依据，不拿中文字数硬套）。
+    """
+    text = (text or "").strip()
+    if not text:
+        return "", False
+    if _CJK_RE.search(text):
+        # 中间的句号/分号会把后半段变成"正文"（实测「用西安话说这句话。 语气发紧…」
+        # 会念出后半句）。统一改成逗号，让整条指令保持一句话；句尾的标点保留。
+        text = re.sub(r"[。；！？]+(?=\s|[\u3400-\u4dbf\u4e00-\u9fff])", "，", text)
+        text = re.sub(r"[ \t]*([，、])[ \t]*", r"\1", text)
+        text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= _INSTRUCT_MAX_CHARS or not _CJK_RE.search(text):
+        return text, False
+
+    kept = ""
+    for segment in re.split(r"(?<=[，。；！？、])", text):
+        if not segment.strip():
+            continue
+        # 保留原文的分隔（中文常没有空格；方言 + 引导指令之间有一个空格）。
+        candidate = (kept + segment).strip()
+        if len(candidate) > _INSTRUCT_MAX_CHARS:
+            if kept:
+                return kept.rstrip("，。；！？、 ") + "。", True
+            return (
+                segment.strip()[:_INSTRUCT_MAX_CHARS].rstrip("，。；！？、 ") + "。",
+                True,
+            )
+        kept = candidate
+    return kept, False
+
 
 def _unwrap_directions(text: str) -> tuple[str, str, str, tuple[str, ...]]:
     """拆掉正文里的包裹标签——返回 ``(干净正文, 情绪, 直接指令, 其余指令)``。
@@ -405,7 +459,10 @@ class CosyVoice3Engine(EnginePlugin):
     def dynamic_mappings(self) -> dict[str, tuple[str, str]]:
         """落点随请求变的那几格：静态映射表表达不了。"""
         return {
-            "instruction": ("options.instruct", "写进指令；同时把模板切成 instruct。"),
+            "instruction": (
+                "options.instruct",
+                "写进指令；同时把模板切成 instruct。超过 20 字会截断，后半段会被念出来。",
+            ),
             "emotion": (
                 "options.instruct",
                 "翻成一句引导语；有明确指令时以指令为准。",
@@ -505,6 +562,19 @@ class CosyVoice3Engine(EnginePlugin):
                     parts.append(mood)
         instruction = " ".join(parts)
         if instruction:
+            original_length = len(instruction)
+            instruction, clipped = _fit_instruction(instruction)
+            if clipped:
+                notes.append(
+                    f"引导指令 {original_length} 字，CosyVoice3 会把长指令的后半段当正文念出来；"
+                    f"本次发送「{instruction}」，其余未发送。"
+                )
+                CHANNEL.info(
+                    f"指令过长（{original_length} 字），已截到「{instruction}」；"
+                    "这一家的长指令会被念进音频。",
+                    source="engine",
+                    engine="cosyvoice3",
+                )
             CHANNEL.info(
                 "按引导指令发送：" + instruction,
                 source="engine",
