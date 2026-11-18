@@ -377,14 +377,14 @@ const selectedLanguageCode = computed(() => {
 })
 
 /** 所选正文语言不在哪些勾选引擎的声明里：后端下发的 supported_codes 是唯一判据。
- *  带 languages.hint 的引擎不列在这里——它用下面那条说明替代「不支持」。 */
+ *  不支持的引擎照旧列在这里，不因为引擎给了 hint 就放过。 */
 const languageSilent = computed(() =>
   actions
     .unsupportedLanguageEngines(pickedEngines.value, selectedLanguageCode.value)
     .map((engine) => engine.label)
 )
 
-/** 声明外语言的解释（如 OmniVoice 的方言由参考音频决定）：摆在音频条下面。 */
+/** 已支持的方言格上的解释（如 OmniVoice 的粤语口音由参考音频决定）：摆在音频条下面。 */
 const languageHints = computed(() =>
   actions.languageHintEngines(pickedEngines.value, selectedLanguageCode.value)
 )
@@ -732,7 +732,8 @@ function onBar(job, event) {
 /** 灰态要给理由——"点了没反应"是最难查的一类界面问题。 */
 const reason = computed(() => {
   if (!store.synth.text.trim()) return '请输入文本'
-  if (!store.synth.voiceId) return '请选择音色'
+  // 录音不在库里：它自己就是参考音频，不选库内音色也能生成。
+  if (!store.synth.voiceId && !store.synth.recording) return '请选择音色或录一段'
   // 按"手上真有的那几台"算，不按勾选表：勾过的那台可能已被停用（另一个窗口，
   // 或刚在「引擎」页关掉）。勾选表里留着它，按钮就永远是亮的，点了才发现没有引擎。
   if (!pickedEngines.value.length) return '请至少选择一台引擎'

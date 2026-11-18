@@ -61,6 +61,7 @@ __all__ = [
     "UiSection",
     "VoiceList",
     "VoiceMeta",
+    "dialect_language_codes",
     "language_items",
     "language_names",
     "param_label",
@@ -114,6 +115,16 @@ def language_items(caps: Capabilities) -> list[dict[str, str]]:
     return items
 
 
+def dialect_language_codes(caps: Capabilities) -> frozenset[str]:
+    """``dialects`` 里那些归一得出代码的方言（粤语 → ``yue``，四川话 → ``cmn-cd``）。
+
+    与 ``languages`` 分开：界面只在**已支持**的方言格上提示"口音由参考音频
+    决定"，普通话与非方言语种不提示。归一不出代码的方言（如东北话）不进来。
+    """
+    codes = {detect_language(label) for label in caps.dialects}
+    return frozenset(code for code in codes if code)
+
+
 def supported_language_codes(caps: Capabilities) -> frozenset[str]:
     """这台引擎真正能念的语言代码：``languages`` 加方言说法归一成的代码。
 
@@ -121,12 +132,7 @@ def supported_language_codes(caps: Capabilities) -> frozenset[str]:
     （``cmn-cd``）；两边要对上，靠 ``traits`` 那张写法表。归一不出代码的方言
     （如 ``东北话``）不进集合——统一词表里也没有对应的可选项。
     """
-    codes = set(caps.languages)
-    for label in caps.dialects:
-        code = detect_language(label)
-        if code:
-            codes.add(code)
-    return frozenset(codes)
+    return frozenset(caps.languages) | dialect_language_codes(caps)
 
 
 #: 平台限流（RPM / 配额）的错误码。网关据此退避重试并给同一引擎降温，
@@ -282,8 +288,8 @@ class Capabilities:
     dialects: tuple[str, ...] = ()
     #: 「支持语言」那一栏的说明（卡片副标题），一句话：清单比官方窄在哪、方言走哪条路。
     language_note: str = ""
-    #: 选了未逐项登记的语言/方言时给生成页的一句话：说明这一格为什么没发、
-    #: 结果实际由什么决定。空 = 按「不支持」处理并列出引擎名。
+    #: 选到**已支持**的方言语种时给生成页的一句话：语言那一格认它，但实际口音
+    #: 由参考音频决定。空 = 不提示；不支持的语种仍按「不支持」列出，不用这一格。
     language_hint: str = ""
 
     @property
@@ -736,6 +742,8 @@ class EnginePlugin(ABC):
                 "codes": list(caps.languages),
                 # 界面判「所选语言这台认不认」用这一份：方言说法已归一成代码。
                 "supported_codes": sorted(supported_language_codes(caps)),
+                # 已支持的方言代码：生成页只在这些格上提示口音由参考音频决定。
+                "dialect_codes": sorted(dialect_language_codes(caps)),
                 "items": language_items(caps),
                 "dialects": list(caps.dialects),
                 "cross_lingual": caps.cross_lingual,

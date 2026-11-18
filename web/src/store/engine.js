@@ -175,8 +175,8 @@ export function unsupportedEmotionEngines(engines) {
  * 勾选里不支持所选语言的引擎。判据只认插件下发的
  * ``languages.supported_codes``（方言说法已在后端归一成代码）。
  * 后端没给这一份时不画：宁可不提示，也不替引擎猜它认不认。
- * 带 ``languages.hint`` 的引擎不列在这里——它把「为什么没发、结果由什么决定」
- * 交给下面那条提示，不当成一句「不支持」。
+ * 不支持就是「不支持」；``languages.hint`` 只解释已支持方言的实际口音来源，
+ * 不拿来给不支持的语言开脱。
  *
  * @param {any[]} engines
  * @param {string} code
@@ -186,17 +186,14 @@ export function unsupportedLanguageEngines(engines, code) {
   if (!wanted) return []
   return (engines || []).filter((engine) => {
     const supported = engine?.languages?.supported_codes
-    return (
-      Array.isArray(supported) &&
-      !supported.includes(wanted) &&
-      !String(engine?.languages?.hint || '').trim()
-    )
+    return Array.isArray(supported) && !supported.includes(wanted)
   })
 }
 
 /**
- * 所选语言不在声明里、但引擎给了说明的那几台：返回 ``{label, hint}``。
- * 提示文字由插件下发（例如 OmniVoice 的方言由参考音频决定），前端只负责摆出来。
+ * 所选语言**这台引擎支持**、但它是这台引擎登记过的方言，且引擎给了说明：
+ * 返回 ``{label, hint}``。典型是 OmniVoice 的粤语——语言那一格认 ``yue``，
+ * 但口音仍由参考音频决定。普通话与非方言不提示。
  *
  * @param {any[]} engines
  * @param {string} code
@@ -207,9 +204,12 @@ export function languageHintEngines(engines, code) {
   return (engines || [])
     .filter((engine) => {
       const supported = engine?.languages?.supported_codes
+      const dialects = engine?.languages?.dialect_codes
       return (
         Array.isArray(supported) &&
-        !supported.includes(wanted) &&
+        supported.includes(wanted) &&
+        Array.isArray(dialects) &&
+        dialects.includes(wanted) &&
         Boolean(String(engine?.languages?.hint || '').trim())
       )
     })

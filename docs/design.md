@@ -141,7 +141,7 @@ FastAPI（单进程）
 
 `Capabilities` 声明：部署形态（`cloud` / `local`）、音色清单、音色克隆、音色设计、试听合成、参考音频、情绪控制、单次文本上限。界面按声明渲染，不按引擎名判断。
 
-语言面也是 `Capabilities` 的事实格：`languages`（能念的语言代码）、`cross_lingual`（音色与正文能不能是两种语言）、`dialects`（能念的方言）、`language_note`（覆盖比官方窄在哪）、`language_hint`（选到声明外的语言时，解释结果由什么决定）。展示分两处：`cross_lingual` 是能力，只在「能力」卡里出一枚「跨语言合成」标签、不写解释；`languages` / `dialects` 是清单，单列「支持语言」一栏，语言那一行跳过同时算方言的词（粤语），`language_note` 作该栏的副标题。`describe()` 的 `languages` 块（`codes` / `supported_codes` / `items` / `dialects` / `cross_lingual` / `note` / `hint`）与界面同源：`supported_codes` 把方言说法归一成代码，是网关剔语言与生成页列出「不支持所选语言」引擎的唯一判据；带 `hint` 的引擎不进「不支持」名单，改在生成页音频条下摆那句说明（如 OmniVoice 的方言口音由参考音频决定）。不在声明里的正文/参考语言按不指定发送，不拦整段合成。
+语言面也是 `Capabilities` 的事实格：`languages`（能念的语言代码）、`cross_lingual`（音色与正文能不能是两种语言）、`dialects`（能念的方言）、`language_note`（覆盖比官方窄在哪）、`language_hint`（已支持的方言语种实际口音由什么决定）。展示分两处：`cross_lingual` 是能力，只在「能力」卡里出一枚「跨语言合成」标签、不写解释；`languages` / `dialects` 是清单，单列「支持语言」一栏，语言那一行跳过同时算方言的词（粤语），`language_note` 作该栏的副标题。`describe()` 的 `languages` 块（`codes` / `supported_codes` / `dialect_codes` / `items` / `dialects` / `cross_lingual` / `note` / `hint`）与界面同源：`supported_codes` 把方言说法归一成代码，是网关剔语言与生成页列出「不支持所选语言」引擎的唯一判据；`dialect_codes` 是其中已支持的方言代码，选到这些格且引擎给了 `hint` 时，生成页在音频条下提示实际口音由参考音频决定（如 OmniVoice 的粤语）。不支持的语种仍按不支持列出并剔掉，不能拿 `hint` 抵掉。不在声明里的正文/参考语言按不指定发送，不拦整段合成。
 
 设计音色没有平台音色 id：描述存入库内音色的 `payload.design_prompt`，网关透传给插件，每次合成按描述重新生成；平台不保存音色。它不绑定引擎——描述是自然语言，凡声明了 `voice_design` 的引擎都能按它生成，用哪台由用户在合成页选。库里的这一行与普通音色同表（`voices`），只是 `folder` 为空、`payload` 里多这一句；左栏因此单独分出一组「设计音色」。创建窗口不问引擎：各家都只是「按描述现场生成」，只取哪台声明了能力，来源优先记成生成页已勾选的那台。描述可由对话模型现写（`POST /voices/design-prompt`，提示词在 `usecase/voice_design.py`）：创建窗口拿名称与已写的描述作输入；创作页由音色分配在同一次回复里直接写出最终描述，落库前只做清洗与截断；用户自己写的描述视为定稿，不改写。
 

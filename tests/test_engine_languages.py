@@ -19,6 +19,7 @@ import pytest
 from app.engines.base import (
     Capabilities,
     EnginePlugin,
+    dialect_language_codes,
     language_items,
     language_names,
     supported_language_codes,
@@ -194,6 +195,9 @@ class TestEveryEngine:
         assert block["supported_codes"] == sorted(
             supported_language_codes(Capabilities(languages=codes, dialects=dialects))
         )
+        assert block["dialect_codes"] == sorted(
+            dialect_language_codes(Capabilities(languages=codes, dialects=dialects))
+        )
         shown = [item["name"] for item in block["items"]]
         # 同一个词不在两行里各摆一遍
         assert not (set(shown) & set(dialects))
@@ -212,6 +216,14 @@ class TestEveryEngine:
         assert engine.describe()["languages"]["hint"] == engine.capabilities().language_hint
 
 
+def test_dialect_codes_are_a_subset_of_supported_codes():
+    """已支持的方言代码用来决定"要不要提示口音由参考音频决定"；
+    不支持的方言不在这一份里，仍按不支持列出。"""
+    caps = Capabilities(languages=("zh", "yue"), dialects=("粤语", "东北话"))
+    assert dialect_language_codes(caps) == frozenset({"yue"})
+    assert supported_language_codes(caps) == frozenset({"zh", "yue"})
+
+
 def test_supported_codes_are_what_the_synth_page_checks():
     """生成页「语言」栏按这一份判哪台引擎不认所选语言。"""
     clear_cache()
@@ -220,8 +232,8 @@ def test_supported_codes_are_what_the_synth_page_checks():
     omni = set(omni_block["supported_codes"])
     assert "yue" in omni
     assert "cmn-xa" not in omni
-    # 方言点不在声明里，但这一家给了说明：生成页摆「由参考音频决定」，
-    # 不把它列成「不支持」。
+    # 粤语是已支持的方言：只在这一格上提示口音由参考音频决定。
+    assert omni_block["dialect_codes"] == ["yue"]
     assert omni_block["hint"]
     vox = set(engines["voxcpm2"].describe()["languages"]["supported_codes"])
     # 方言在 capabilities 里登记的是说法，界面判的是代码。

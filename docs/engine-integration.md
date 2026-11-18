@@ -110,7 +110,7 @@
 | `max_concurrency` | 路由 | 有声书并发上限 |
 | `instruction_control` | 展示 | 「引导指令」能力标签 |
 | `emotion_control` | 展示 | 「情绪控制」能力标签 |
-| `languages` / `dialects` / `cross_lingual` / `language_note` / `language_hint` | 展示 / 路由 | 「支持语言」一栏与能力标签；前两者归一成的 `supported_codes` 决定网关发不发 `language`；`language_hint` 替代「不支持」名单 |
+| `languages` / `dialects` / `cross_lingual` / `language_note` / `language_hint` | 展示 / 路由 | 「支持语言」一栏与能力标签；前两者归一成的 `supported_codes` 决定网关发不发 `language`；`dialect_codes` + `language_hint` 只在已支持的方言格上提示口音来源 |
 
 界面上三种克隆实现（`voice_cloning` / `sample_cloning` / `reference_audio`）只显示**一条**「音色克隆」，说明按实现选：平台注册 id、样本复刻、或每次随请求提供参考音频。`reference_audio` 只在「引擎要求」里出现（参考音频必填 / 可选 / 格式 / 时长），不再冒充能力。
 
@@ -208,7 +208,7 @@ app/engines/builtin/<key>/
 
 `unsupported()` 回答「规范里有、这台没有落点」的项及原因，参数映射页按它画「—」。`dynamic_mappings()` 只回答「有落点但映射表表达不了」的项，不参与装配；它与映射表一起组成 `accepted_extra_keys()`，网关照这份白名单过滤 `extra`。`value_choices()` 只给枚举描述，不参与门禁：认不出的值由映射的 `drop_unmapped` 决定是剔除还是报错。
 
-语言格另有一道声明检查：`capabilities().languages` 与 `dialects` 归一成的代码合起来是这台引擎认得的集合（`describe()` 的 `languages.supported_codes` 下发同一份）。网关（`usecase.gateway._settle_language`）在装配前剔掉集合外的 `language` / `reference_language`，按不指定发送并在 `notes` 回报；生成页「语言」栏按同一份列出不支持的引擎。声明了 `language_hint` 的引擎不列进「不支持」名单：它用一个 `languages.hint` 说明为什么没发、结果实际由什么决定（如 OmniVoice 的方言口音由参考音频决定），提示摆在生成页音频条下面。统一词表外的代码不判——词表只覆盖界面能选的那些，600+ 语言的插件可能认得更多。
+语言格另有一道声明检查：`capabilities().languages` 与 `dialects` 归一成的代码合起来是这台引擎认得的集合（`describe()` 的 `languages.supported_codes` 下发同一份）。网关（`usecase.gateway._settle_language`）在装配前剔掉集合外的 `language` / `reference_language`，按不指定发送并在 `notes` 回报；生成页「语言」栏按同一份列出不支持的引擎。不支持的语种仍列「不支持」；只有已支持的方言（`languages.dialect_codes`）才用 `languages.hint` 说明实际口音由什么决定（如 OmniVoice 的粤语由参考音频决定），提示摆在生成页音频条下面。统一词表外的代码不判——词表只覆盖界面能选的那些，600+ 语言的插件可能认得更多。
 
 ### 4.4 参数语义对齐
 
@@ -268,7 +268,7 @@ app/engines/builtin/<key>/
 | `emotion` 中文词 | MiniMax | 八档枚举；「中性」落 `fluent`，「平静」落 `calm`；认不出的剔掉并说明 |
 | `emotion` 中文词 | BreezeTTS | 没有原生情绪字段，写成一句 `options.instruction`；认不出的词进模板，不丢 |
 | `emotion` 中文词 | Kitta Audio | 写成「情绪：X。」并到 `instruction` 前面；同义先归一，认不出的原样保留 |
-| `language` 代码 | OmniVoice | 只发语言表里的代码（`yue` 等）；`cmn-xa` 这类方言点不在表里，剔掉并按不指定发送，生成页提示口音由参考音频决定 |
+| `language` 代码 | OmniVoice | 只发语言表里的代码（`yue` 等）；`cmn-xa` 这类方言点不在表里，剔掉并按不指定发送；已支持的粤语在生成页提示口音由参考音频决定 |
 | `language` 代码 | MiniMax | 转 `language_boost` 枚举；认不出剔掉这一格，退回设置里的语言增强值 |
 | `lead_silence` / `lag_silence` | GPT-SoVITS | 无落点；句间停顿由 `fragment_interval` 配置控制，不能拿它冒充前后静默 |
 | `seed` -1 | BreezeTTS / DotsTTS | 插件抽非负数再发，抽到的值写回 `notes` |
