@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Kitta Audio">
+  <!-- VoiceHub 自绘的平台标识：圆角方块里的声波与一颗星点。不是官方 logo 的复制品；
+       要换成官方图标，直接替换本文件即可（插件按目录里的 icon.svg 取图）。 -->
+  <defs>
+    <linearGradient id="kaGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f2733f"/>
+      <stop offset="100%" stop-color="#f5b544"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#kaGrad)"/>
+  <g fill="#ffffff">
+    <rect x="7"    y="12.5" width="2.4" height="7"  rx="1.2" opacity=".75"/>
+    <rect x="11.2" y="9"    width="2.4" height="14" rx="1.2"/>
+    <rect x="15.4" y="6"    width="2.4" height="20" rx="1.2"/>
+    <rect x="19.6" y="10"   width="2.4" height="12" rx="1.2"/>
+    <rect x="23.8" y="13.5" width="2.4" height="5"  rx="1.2" opacity=".75"/>
+  </g>
+</svg>

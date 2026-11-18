@@ -469,13 +469,14 @@ class TestInstructionPresets:
     def test_the_other_engines_declare_no_presets(self):
         """默认是空表：**没有现成说法可给的引擎，界面上就是干干净净一个输入框**。
 
-        三台带预设的引擎除外（breeze_tts / mimo / indextts2）：它们都能接一句
-        「引导指令」（indextts2 那里就是情感描述），给了例句——**哪些话这一家
-        听得懂只有它自己知道**，没有例句的引擎不硬凑（硬凑就是替它吹牛）。
+        带预设的五台除外（breeze_tts / mimo / indextts2 / fish_audio / kitta）：它们
+        都能接一句「引导指令」（indextts2 那里就是情感描述，fish_audio 与 kitta 是
+        正文标签与风格指令），给了例句——**哪些话这一家听得懂只有它自己知道**，
+        没有例句的引擎不硬凑（硬凑就是替它吹牛）。
         """
         from app.engines.registry import list_engines
 
-        with_presets = ("breeze_tts", "mimo", "indextts2")
+        with_presets = ("breeze_tts", "mimo", "indextts2", "fish_audio", "kitta")
         others = [e for key, e in list_engines().items() if key not in with_presets]
         assert all(e.field_presets() == {} for e in others)
 

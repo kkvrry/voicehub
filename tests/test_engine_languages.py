@@ -31,6 +31,18 @@ EXPECTED: dict[str, tuple[tuple[str, ...], bool | None, tuple[str, ...]]] = {
         True,
         ("粤语",),
     ),
+    "fish_audio": (
+        ("zh", "yue", "en", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "ar",
+         "nl", "tr", "uk", "id", "vi"),
+        True,
+        ("粤语",),
+    ),
+    "kitta": (
+        ("zh", "yue", "en", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "ar",
+         "nl", "tr", "uk", "id", "vi"),
+        True,
+        ("粤语",),
+    ),
     "breeze_tts": (("zh", "en"), None, ()),
     "cosyvoice3": (
         (

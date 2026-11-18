@@ -265,11 +265,16 @@ app/engines/builtin/<key>/
 | `guidance_scale` 0–1 | BreezeTTS | 换算为 CFG 0–8（0.5 → 4），保留一位小数 |
 | `emotion` 中文词 | MiniMax | 八档枚举；「中性」落 `fluent`，「平静」落 `calm`；认不出的剔掉并说明 |
 | `emotion` 中文词 | BreezeTTS | 没有原生情绪字段，写成一句 `options.instruction`；认不出的词进模板，不丢 |
+| `emotion` 中文词 | Kitta Audio | 写成「情绪：X。」并到 `instruction` 前面；同义先归一，认不出的原样保留 |
 | `language` 代码 | MiniMax | 转 `language_boost` 枚举；认不出直接拦截 |
 | `lead_silence` / `lag_silence` | GPT-SoVITS | 无落点；句间停顿由 `fragment_interval` 配置控制，不能拿它冒充前后静默 |
 | `seed` -1 | BreezeTTS / DotsTTS | 插件抽非负数再发，抽到的值写回 `notes` |
 | `format` 空串 | MiniMax | 不发送，由 `audio_format` 配置补；空串不等于 wav |
 | `volume` 倍率 | MiniMax | 同为倍率，直接发；平台允许 0–10，比统一滑块的 0.2–2.0 更宽 |
+| `volume` 倍率 | Fish Audio | 换算为分贝（`20×log₁₀`），平台按分贝偏移接收 |
+| `emotion` 中文词 | Fish Audio | 写成正文开头的 `[标签]`（英文词）；认不出的词原样放进去 |
+| `instruction` 自由文本 | Fish Audio | 同上，`[自由文本]` 标签；与情绪同一落点，故不触发「只发一路」 |
+| `bitrate` bps | Fish Audio | 换算为 kbps；平台只收 64/128/192，取最接近的一档并在映射页写明 |
 
 #### 语义对齐的验证
 
