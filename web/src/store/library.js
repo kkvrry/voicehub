@@ -8,7 +8,7 @@ import { loadEngines } from './engine'
 import { loadAsr } from './asr'
 import { loadSpec } from './synth'
 import { ensureTexts } from './texts'
-import { playAll, syncVoice } from './playback'
+import { playAll, playVoices, syncVoice, togglePlay } from './playback'
 
 function currentQuery() {
   const q = { ...store.filters }
@@ -251,14 +251,46 @@ export async function playAllSamples(voice) {
       /** @param {any} sample */
       (sample) => ({
         url: sample.audio_url,
-        // 播放条上写的是**那句话**，与详情里那几行的第一行同一份文本；
-        // 回落文件名只是为了没标注过的样例也有个名字。
-        label: sample.text || sample.file,
+        // 播放条写音频名称，不写逐字稿：逐字稿属于这一段的编辑内容，
+        // 底栏要回答的是"现在放的是哪一个文件"。
+        label: sample.file,
         sub: `${name}${sample.is_main ? ' · 主样例' : ''}`,
         voice: full,
       })
     )
   )
+}
+
+/** 点音色卡的封面：把当前显示列表排成主样例队列，从这一条开始。
+ *  队列只含主样例（不把每个音色的全部样例都排进来）；播放条的上一段/下一段
+ *  因此能顺着卡片走，而不是每点一张都退化成单曲。
+ *  `list` 给创作页音色栏用：它显示的是 `store.voices`，与库页的可见列表同源但
+ *  可能带着隐藏项；传进来就按它排，不另换一份顺序。 */
+/**
+ * @param {any} voice
+ * @param {any[]} [list]
+ */
+export function playVoiceFromList(voice, list = undefined) {
+  const url = voice?.main_audio_url
+  if (!url) return
+  // 点正在放的那一条 = 暂停/继续：与 `play()` 的旧行为一致。
+  if (store.player.url === url) {
+    togglePlay()
+    return
+  }
+  const pool = (list && list.length ? list : visibleVoices()).filter(
+    /** @param {any} item */
+    (item) => item.main_audio_url
+  )
+  const start = pool.findIndex(
+    /** @param {any} item */
+    (item) => item.id === voice.id
+  )
+  if (start < 0) {
+    playVoices([voice])
+    return
+  }
+  playVoices(pool, start)
 }
 
 /** 改的这一格，正好是当前筛选用的那一格吗？

@@ -49,6 +49,23 @@ def test_category_filter_includes_sub_levels(client, demo_library: Path):
     assert {v["name"] for v in by_cat} == {"胡桃", "钟离"}
 
 
+def test_category_filter_includes_grandchild_levels(client, tmp_path: Path):
+    """父分类要连孙层一起收：category 存的是 ``/`` 连接的整条相对路径。
+
+    回归：前缀模式曾按 Windows 路径折形，把 ``/`` 换成 ``\\``，导致父分类只命中
+    等值行、子目录音色全部消失（树上有计数，点进去 0 条）。
+    """
+    from conftest import make_wav
+
+    root = tmp_path / "library"
+    make_wav(root / "影视" / "其它" / "林黛玉" / "默认.wav")
+    make_wav(root / "影视" / "其它" / "云龙哥" / "默认.wav")
+    make_wav(root / "影视" / "三国演义" / "关羽" / "默认.wav")
+    client.put("/api/v1/folders", json={"folders": [str(root)]})
+    found = _items(client.get("/api/v1/voices", params={"category": "影视"}))
+    assert {v["name"] for v in found} == {"林黛玉", "云龙哥", "关羽"}
+
+
 def test_uncategorized_filter_folds_back_to_empty(client, demo_library: Path):
     """旧界面那个「（未分类）」仍然认——折回库里的空串（直接放在根下的音色）。
 

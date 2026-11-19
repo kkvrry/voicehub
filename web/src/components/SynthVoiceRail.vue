@@ -367,9 +367,9 @@ function chooseSample(voice) {
  * @param {any} voice
  */
 function play(voice) {
-  const url = voice.main_audio_url
-  if (!url) return
-  actions.play({ url, label: voice.shown_name, sub: '主样例', voice })
+  if (!voice.main_audio_url) return
+  // 排这一栏当前显示的整列主样例：播放条才有上一段/下一段可按。
+  actions.playVoiceFromList(voice, visible.value)
 }
 
 /**

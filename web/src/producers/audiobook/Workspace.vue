@@ -820,10 +820,11 @@ const rows = computed(() => state.rows)
 const view = computed(() => (rows.value.length ? viewMode.value : 'chapter'))
 
 // ---- 列宽：角色 / 情绪按本页最长内容定宽，短则收、长则放，各有上限 ----
-//: 一格内容占的横向空间里，边框、内边距、图标、箭头这些固定量（px）。
-const COL_BASE = { speaker: 72, emotion: 60 }
+//: 一格内容占的横向空间里，边框、内边距、箭头这些固定量（px）。
+//: 角色格已不再画人物图标，固定量比从前少一截；下限跟着收，平板才排得下整行。
+const COL_BASE = { speaker: 50, emotion: 48 }
 /** @type {Record<string, [number, number]>} */
-const COL_LIMIT = { speaker: [104, 176], emotion: [96, 176] }
+const COL_LIMIT = { speaker: [84, 168], emotion: [84, 168] }
 
 /**
  * 引导指令存在行参数里：有就拿来显示，没有退回情绪。

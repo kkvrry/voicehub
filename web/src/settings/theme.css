@@ -3597,6 +3597,20 @@ select.sh-field {
   padding: 10px 8px 0;
   border-right: 1px solid var(--sh-line-soft);
 }
+/* 平板宽度下收起音色卡片列：180px 宽会把卡片挤成半截，反而不如把这一列
+   整段让给行表；挑音色仍可从行表上方的「音色管理」进。 */
+@media (max-width: 1100px) {
+  .app-page[data-page='producer'] .producer-cards {
+    display: none;
+  }
+}
+/* 平板上的右侧留白让给工作区：卡片内的 22px 内边距已经足够，
+   页面层不再重复留一道 22–40px 的右槽。 */
+@media (max-width: 1400px) {
+  .app-page[data-page='producer'] .producer-layout {
+    padding-right: 0;
+  }
+}
 .producer-cards > .synth-rail {
   flex: 1 1 auto;
   min-height: 0;

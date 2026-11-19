@@ -199,13 +199,15 @@ def path_key(value: str) -> str:
     return str(value).replace("/", "\\").lower()
 
 
-def _like_prefix(path: str) -> str:
-    """一条路径 → "以它为前缀"的 LIKE 模式（先折形、再转义）。
+def _like_prefix(value: str) -> str:
+    """一条分类路径 → "以它为前缀"的 LIKE 模式。
 
-    ``_`` 必须转义：Windows 路径常见，且在 LIKE 里是通配符，不转义会静默多匹配。
+    category 用 ``/`` 连接（见 ``domain.scanner.relative_category``），不能先走
+    :func:`path_key`：那会把 ``/`` 折成 ``\\``，而库里的分类仍用 ``/``，前缀永远
+    匹配不上，只剩等值命中。这里只转义 LIKE 的元字符与反斜杠本身。
     """
-    folded = path_key(path).replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
-    return folded + "%"
+    escaped = value.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+    return escaped + "%"
 
 
 #: 折形后的目录列。查询与索引必须**逐字一致**，规划器才认得出是同一个表达式。

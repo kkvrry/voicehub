@@ -339,7 +339,8 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
                 engine.label if engine else key,
                 # 目录名使用稳定标识（音色 id / 目录名），不用显示名——显示名可改，
                 # 改了之后同一音色的音频会落到另一个目录。
-                voice.name if voice else body.voice_id,
+                # 只凭录音合成时库里没有音色，落进「录音」目录。
+                voice.name if voice else (body.voice_id or "录音"),
                 result.audio,
                 fmt=result.format,
                 voice_id=voice.id if voice else "",

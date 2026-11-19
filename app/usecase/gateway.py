@@ -296,6 +296,37 @@ async def _fallback_request(
     return None
 
 
+def _recording_request(
+    engine: EnginePlugin, voice_id: str, *, emotion: str, extra: Mapping[str, Any] | None
+) -> SynthesisRequest | None:
+    """库里没有音色、但这一次带了录音：录音本身就是音色。
+
+    生成页允许"只录一段就当参考"——它不在库里，``voice_id`` 为空或查不到。
+    只有接受参考音频的引擎走这条路；别的引擎拿录音当音色名发过去，只会换来
+    平台侧一句"音色不存在"，不如在这里说清。
+    """
+    picked = str((extra or {}).get("reference_audio") or "").strip()
+    if not picked:
+        return None
+    if not engine.capabilities().reference_audio:
+        raise EngineError(
+            f"{engine.label} 不接受参考音频；录一段当音色只能发给声明了参考音频能力的引擎。",
+            code="voice_not_usable",
+        )
+    if not Path(picked).is_file():
+        raise EngineError(
+            f"录音文件不存在：{picked}。服务重启后临时录音会被清空，请重新录一段。",
+            code="voice_not_usable",
+        )
+    return SynthesisRequest(
+        text="",
+        voice_id=voice_id.strip() or "录音",
+        reference_audio=picked,
+        reference_text=str((extra or {}).get("reference_text") or "").strip(),
+        emotion=emotion,
+    )
+
+
 def normalize_voice(
     service: LibraryService,
     voice_id: str,
@@ -498,6 +529,8 @@ async def _route(
             sample_file=sample_file,
             match_emotion=match_emotion,
         )
+        if request is None:
+            request = _recording_request(engine, voice_id, emotion=emotion, extra=extra)
         if request is None:
             raise EngineError(str(exc)) from exc
     request = SynthesisRequest(

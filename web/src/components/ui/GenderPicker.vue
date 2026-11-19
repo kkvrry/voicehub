@@ -1,5 +1,5 @@
 <template>
-  <div class="vgender" @click.stop>
+  <div class="vgender" @click="onRootClick">
     <!-- 只读态：同样的圆标，只是一段标记，不是能点开改值的控件。 -->
     <span
       v-if="readonly"
@@ -120,6 +120,17 @@ const text = computed(() => {
   const found = optionPairs.value.find((pair) => pair[0] === props.modelValue)
   return found ? found[1] : props.modelValue
 })
+
+/**
+ * 只读态不拦点击：它只是卡片里的一枚标记，点它应该和点卡片其它地方一样，
+ * 把这次点击交给外层（例如生成页把它选为参考音频）。可编辑态仍拦住，
+ * 免得点圆标周围的空白顺手触发卡片的选择。
+ *
+ * @param {MouseEvent} event
+ */
+function onRootClick(event) {
+  if (!props.readonly) event.stopPropagation()
+}
 
 function toggle() {
   open.value = !open.value

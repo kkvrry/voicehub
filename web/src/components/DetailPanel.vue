@@ -376,8 +376,8 @@ const isPlayingMain = computed(
 
 function playMain() {
   if (!mainUrl.value) return
-  // 同一条地址再点一次由 `play` 自己转成暂停/继续。
-  actions.play({ url: mainUrl.value, label: titleText.value, sub: '主样例', voice: voice.value })
+  // 排当前可见列表的主样例队列：详情里点主样例也能顺着卡片切上一条/下一条。
+  actions.playVoiceFromList(voice.value)
 }
 /** 点开标题时，输入框里先放**现在显示的名字**（没单独设过就是文件夹名）：
  *  空着一个框、把名字塞进占位词，看起来像"这条没有名字"。 */

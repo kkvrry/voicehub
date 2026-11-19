@@ -150,10 +150,14 @@ export function dropTrack(url) {
   else stop()
 }
 
-/** 把一批音色排成队列（只取有主样例的），从第一条开始。
- *  音色库标题与生成/创作页的左栏共用：同一个「全部播放」，入队规则只写这一处。 */
-/** @param {any[]} voices */
-export function playVoices(voices) {
+/** 把一批音色排成队列（只取有主样例的），从第 `start` 条开始。
+ *  音色库标题、生成/创作页的左栏与音色卡共用：同一个「全部播放」与单卡试听，
+ *  入队规则只写这一处；单卡试听也排整条可见列表，播放条才能顺着卡片切上一条/下一条。 */
+/**
+ * @param {any[]} voices
+ * @param {number} [start]
+ */
+export function playVoices(voices, start = 0) {
   const items = (voices || [])
     .filter(
       /** @param {any} voice */
@@ -167,7 +171,7 @@ export function playVoices(voices) {
       sub: '主样例',
       voice,
     }))
-  if (items.length) playAll(items, 0)
+  if (items.length) playAll(items, Math.min(Math.max(start, 0), items.length - 1))
   return items.length
 }
 

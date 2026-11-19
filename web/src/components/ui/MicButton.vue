@@ -56,6 +56,12 @@ let rec = null
 let stream = null
 /** @type {ReturnType<typeof setInterval> | undefined} */
 let timer
+/** 这一次录音用的是哪个输入设备：无声时要把设备名说出来，用户才知道该换哪个。 */
+let deviceLabel = ''
+
+/** 低于这个峰值的整段录音按「没有信号」处理（约 -60 dBFS）。
+ *  没通电的蓝牙麦与选错的虚拟设备录出来是精确的 0；真人说话远高于它。 */
+const SILENT_PEAK = 0.001
 
 const clock = computed(() => formatClock(seconds.value))
 
@@ -72,12 +78,15 @@ async function toggle() {
 }
 
 async function start() {
+  let media
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    media = await navigator.mediaDevices.getUserMedia({ audio: true })
   } catch (error) {
     emit('error', micError(error))
     return
   }
+  stream = media
+  deviceLabel = media.getAudioTracks()[0]?.label || ''
   const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', ''].find(
     (type) => !type || (window.MediaRecorder?.isTypeSupported?.(type) ?? false)
   )
@@ -133,11 +142,17 @@ function stopStream() {
 async function send(blob) {
   state.value = 'busy'
   try {
-    const wav = await toWav(blob)
+    const { file, peak } = await toWav(blob)
+    // 没信号的录音不能当参考音频：播出来是静音，发给引擎也只会换来一句
+    // "参考音频为空 / 听不出字"。在落盘之前拦下，并说出是哪个输入设备。
+    if (peak < SILENT_PEAK) {
+      emit('error', noSignalMessage())
+      return
+    }
     if (props.mode === 'audio') {
-      emit('audio', await api.saveRecording(wav))
+      emit('audio', await api.saveRecording(file))
     } else {
-      const payload = await api.dictate(wav)
+      const payload = await api.dictate(file)
       const text = String(payload?.text || '').trim()
       if (text) emit('text', text)
       else emit('error', '没听出字，可能没出声或离得太远。')
@@ -149,10 +164,18 @@ async function send(blob) {
   }
 }
 
+/** 无声录音的那一句话：点名设备，并给出可执行的下一步。 */
+function noSignalMessage() {
+  const mic = deviceLabel ? `「${deviceLabel}」` : '当前麦克风'
+  return `没录到声音：${mic}没有信号。它可能是 Windows 的默认通信设备；在系统声音设置里换一个能用的麦克风，或在浏览器地址栏的站点设置里改麦克风。`
+}
+
 /**
  * webm/opus → 16 kHz 单声道 PCM16 wav。
  *
  * @param {any} blob
+ * @returns {Promise<{ file: File, peak: number }>} 峰值取转换后的 PCM：它同时回答
+ *   "这段能不能当参考音频"（见 :data:`SILENT_PEAK`）。
  */
 async function toWav(blob) {
   const ctx = new AudioContext()
@@ -189,12 +212,14 @@ async function toWav(blob) {
     writeText(36, 'data')
     view.setUint32(40, pcm.length * 2, true)
     let at = 44
+    let peak = 0
     for (const sample of pcm) {
       const clipped = Math.max(-1, Math.min(1, sample))
+      peak = Math.max(peak, Math.abs(clipped))
       view.setInt16(at, clipped < 0 ? clipped * 0x8000 : clipped * 0x7fff, true)
       at += 2
     }
-    return new File([bytes], '录音.wav', { type: 'audio/wav' })
+    return { file: new File([bytes], '录音.wav', { type: 'audio/wav' }), peak }
   } finally {
     ctx.close()
   }

@@ -150,16 +150,9 @@ async function open() {
 }
 
 function playMain() {
-  // 递一条带标题的曲目：底栏要说得出"在放谁的哪一段"。
-  if (mainUrl.value) {
-    actions.play({
-      url: mainUrl.value,
-      label: props.voice.shown_name,
-      sub: '主样例',
-      // 播放条据此提供收藏 / 指定给角色
-      voice: props.voice,
-    })
-  }
+  // 排的是当前列表的主样例队列：播放条才有上一段/下一段可按；
+  // 每条都只放主样例，不把音色的全部样例排进来。
+  if (mainUrl.value) actions.playVoiceFromList(props.voice)
 }
 
 async function toggleFavorite() {

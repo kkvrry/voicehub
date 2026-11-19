@@ -544,7 +544,7 @@ select.field-sm {
 }
 .rows {
   width: 100%;
-  min-width: 700px;
+  min-width: 0;
   table-layout: fixed;
   /* 分开边框：粘住的表头才不会在滚动时丢掉自己的下边框 */
   border-collapse: separate;
@@ -559,7 +559,7 @@ select.field-sm {
   top: 0;
   z-index: 2;
   height: 40px;
-  padding: 0 12px;
+  padding: 0 10px;
   text-align: left;
   font-size: 12.2px;
   font-weight: 650;
@@ -580,7 +580,7 @@ select.field-sm {
 }
 .rows td {
   height: var(--ws-row-h);
-  padding: var(--ws-cell-py) 12px;
+  padding: var(--ws-cell-py) 10px;
   border-bottom: 1px solid var(--sh-line-soft);
   vertical-align: middle;
   color: var(--sh-text-2);
@@ -642,17 +642,18 @@ select.field-sm {
 .rows tbody tr.is-dialogue:not(.is-selected):hover td {
   background: color-mix(in srgb, var(--sh-ok) 26%, var(--sh-panel));
 }
-/* 列宽：序号 / 角色 / 情绪 / 音频固定，正文列吃满剩余宽度 */
+/* 列宽：序号 / 角色 / 情绪 / 音频固定，正文列吃满剩余宽度。
+   窄屏不把整表锁在 700px：正文列跟着容器收，五行一起留在视口里。 */
 .col-ord {
-  width: 56px;
+  width: 48px;
   text-align: center;
   color: var(--sh-text-4);
 }
 .col-speaker {
-  width: var(--ws-speaker-w, 112px);
+  width: var(--ws-speaker-w, 84px);
 }
 .col-emotion {
-  width: var(--ws-emotion-w, 96px);
+  width: var(--ws-emotion-w, 84px);
 }
 /* 表头切换：行里有引导指令时，这一列可切「情绪 / 引导」。 */
 .col-switch {
@@ -711,7 +712,7 @@ select.field-sm {
 }
 /* 音频列只放图标：播放/生成、参数、更多操作三颗，删掉状态文字后按需收窄。 */
 .col-audio {
-  width: 116px;
+  width: 104px;
 }
 /* 原文缺字：缩在行号下面一颗红三角，与时间码同一处，不另占一列 */
 .ord-warn {
@@ -816,7 +817,7 @@ select.field-sm {
 .audio-cell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 .audio-btn {
   flex: none;
@@ -968,13 +969,80 @@ select.field-sm {
     padding-top: 2px;
   }
 }
-@media (max-width: 1100px) {
+/* 平板 / 小笔记本：章节目录改成表格上方的横向条，正文因此拿回右列那 248px。
+   阈值取 1400：iPad Pro 横屏（1366）也落在这里；再宽就保留右列目录。 */
+@media (max-width: 1400px) {
   .producer-body {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    align-content: stretch;
   }
-  /* 窄屏：目录排到正文上面，并给个高度上限——它不能把表格挤出屏。 */
   .producer-side {
     order: -1;
-    max-height: 240px;
+    max-height: none;
+  }
+  /* Rail 是子组件，横向排法只能从这里穿透进去；纵向刊头在小屏上横过来。 */
+  .producer-side :deep(.producer-rail) {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+  }
+  .producer-side :deep(.rail-book) {
+    flex: 0 1 auto;
+    max-width: 260px;
+    margin: 0;
+    padding: 0 10px 0 0;
+    border-right: 1px solid var(--sh-line-soft);
+    border-bottom: 0;
+  }
+  .producer-side :deep(.rail-chapters) {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    min-width: 0;
+    padding: 0 0 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .producer-side :deep(.chapter-row) {
+    flex: 0 0 auto;
+  }
+  .producer-side :deep(.chapter-item) {
+    width: auto;
+    max-width: 220px;
+    padding: 5px 24px 5px 8px;
+  }
+  /* 横向条里不报行数：章名与灯已经够认，行数留给正文头。 */
+  .producer-side :deep(.chapter-rows) {
+    display: none;
+  }
+}
+
+/* 平板竖屏 / 更窄：表格列距与固定列再收一档，正文列仍留在视口内。 */
+@media (max-width: 1100px) {
+  .producer-body.producer-body {
+    padding: 12px 14px 20px;
+    gap: 12px;
+  }
+  .rows thead th {
+    height: 36px;
+    padding: 0 8px;
+  }
+  .rows td {
+    padding: var(--ws-cell-py) 8px;
+  }
+  .col-ord {
+    width: 44px;
+  }
+  .col-audio {
+    width: 96px;
+  }
+  .rows-tools {
+    padding: 8px 12px;
+  }
+  .chapter-head {
+    padding: 10px 12px 0;
   }
 }

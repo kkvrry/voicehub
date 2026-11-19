@@ -139,6 +139,9 @@ export async function openSynth() {
   await loadAllVoices()
 }
 
+/** 样例名单的取数序号：慢请求回来时若已经换过音色，它手上那份结果就不再作数。 */
+let samplesTicket = 0
+
 /** 「参考音频」那一格的名单 = 当前音色的样例（本地音色才有）。
  *  换音色时旧样例立刻作废：不清的话，那个路径会跟着新音色一起发出去。
  *  已经「使用」过的那一条（`pinned`）跟着同一套判定走：同一条音色才留，
@@ -146,6 +149,7 @@ export async function openSynth() {
  */
 export async function loadSynthSamples() {
   const { synth } = store
+  const ticket = ++samplesTicket
   if (synth.pinned && synth.pinned.voiceId !== synth.voiceId) synth.pinned = null
   const pinnedFile = synth.pinned?.file || ''
   synth.samples = []
@@ -158,7 +162,11 @@ export async function loadSynthSamples() {
   // 不接住的话控制台会躺一个没头没尾的 404。
   try {
     const detail = await api.voice(synth.voiceId)
+    if (ticket !== samplesTicket) return
     synth.samples = detail.samples || []
+    // 这一趟取列表期间用户录了一段：录音优先，别让样例把参考路径换回去
+    // （否则卡片上仍是那段录音，实际发出去的却是音色的主样例）。
+    if (synth.recording) return
     // 主样例就是"默认参考"：显式写进 values，别指望中转站补。
     // 平台音色（自带本地样例的那几家，如 MiMo）在库里没有 main_sample 可查，
     // 中转站补不出参考音频——扇出给需要它的引擎（BreezeTTS / GPT-SoVITS）时会
@@ -393,8 +401,8 @@ export async function retrySynthJob(job) {
     return
   }
   const { text, voiceId, values } = store.synth
-  if (!text.trim() || !voiceId) {
-    say('缺正文或音色，先补齐再重跑', { kind: 'error' })
+  if (!text.trim() || (!voiceId && !store.synth.recording)) {
+    say('缺正文、音色或录音，先补齐再重跑', { kind: 'error' })
     return
   }
   const at = store.synthJobs.findIndex((row) => row.key === job.key)

@@ -38,6 +38,10 @@ class FakeRefEngine(EnginePlugin):
     #: 合成那一次真正收到的请求——测试用它断言"传给插件的是什么"。
     seen = None
 
+    def capabilities(self) -> Capabilities:
+        # 录音可以单独当音色（不进库），所以这类引擎要声明接受参考音频。
+        return Capabilities(reference_audio=True)
+
     def synthesis_spec(self) -> SynthesisSpec:
         return SynthesisSpec(requires=("voice_id", "reference_audio", "reference_text"))
 
@@ -472,6 +476,63 @@ class TestRoute:
             engines=ENGINES,
         ))
         assert result.audio == b"RIFF-fake"
+
+    def test_a_recording_alone_can_be_the_voice(self, scanned, tmp_path):
+        """只录一段、没选库内音色：录音自己就是音色，不必先进库。"""
+        from conftest import make_wav
+
+        from app.usecase.gateway import synthesize as synth
+
+        recording = tmp_path / "录音.wav"
+        make_wav(recording, seconds=0.3)
+        FakeRefEngine.seen = None
+
+        result = asyncio.run(synth(
+            scanned,
+            engine_key="fake_ref",
+            voice_id="",
+            text="你好",
+            extra={"reference_audio": str(recording), "reference_text": "你好"},
+            engines={"fake_ref": FakeRefEngine()},
+        ))
+
+        assert result.audio == b"RIFF-fake"
+        assert FakeRefEngine.seen.voice_id == "录音"
+        assert FakeRefEngine.seen.reference_audio == str(recording)
+        assert FakeRefEngine.seen.reference_text == "你好"
+
+    def test_a_platform_only_engine_refuses_a_recording_alone(self, scanned, tmp_path):
+        """不接参考音频的引擎不能拿录音当音色：说清为什么，不发出去。"""
+        from conftest import make_wav
+
+        from app.usecase.gateway import synthesize as synth
+
+        recording = tmp_path / "录音.wav"
+        make_wav(recording, seconds=0.3)
+        with pytest.raises(EngineError, match="不接受参考音频"):
+            asyncio.run(synth(
+                scanned,
+                engine_key="fake_cloud",
+                voice_id="",
+                text="你好",
+                extra={"reference_audio": str(recording)},
+                engines={"fake_cloud": FakeCloudEngine()},
+            ))
+
+    def test_a_missing_recording_says_to_record_again(self, scanned, tmp_path):
+        """服务重启会清 recordings：路径没了要指名这一步，不说"音色不存在"。"""
+        from app.usecase.gateway import synthesize as synth
+
+        gone = tmp_path / "录音.wav"
+        with pytest.raises(EngineError, match="重新录一段"):
+            asyncio.run(synth(
+                scanned,
+                engine_key="fake_ref",
+                voice_id="",
+                text="你好",
+                extra={"reference_audio": str(gone)},
+                engines={"fake_ref": FakeRefEngine()},
+            ))
 
     def test_pronunciation_replacement_reaches_the_plugin(self, scanned):
         from app.usecase import pronunciation

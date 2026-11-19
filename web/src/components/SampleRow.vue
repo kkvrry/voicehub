@@ -226,11 +226,12 @@ const paramsText = computed(() =>
 )
 
 function togglePlay() {
-  // 底栏要说得出"这是谁的哪一段"——用说话内容，不用文件名。
+  // 播放条写音频名称，不写逐字稿：逐字稿在这一行里已经可读可改，
+  // 底栏要回答的是"现在放的是哪一个文件"。
   if (audioUrl.value) {
     actions.play({
       url: audioUrl.value,
-      label: text.value.trim() || props.sample.file,
+      label: props.sample.file,
       sub: `${props.voice.shown_name}${props.sample.is_main ? ' · 主样例' : ''}`,
       // 这一行永远属于抽屉里的那条音色：播放条上的收藏 / 指定也认它。
       voice: props.voice,

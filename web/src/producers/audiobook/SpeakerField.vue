@@ -1,6 +1,5 @@
 <template>
   <div ref="box" class="speaker-field">
-    <UserRound class="speaker-icon" :size="14" :stroke-width="1.8" aria-hidden="true" />
     <input
       class="speaker-input"
       :value="text"
@@ -48,7 +47,7 @@
  *  提交时机为回车 / 失焦 / 取候选；空串按「旁白」提交。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ChevronDown, UserRound } from 'lucide-vue-next'
+import { ChevronDown } from 'lucide-vue-next'
 
 const props = defineProps({
   value: { type: String, default: '' },
@@ -140,9 +139,8 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocDown))
   position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
   height: 28px;
-  padding: 0 8px;
+  padding: 0 6px;
   min-width: 0;
   border: 1px solid var(--sh-line-soft);
   border-radius: var(--sh-r-xs);
@@ -156,14 +154,10 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocDown))
   border-color: var(--sh-accent);
   box-shadow: 0 0 0 3px var(--sh-accent-ring);
 }
-.speaker-icon {
-  flex: none;
-  color: var(--sh-text-4);
-}
 .speaker-input {
   flex: 1;
   min-width: 0;
-  padding: 0 12px 0 0;
+  padding: 0 14px 0 0;
   border: 0;
   background: transparent;
   color: inherit;
@@ -178,7 +172,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocDown))
 .speaker-caret {
   position: absolute;
   top: 50%;
-  right: 5px;
+  right: 3px;
   width: 14px;
   height: 18px;
   display: grid;
