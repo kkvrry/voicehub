@@ -25,7 +25,7 @@ from app.api.views import (
     bind_port,
 )
 from app.domain.request_spec import spec_payload
-from app.infra import autostart
+from app.infra import autostart, releases
 from app.infra import secrets as secret_store
 from app.infra.config import DEFAULT_HOST, WILDCARD_HOSTS, load_config, save_config
 from app.infra.loghub import CHANNEL, HUB
@@ -125,6 +125,15 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
             "autostart_enabled": autostart.enabled(),
             "restart_required": restart,
         }
+
+    @router.get("/release", summary="检查最新正式发布", tags=["system"])
+    def release_check(refresh: bool = False) -> dict[str, Any]:
+        """只读查询 GitHub 上的最新**正式发布**。
+
+        只回答「有没有新发布」，不下载、不替换文件。``refresh`` 跳过一分钟缓存；
+        网络不通、限流与仓库还没有发布都算正常结果，放在响应的 ``error`` 里。
+        """
+        return releases.check(version, refresh=refresh)
 
     # ---- 日志 ------------------------------------------------------------
     #

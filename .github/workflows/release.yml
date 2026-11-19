@@ -77,6 +77,12 @@ jobs:
           $toml = $toml -replace '(?m)^version = "[^"]*"', "version = `"$env:VERSION`""
           [IO.File]::WriteAllText($pp, $toml, $utf8)
 
+          # /health 与「关于 → 检查更新」读的是这个常量；不同步的话新包仍会自称旧版。
+          $main = "app/main.py"
+          $source = Get-Content $main -Raw -Encoding UTF8
+          $source = $source -replace '(?m)^VERSION = "[^"]*"', "VERSION = `"$env:VERSION`""
+          [IO.File]::WriteAllText($main, $source, $utf8)
+
           Write-Host "版本：$env:VERSION"
 
       - name: 构建界面

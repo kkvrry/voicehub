@@ -293,6 +293,7 @@ FastAPI（单进程）
 | POST | `/asr/dictation` | 麦克风语音输入 |
 | POST | `/recordings` | 参考音频录音 |
 | GET/PUT | `/service` | 监听范围、令牌与开机自启；前两项写入配置、重启后生效，自启立刻生效且仅桌面版可用 |
+| GET | `/release` | 检查 GitHub 最新正式发布；只读，不下载、不替换文件 |
 | GET/PUT | `/texts` | 文案库 |
 | GET | `/llm/providers` | 对话模型自描述 |
 | POST | `/llm/chat` | 一次补全 |

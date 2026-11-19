@@ -185,6 +185,9 @@ function query(params) {
 
 export const api = {
   health: () => request('/api/v1/health'),
+  // 只查 GitHub 的最新正式发布：不下载、不替换文件。`refresh` 跳过一分钟缓存。
+  release: (refresh = false) =>
+    request(`/api/v1/release${refresh ? '?refresh=1' : ''}`, { timeout: 20_000 }),
   // 监听范围与令牌：只回答"现在生效的是什么"，改完要重启进程。
   service: () => request('/api/v1/service'),
   /**
