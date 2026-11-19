@@ -67,7 +67,7 @@
       v-if="store.notice"
       :key="store.noticeAt"
       class="toast"
-      :class="[`is-${store.noticeKind}`, { 'is-above-player': store.player.url }]"
+      :class="`is-${store.noticeKind}`"
       role="status"
       aria-live="polite"
       @mouseenter="actions.setNoticePaused(true)"

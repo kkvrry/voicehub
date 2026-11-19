@@ -240,18 +240,6 @@
   border-color: var(--sh-line-strong);
 }
 
-/* 播放小窗是浮层，留一层灰影；但没有毛玻璃与顶边高光。 */
-:root[data-look='classic'] .app-shell .player-fold :is(.pb-disc, .pb-dock) {
-  background: var(--sh-panel);
-  border-color: var(--sh-line);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: 0 8px 24px -14px rgba(16, 31, 56, 0.28);
-}
-:root[data-look='classic'][data-theme='dark'] .app-shell .player-fold :is(.pb-disc, .pb-dock) {
-  box-shadow: 0 10px 28px -16px rgba(0, 0, 0, 0.8);
-}
-
 /* 主按钮：一档纯色，没有渐变、发光与按压位移。 */
 :root[data-look='classic'] .app-shell .sh-btn.is-primary,
 :root[data-look='classic'] .app-shell .btn.primary {

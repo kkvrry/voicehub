@@ -1214,35 +1214,18 @@
 }
 
 /* -------------------------------------------------------------- 播放条 -- */
-/* 纸墨里圆钮是唯一的圆：盘面与坞都是切角的一张纸，只有那颗钮是圆的。 */
-:root[data-look='paper'] .app-shell .player-fold :is(.pb-disc, .pb-dock) {
-  border-color: var(--sh-line);
-  background: var(--sh-panel);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: 0 18px 40px -30px rgba(30, 29, 25, 0.55);
-}
-:root[data-look='paper'] .app-shell .pb-dock {
-  border-radius: 4px;
-}
-:root[data-look='paper'] .app-shell .player-fold.is-pinned .pb-disc::after {
-  border-radius: 1px;
-}
+/* 纸墨里只用方角：按钮、进度线与拇指都是切的，不画圆。 */
 :root[data-look='paper'] .app-shell .pb-btn {
   border-radius: 2px;
-  background: transparent;
 }
 :root[data-look='paper'] .app-shell .pb-seek::-webkit-slider-runnable-track,
-:root[data-look='paper'] .app-shell .pb-seek::-moz-range-track {
+:root[data-look='paper'] .app-shell .pb-seek::-moz-range-track,
+:root[data-look='paper'] .app-shell .pb-seek::-moz-range-progress {
   border-radius: 0;
-  height: 4px;
 }
 :root[data-look='paper'] .app-shell .pb-seek::-webkit-slider-thumb,
 :root[data-look='paper'] .app-shell .pb-seek::-moz-range-thumb {
   border-radius: 1px;
-  border: 1px solid var(--sh-accent);
-  background: var(--sh-panel);
-  box-shadow: none;
 }
 
 /* ------------------------------------------------------------------ 提示条 -- */

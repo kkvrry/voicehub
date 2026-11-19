@@ -64,15 +64,8 @@
   --shadow-drawer: -10px 0 36px var(--sh-mask-strong);
   --shadow-modal: var(--sh-shadow-2);
   --shadow-toast: var(--sh-shadow-pop);
-  /* 两处版式尺寸**只在这里说**：左栏多宽、播放小窗多大。
-     `--player-space` 是"滚动内容末尾要给展开坞留的那一截"：坞高 + 它离底边的距离 +
-     一点余量。收起时它只是一颗 48px 的圆钮，内容不让位；展开或固定（双击圆钮）时才留
-     这一截，最后一行能停到坞上面（见 theme.css 的 `:has(.player-fold.is-open)`）。 */
+  /* 版式尺寸只在这里说：左栏多宽。播放条在顶栏里，尺寸跟着那一行走（见 `.pb-bar`）。 */
   --sider-w: 236px;
-  --player-h: 52px;
-  /* 圆钮直径。环形的两处半径（19px / 24px）与盘面内缩（5px）按它算，改这里要一起改。 */
-  --player-chip: 48px;
-  --player-space: calc(var(--player-h) + 44px);
 }
 
 [data-theme='dark'] {
@@ -1796,116 +1789,120 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
   transform: translate(-50%, -8px) scale(0.98);
 }
 
-/* ---------------- 播放小窗：圆钮 + 展开坞 ----------------
-   只在有东西可播时出现（`store.player.url`）。它**不属于任何一页**：声音归隐藏的
-   <audio id="vh-player">，所以列表怎么重画都断不了它（见 components/PlayerBar.vue
-   与 store/playback.js）。
+/* ---------------- 播放条 ----------------
+   顶栏里的一行：它**不属于任何一页**，声音归隐藏的 <audio id="vh-player">，
+   所以换页与列表重画都断不了它（见 components/PlayerBar.vue 与 store/playback.js）。
 
-   **这里只管"长什么样"**：尺寸、栅格、进度环与贴在下沿的进度条。贴哪个角、朝哪边伸、
-   让位与四套外观的颜色/圆角/毛玻璃全在 `settings/theme.css` 与 `look-*.css`。 */
-.player-fold {
-  position: fixed;
+   没有边框、没有底色。右沿贴住居中搜索框的左沿（留一格空隙），整体比顶栏中线低一点，
+   下沿那条线就是进度。颜色、流光与四套外观的差异在 `settings/theme.css` 与 `look-*.css`。 */
+.pb-bar {
+  position: absolute;
+  left: auto;
+  /* 搜索框左沿距右边 = 50% + min(210px, 17vw)；再让开 12px。 */
+  right: calc(50% + min(210px, 17vw) + 12px);
+  top: calc(50% + 8px);
+  transform: translateY(-50%);
+  z-index: 1;
   display: flex;
   align-items: center;
-  z-index: 22; /* 高于会话抽屉的遮罩(20)与抽屉本身(21)：它始终在，且不被调暗 */
+  gap: 2px;
+  min-width: 0;
+  height: 36px;
+  padding-bottom: 2px;
   user-select: none;
 }
-/* 圆钮：收起态唯一的入口。单击播放/暂停、双击固定、按住拖走、右键回默认位置——
-   手势都在 PlayerBar.vue，这里只画它。 */
-.pb-chip {
-  position: relative;
+/* 搜索框不在这一页时不贴它，退回音色栏上方。 */
+.sh-topbar:not(:has(.sh-search)) .pb-bar {
+  left: calc(var(--sh-nav-w) + 100px);
+  right: auto;
+}
+.pb-btn {
   flex: none;
-  width: var(--player-chip);
-  height: var(--player-chip);
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: 0;
+  border-radius: 50%;
   background: transparent;
-  cursor: grab;
-  touch-action: none;
-}
-.player-fold.is-dragging .pb-chip { cursor: grabbing; }
-/* 外面那一圈是进度：挖掉中心只剩环，收起时不看坞也知道这段放到哪儿了。
-   19px = 半径 24 − 环宽 5，两处都跟着 --player-chip 走。 */
-.pb-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: conic-gradient(var(--accent) calc(var(--p, 0) * 360deg), var(--sh-track) 0);
-  -webkit-mask: radial-gradient(circle, transparent 0 19px, #000 19px 24px);
-  mask: radial-gradient(circle, transparent 0 19px, #000 24px);
-}
-.pb-disc {
-  position: absolute;
-  inset: 5px;
-  border-radius: 50%;
+  color: var(--muted);
   display: grid;
   place-items: center;
 }
-/* 坞：左身份、正中传输、右边时间码与动作键。收起时不占位也不吃事件（见 theme.css）。 */
-.pb-dock {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 10px;
-  padding: 0 10px 6px;
+.pb-btn:active:not(:disabled) { transform: scale(0.94); }
+.pb-btn:disabled { opacity: 0.35; cursor: default; }
+.pb-btn.is-play { width: 30px; height: 30px; color: var(--text); }
+.pb-btn.is-act { width: 26px; height: 26px; }
+/* 身份：一行字。名字长了先收名字，样例位置不动。 */
+.pb-ident {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 8px 0 6px;
 }
-.pb-cell { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.pb-cell-side { justify-content: flex-end; gap: 6px; }
-.pb-btn {
-  flex: none; width: 30px; height: 30px; border-radius: 50%;
-  border: 1px solid var(--border); background: var(--panel); color: var(--text);
-  font-size: 12px; line-height: 1; cursor: pointer;
-  display: grid; place-items: center;
+.pb-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
 }
-.pb-btn.play { width: 32px; height: 32px; }
-.pb-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.pb-btn:disabled { opacity: 0.4; cursor: default; }
-.pb-btn.close { margin-left: 4px; color: var(--muted); }
-.pb-ident { min-width: 0; max-width: 190px; }
-.pb-label {
-  font-size: 13px; font-weight: 600;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.pb-count {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
-.pb-sub {
-  font-size: 11.5px; color: var(--muted); margin-top: 2px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* 下沿的进度：轨道铺满整行，填充宽度只认 `--p`。 */
+.pb-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--sh-track);
 }
-/* 队列位置（3 / 7）：只有"全部试听"时才出现——那时"还剩几段"正是想知道的。 */
-.pb-count { margin-left: 8px; color: var(--accent); }
-.pb-time { flex: none; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-/* 进度贴在坞的下沿：整条下沿都是热区，行里不给它腾地方。
-   left/width 说的是同一段（100% 是坞的内边距盒），right 会被浏览器丢掉，写上只为看的人。 */
+.pb-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--p, 0%);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.pb-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
+  transform: translateX(-100%);
+}
+/* 手柄层：看不见的轨道，只负责点与拖；线由 `.pb-track` 画。
+   热区压在线的上下各一格，不盖住上面那排按钮。 */
 .pb-seek {
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 3px;
-  width: calc(100% - 24px);
-  height: 12px;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  width: auto;
+  height: 10px;
   margin: 0;
-  accent-color: var(--accent);
   cursor: pointer;
 }
 .pb-seek:disabled { cursor: default; }
-/* 悬停时说出"松手会跳到哪儿"：--hx 是指针在进度条上的比例，与 .pb-seek 同一段。 */
-.pb-bub {
-  position: absolute;
-  left: calc(12px + var(--hx, 0) * (100% - 24px));
-  bottom: calc(100% + 4px);
-  transform: translateX(-50%);
-  padding: 2px 7px;
-  border-radius: var(--sh-r-sm);
-  font-size: 10.5px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-}
-.pb-seek:hover:not(:disabled) + .pb-bub { opacity: 1; }
 .pb-error {
-  flex: 0 1 auto; min-width: 0; max-width: 150px; font-size: 12px; color: var(--warn);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 150px;
+  padding: 0 6px;
+  font-size: 11.5px;
+  color: var(--warn);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------------- 参数那几格：候选 + 手输、长文本 + 预设、音色挑选器 ----------------

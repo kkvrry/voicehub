@@ -1168,35 +1168,13 @@
 }
 
 /* -------------------------------------------------------------- 播放条 -- */
-:root[data-look='celadon'] .app-shell .player-fold :is(.pb-disc, .pb-dock) {
-  border-color: var(--sh-line-soft);
-  background: var(--sh-panel);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: var(--sh-inset-hi), 0 20px 44px -30px rgba(16, 38, 32, 0.5);
-}
-:root[data-look='celadon'] .app-shell .pb-dock {
-  border-radius: 14px;
-}
+/* 素瓷没有面：播放条只有按钮与一条进度线，圆仍留在按钮与拇指上。 */
 :root[data-look='celadon'] .app-shell .pb-btn {
   border-radius: 50%;
-  background: transparent;
 }
-:root[data-look='celadon'] .app-shell .pb-btn:hover {
+:root[data-look='celadon'] .app-shell .pb-btn:hover:not(:disabled) {
   background: var(--sh-accent-soft);
   color: var(--sh-accent);
-}
-:root[data-look='celadon'] .app-shell .pb-seek::-webkit-slider-runnable-track,
-:root[data-look='celadon'] .app-shell .pb-seek::-moz-range-track {
-  border-radius: 999px;
-  height: 4px;
-}
-:root[data-look='celadon'] .app-shell .pb-seek::-webkit-slider-thumb,
-:root[data-look='celadon'] .app-shell .pb-seek::-moz-range-thumb {
-  border-radius: 50%;
-  border: 1.5px solid var(--sh-accent);
-  background: var(--sh-panel);
-  box-shadow: 0 2px 6px -2px rgba(16, 38, 32, 0.35);
 }
 
 /* ------------------------------------------------------------------ 提示条 -- */

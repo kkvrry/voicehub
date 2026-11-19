@@ -8,7 +8,7 @@ import { loadEngines } from './engine'
 import { loadAsr } from './asr'
 import { loadSpec } from './synth'
 import { ensureTexts } from './texts'
-import { playAll, syncVoice } from './playback'
+import { extendQueue, play, playAll, syncVoice } from './playback'
 
 function currentQuery() {
   const q = { ...store.filters }
@@ -237,6 +237,43 @@ export async function openDetail(voice) {
 
 export function closeDetail() {
   store.detail = null
+}
+
+/** 卡片上的 ▶：先放主样例，出声不等网络。这条音色还有别的样例时，把整份样例
+ *  补齐成队列、停在正在放的这一段——播放条的「上一段 / 下一段」由此可用。
+ *  样例清单不在列表里（代价高），所以要现取一次。 */
+/** @param {any} voice */
+export function playVoice(voice) {
+  const url = voice?.main_audio_url
+  if (!url) return
+  play({ url, label: voice.shown_name, sub: '主样例', voice })
+  if ((voice.sample_count || 0) > 1) void extendWithSamples(voice, url)
+}
+
+/**
+ * @param {any} voice
+ * @param {string} url
+ */
+async function extendWithSamples(voice, url) {
+  let full = null
+  try {
+    full = await api.voice(voice.id)
+  } catch {
+    // 取不到就只放这一段：出声这件事已经成立，不为补齐队列把播放掐掉。
+    return
+  }
+  extendQueue(
+    url,
+    (full.samples || []).map(
+      /** @param {any} sample */
+      (sample) => ({
+        url: sample.audio_url,
+        label: sample.text || sample.file,
+        sub: `${full.shown_name}${sample.is_main ? ' · 主样例' : ''}`,
+        voice: full,
+      })
+    )
+  )
 }
 
 /** 全部试听：这个音色的每一段排成一条队列，从第一段开始。

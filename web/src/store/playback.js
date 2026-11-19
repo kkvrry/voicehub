@@ -1,5 +1,5 @@
 // @ts-check
-// 播放这一域：一个 <audio> 实例 + 一条底栏（`PlayerBar.vue`）。
+// 播放这一域：一个 <audio> 实例 + 顶栏上的一条播放条（`PlayerBar.vue`）。
 // 播放不跟着列表被重画掉（从前生成页是行内 `<audio controls>`，重画即断声）；
 // 「全部试听」需要队列；底栏要的标题/进度/时长是同一份状态的几面。
 // 谁想放点什么就递一条曲目进来（`play` / `playAll`），界面上只读 `store.player`。
@@ -127,6 +127,27 @@ export function playAll(items, start = 0, frac = 0) {
   const index = Math.min(Math.max(start, 0), queue.length - 1)
   set({ queue })
   load(index, frac)
+}
+
+/** 起播之后再补齐同一条音色的其余样例：卡片上的 ▶ 先出声，样例清单随后到，
+ *  到了就把队列换成整份样例、停在正在放的那一段——「上一段 / 下一段」才有得切。
+ *  这期间用户换了别的曲子，这批就作废，不抢当前队列。 */
+/**
+ * @param {string} url
+ * @param {any[]} items
+ */
+export function extendQueue(url, items) {
+  if (!url || store.player.url !== url) return
+  const queue = (items || []).map(track).filter(
+    /** @param {{ url: string }} row */
+    (row) => row.url
+  )
+  const index = queue.findIndex(
+    /** @param {{ url: string }} row */
+    (row) => row.url === url
+  )
+  if (queue.length < 2 || index < 0) return
+  set({ queue, index })
 }
 
 /** 从队列里摘掉一条（生成页的「撤下」）：队列是开播那一刻的快照，
