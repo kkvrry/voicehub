@@ -17,7 +17,9 @@
         >
           <Play :size="12" :stroke-width="1.8" fill="currentColor" aria-hidden="true" />
         </button>
-        <span class="audio-sum">共 {{ rows.length }} 条 · 未入库 {{ visibleUnabsorbed }}</span>
+        <span class="audio-sum">
+          共 {{ store.audio.total }} 条 · 未入库 {{ visibleUnabsorbed }}
+        </span>
       </h1>
     </header>
 
@@ -122,12 +124,14 @@
 
         <span class="audio-src" :class="`is-${row.source}`">{{ sourceText(row) }}</span>
 
-        <span class="audio-voice">{{ row.voiceName || '—' }}</span>
+        <span class="audio-voice" :title="row.voice_name || undefined">
+          {{ row.voice_name || '—' }}
+        </span>
 
         <span class="audio-stamp">{{ stamp(row.created) }}</span>
 
         <span class="audio-ops">
-          <template v-if="row.absorbed.length">
+          <template v-if="isAbsorbed(row)">
             <span class="audio-done" :title="`已入库到 ${absorbedNames(row)}`">已入库</span>
           </template>
           <ActionButton v-else size="sm" variant="soft" @click="openAbsorb([row.id])">入库</ActionButton>
@@ -143,12 +147,20 @@
           <Popover :open="menu === row.id" :anchor="anchors[row.id]" :width="176" label="更多操作" @close="menu = ''">
             <div class="audio-menu">
               <button type="button" @click="absorbOther(row)">
-                {{ row.voiceName ? '入库到其他音色…' : '入库到音色…' }}
+                {{ row.voice_name ? '入库到其他音色…' : '入库到音色…' }}
               </button>
               <button type="button" @click="discard([row.id])">移入回收站</button>
             </div>
           </Popover>
         </span>
+      </div>
+
+      <div v-if="store.audio.hasMore" class="audio-more-note">
+        只显示前 200 条，收窄筛选查看更多。
+      </div>
+
+      <div v-if="store.audio.hasMore" class="audio-more-note">
+        只显示前 200 条，收窄筛选查看更多。
       </div>
 
       <div v-if="!rows.length" class="audio-empty">
@@ -166,13 +178,7 @@
 import { computed, ref } from 'vue'
 import { MoreHorizontal, Pause, Play } from 'lucide-vue-next'
 import { actions, store } from '../store'
-import {
-  SOURCES,
-  clock,
-  stamp,
-  absorb as absorbRows,
-  visibleAudios,
-} from '../store/audio'
+import { SOURCES, clock, isAbsorbed, stamp, absorb as absorbRows } from '../store/audio'
 import ActionButton from './ui/ActionButton.vue'
 import Popover from './ui/Popover.vue'
 import { emotionTone } from './ui/tones'
@@ -190,8 +196,8 @@ const ABSORBED = [
   { key: 'yes', label: '已入库' },
 ]
 
-const rows = computed(() => visibleAudios())
-const visibleUnabsorbed = computed(() => rows.value.filter((row) => !row.absorbed.length).length)
+const rows = computed(() => store.audio.items)
+const visibleUnabsorbed = computed(() => store.audio.unabsorbed)
 const selected = computed(() => store.audio.selected)
 
 const playableCount = computed(() => rows.value.filter((row) => row.url).length)
@@ -207,6 +213,8 @@ const filtered = computed(
 )
 
 const emptyText = computed(() => {
+  if (store.audio.error) return store.audio.error
+  if (store.audio.loading) return '正在读取…'
   if (filtered.value) return '没有符合当前筛选的音频。'
   return '还没有音频。录音、内录与生成的音频都会出现在这里。'
 })
@@ -271,6 +279,10 @@ function onAbsorb(target) {
     kind: target.mode,
     voiceId: target.voiceId,
     voiceName: target.voiceName,
+    folder: target.folder,
+    gender: target.gender,
+    language: target.language,
+    mainSample: target.mainSample,
     emotion: target.emotion,
   })
   absorbOpen.value = false
@@ -610,6 +622,18 @@ function discard(ids) {
 .audio-menu button:disabled {
   color: var(--sh-text-4);
   cursor: default;
+}
+.audio-more-note {
+  padding: 10px var(--sh-gutter);
+  font-size: 11px;
+  color: var(--sh-text-4);
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+.audio-more-note {
+  padding: 10px var(--sh-gutter);
+  font-size: 11px;
+  color: var(--sh-text-4);
+  border-bottom: 1px solid var(--sh-line-soft);
 }
 .audio-empty {
   display: flex;

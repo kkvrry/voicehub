@@ -249,6 +249,15 @@ export const api = {
   /** @param {Record<string, any>} filters */
   voices: (filters) => listRequest(`/api/v1/voices${query(filters)}`),
   /**
+   * 音频库：录音、内录、生成物的同一张表。筛选与计数都由后端算。
+   * @param {Record<string, any>} filters source / engine / q / status / span / limit
+   */
+  audio: (filters) => request(`/api/v1/audio${query(filters)}`),
+  /** 入库：把这几条音频复制进目标音色并登记为样例。 */
+  absorbAudio: (body) => request('/api/v1/audio/absorb', { method: 'POST', body }),
+  /** 移入回收站：生成物连 sidecar 记录一起摘。 */
+  deleteAudio: (body) => request('/api/v1/audio', { method: 'DELETE', body }),
+  /**
    * 各标签剩几条（``tag`` 之外的筛选都算），给界面那排可点的标签用。
    * @param {Record<string, any>} filters
    */

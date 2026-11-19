@@ -157,6 +157,19 @@ def read_sidecar(folder: Path) -> Sidecar:
             )
             if params:
                 entry["params"] = params
+            # 音频库回写的两栏：这条样例从哪一条音频来、已经入库到哪些音色。
+            # 它们是"这条文件的事实"，与 text / duration 同级；丢了之后音频库既说不出来路，
+            # 也会把同一条音频在列表里重新标成"未入库"。
+            source = str(value.get("source") or "").strip()
+            if source:
+                entry["source"] = source
+            absorbed = [
+                {"voice_id": str(row.get("voice_id") or ""), "name": str(row.get("name") or "")}
+                for row in (value.get("absorbed") or [])
+                if isinstance(row, dict) and str(row.get("voice_id") or "").strip()
+            ]
+            if absorbed:
+                entry["absorbed"] = absorbed
             samples[str(key)] = entry
     # 归属：只认一层平表（键值均为字符串），值只有一个答案：音色 id。
     raw_origin = raw.get("origin")

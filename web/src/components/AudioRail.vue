@@ -51,14 +51,14 @@
 import { computed } from 'vue'
 import { AudioLines, Mic, Volume2, Sparkles } from 'lucide-vue-next'
 import { actions, store } from '../store'
-import { SOURCES as RAW_SOURCES, engineCounts, sourceCounts } from '../store/audio'
+import { SOURCES as RAW_SOURCES } from '../store/audio'
 
 /** @type {Record<string, any>} */
 const ICONS = { record: Mic, loopback: Volume2, engine: Sparkles }
 const SOURCES = RAW_SOURCES.map((item) => ({ ...item, icon: ICONS[item.key] }))
 
-const counts = computed(() => sourceCounts())
-const engines = computed(() => engineCounts())
+const counts = computed(() => store.audio.counts)
+const engines = computed(() => store.audio.engines)
 
 /** 引擎图标按目录名找：产物目录用的是 label，不是 key。 */
 /** @param {string} label */

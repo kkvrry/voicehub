@@ -38,6 +38,7 @@ __all__ = [
     "display_rel",
     "engine_root",
     "generated_cache_file",
+    "note_absorbed",
     "record_sample",
     "resolve_within",
     "safe_segment",
@@ -213,6 +214,7 @@ def record_sample(
     emotion: str = "",
     params: Mapping[str, Any] | None = None,
     origin: Mapping[str, str] | None = None,
+    source: str = "",
 ) -> None:
     """把"这一段念的是什么、拿什么参数生成的"写进该音色文件夹的 sidecar。
 
@@ -221,6 +223,8 @@ def record_sample(
 
     :param origin: 音频属于库里哪条音色（``{"voice_id": …, "engine": …}``），
         与音频一起写——文件夹名会变，认得回归属靠这个。
+    :param source: 这条样例从音频库的哪一条来（音频库的条目 id）。音频库据此回答
+        "这条入库了没有"，不必反查所有音色目录。
     """
     text = str(text or "").strip()
     emotion = str(emotion or "").strip()
@@ -230,7 +234,8 @@ def record_sample(
         if shown:
             extra[str(key)] = shown
     recorded_origin = {str(k): str(v) for k, v in (origin or {}).items() if str(v).strip()}
-    if not (text or emotion or extra or recorded_origin):
+    recorded_source = str(source or "").strip()
+    if not (text or emotion or extra or recorded_origin or recorded_source):
         return  # 没东西可记就不动文件
     side = read_sidecar(folder)
     entries = dict(side.samples)
@@ -254,6 +259,12 @@ def record_sample(
         "tags": list(known.get("tags") or []),
         "params": extra,
     }
+    # 音频库回写的那两栏是这条样例的事实，重写记录时不能丢：丢了之后「它从哪来、
+    # 已经入库到哪几条音色」就说不出来，再入一次库会重复记一条。
+    if recorded_source:
+        entries[filename]["source"] = recorded_source
+    if known.get("absorbed"):
+        entries[filename]["absorbed"] = list(known["absorbed"])
     if duration > 0 and size > 0:
         # 时长与它的校验值成对写：光留一个字节数没人能拿来做什么（读的一侧也把它丢掉）。
         entries[filename]["duration"] = duration
@@ -275,6 +286,30 @@ def record_sample(
             origin=side.origin or recorded_origin,
         ),
     )
+
+
+def note_absorbed(folder: Path, filename: str, *, voice_id: str, name: str = "") -> None:
+    """在源音频的 sidecar 里记一笔「已入库到哪条音色」。
+
+    音频库据此回答「这条入库了没有」，不必反查所有音色目录。记录键与样例同形
+    （``samples[<文件名>].absorbed``）；重复入库到同一目标只留一条。
+
+    录音目录不是音色目录，但 sidecar 格式通用：它没有条目时这里补一条，只写这一栏。
+    """
+    voice = str(voice_id or "").strip()
+    if not voice:
+        return
+    side = read_sidecar(folder)
+    entry = dict(side.samples.get(filename) or {})
+    rows = [
+        row
+        for row in (entry.get("absorbed") or [])
+        if isinstance(row, dict) and str(row.get("voice_id") or "") != voice
+    ]
+    rows.append({"voice_id": voice, "name": str(name or "")})
+    entry["absorbed"] = rows
+    side.samples[filename] = entry
+    write_sidecar(folder, side)
 
 
 def write_audio(

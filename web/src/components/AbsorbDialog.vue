@@ -175,13 +175,15 @@ const mainSample = ref(false)
 const transcript = ref('')
 const emotion = ref('')
 
-/** 原音色只有一种情况成立：这一批全是生成物，且都来自同一条音色。 */
+/** 原音色只有一种情况成立：这一批全是生成物、同源，且那条音色现在还在库里。
+ *  音色已删（平台清单换过、目录搬过）时不提这一项——提了也只会入到一条不存在的音色。 */
 const originVoice = computed(() => {
   const list = rows.value
   if (!list.length) return ''
-  const first = list[0].voiceId
-  if (!first) return ''
-  return list.every((row) => row.voiceId === first) ? list[0].voiceName : ''
+  const id = list[0].voice_id
+  if (!id || !list.every((row) => row.voice_id === id)) return ''
+  const voice = store.voices.find((item) => item.id === id)
+  return voice ? voice.shown_name || voice.name : ''
 })
 
 const previewText = computed(() => {
@@ -267,9 +269,8 @@ watch(
     mode.value = originVoice.value ? 'origin' : 'voice'
     query.value = ''
     voiceId.value = ''
-    name.value = rows.value.find((row) => row.voiceName)?.voiceName
-      ? `${rows.value.find((row) => row.voiceName).voiceName} · 朗读`
-      : ''
+    const source = rows.value.find((row) => row.voice_name)
+    name.value = source ? `${source.voice_name} · 朗读` : ''
     gender.value = ''
     language.value = ''
     folder.value = ''
@@ -293,6 +294,8 @@ function confirm() {
         ? store.voices.find((voice) => voice.id === voiceId.value)?.shown_name || ''
         : name.value.trim(),
     folder: folder.value,
+    gender: gender.value,
+    language: language.value,
     transcript: transcript.value,
     emotion: emotion.value,
     mainSample: mainSample.value,

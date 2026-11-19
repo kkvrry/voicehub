@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.sections import capture, engines, library, producers, studio, system
+from app.api.sections import audio, capture, engines, library, producers, studio, system
 from app.usecase.library import LibraryService
 
 __all__ = ["build_router"]
@@ -28,5 +28,6 @@ def build_router(service: LibraryService, *, version: str = "0.1.0") -> APIRoute
     engines.register(router, service, version)
     studio.register(router, service, version)
     capture.register(router, service, version)
+    audio.register(router, service, version)
     producers.register(router, service, version)
     return router

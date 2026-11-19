@@ -189,7 +189,7 @@ const searchQuery = computed({
       return
     }
     if (store.view === 'audio') {
-      store.audio.q = value
+      actions.setAudioQuery(value)
       return
     }
     store.filters.q = value

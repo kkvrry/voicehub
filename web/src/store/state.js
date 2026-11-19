@@ -148,10 +148,17 @@ export const store = reactive({
   view: 'library', // 'library' | 'audio' | 'synth' | 'engine' | 'logs' | 'settings' | 'producer'
 
   // 音频库：录音、内录、生成物三类音频的同一张表。
-  // 后端未接之前 `items` 由 store/audio.js 的示例数据填充；筛选、选择与入库只在本机生效。
+  // 列表、计数与引擎分组都由后端算（`GET /api/v1/audio`），这里只存当前这一屏的结果；
+  // 选择与播放留在本机。
   audio: {
     items: /** @type {any[]} */ ([]),
-    seeded: false,
+    counts: { all: 0, record: 0, loopback: 0, engine: 0 },
+    engines: /** @type {{ label: string, count: number }[]} */ ([]),
+    total: 0,
+    unabsorbed: 0,
+    hasMore: false,
+    loading: false,
+    error: '',
     q: '',
     source: 'all', // 'all' | 'record' | 'loopback' | 'engine'
     engine: '', // 生成物按引擎目录再分一层；空 = 不分
