@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import threading
 import time
 import uuid
@@ -1089,6 +1090,115 @@ class LibraryService:
             self._db.upsert_voice(updated)  # 平台那几行是平台的记录，不写；见方法说明
         return updated
 
+    def replace_sample_audio(
+        self,
+        voice_id: str,
+        file: str,
+        source: Path,
+        *,
+        params: dict[str, Any] | None = None,
+        seconds: float = 0.0,
+    ) -> Voice:
+        """用处理过的音频替换一条样例：原件进回收站，记录与文件名保留。
+
+        与"删一条再加一条"的区别在**文件名不变**：主样例、逐字稿、平台凭据
+        ``payload.ref_audio`` 都按路径认这一条，换名字等于把它们全部作废。
+
+        顺序是先落临时文件、再移原件、最后改名：任何一步失败，手上要么还是原件，
+        要么原件在回收站且新文件已就位，不会出现"目录里什么都没有"。
+
+        :param params: 处理链，写进 sidecar 的 ``samples[file].params``。
+        :param seconds: 实测时长；``0`` 则自己量。时长决定库里的记录，不靠推断。
+        """
+        voice = self.get_voice(voice_id)
+        target_sample = next((s for s in voice.samples if s.file == file), None)
+        if target_sample is None:
+            raise LibraryError(
+                f"音色中不存在样例「{file}」。", code="sample_not_found", status=404
+            )
+        if not voice.folder:
+            raise LibraryError(
+                "平台音色没有可替换的本地文件。", code="invalid_operation", status=400
+            )
+        folder = Path(voice.folder)
+        target = folder / file
+        if not source.is_file():
+            raise LibraryError(
+                f"处理结果不存在（{source}）。", code="invalid_value", status=400
+            )
+
+        # 临时名不带音频后缀：扫描器只认音频扩展名，半份文件不会被认成一条样例。
+        staged = folder / f".{file}.incoming"
+        try:
+            shutil.copyfile(source, staged)
+        except OSError as exc:
+            raise LibraryError(
+                f"写入处理结果失败：{exc}。", code="invalid_operation", status=500
+            ) from exc
+        try:
+            if target.is_file():
+                move_to_trash(target)
+        except TrashError as exc:
+            staged.unlink(missing_ok=True)
+            # 有的环境文件已进回收站却回错误码：只在原件确实还在时才算失败。
+            if target.exists():
+                raise LibraryError(str(exc), code="invalid_operation") from exc
+        try:
+            os.replace(staged, target)
+        except OSError as exc:
+            staged.unlink(missing_ok=True)
+            raise LibraryError(
+                f"替换音频失败：{exc}。", code="invalid_operation", status=500
+            ) from exc
+
+        measured = (
+            round(float(seconds), 3)
+            if seconds > 0
+            else probe_duration_cached(target, ffprobe_path=load_config().ffprobe_path)
+        )
+        size = target.stat().st_size
+        side = read_sidecar(folder)
+        names = {s.file for s in voice.samples}
+        entries = {key: value for key, value in side.samples.items() if key in names}
+        entry = dict(entries.get(file) or {})
+        entry["bytes"] = size
+        entry["duration"] = measured
+        merged: dict[str, str] = dict(sample_params(entry))
+        if params:
+            merged.update({str(key): str(value) for key, value in params.items() if str(value)})
+            entry["params"] = merged
+        entries[file] = entry
+        write_sidecar(
+            folder,
+            Sidecar(
+                gender=side.gender,
+                age=side.age,
+                language=side.language,
+                tags=side.tags,
+                description=side.description,
+                display=side.display,
+                main_sample=side.main_sample,
+                favorite=side.favorite,
+                hidden=side.hidden,
+                samples=entries,
+                origin=side.origin,
+            ),
+        )
+        samples = tuple(
+            replace(
+                sample,
+                duration=measured,
+                params=tuple(merged.items()) if params else sample.params,
+            )
+            if sample.file == file
+            else sample
+            for sample in voice.samples
+        )
+        updated = replace(voice, samples=samples)
+        if voice.is_local:
+            self._db.upsert_voice(updated)
+        return updated
+
     def set_main_sample(self, voice_id: str, file: str) -> Voice:
         """设主样例（空串 = 取消，回到"默认标记 → 升序第一条"）。"""
         return self.update_voice(voice_id, {"main_sample": file})
@@ -1341,6 +1451,17 @@ class LibraryService:
                 code="invalid_operation",
             )
         self._db.delete_voice(voice_id)
+
+    def clear_source_voices(self, source: str) -> int:
+        """清除某个平台来源在库里的全部条目，返回条数。
+
+        只删库：平台音色的条目本身就是音色 id 与元数据；已生成的样例躺在引擎
+        保存目录里，仍留在磁盘上。本地音色不属于任何一个平台来源，不接受此操作。
+        """
+        source = (source or "").strip()
+        if not source or source == SOURCE_LOCAL:
+            raise LibraryError("只能清除平台来源的音色条目。", code="invalid_operation")
+        return self._db.delete_voices_by_source(source)
 
     # ------------------------------------------------------------------ #
     # 扫描根目录

@@ -225,6 +225,7 @@ FastAPI（单进程）
 - **语种写回**：仅当该样例为主样例且音色语言为空时写入；已有值不覆盖，非主样例只回显。
 - **输入约束**：识别接口只接受「音色 id + 文件名」，路径由服务端拼接。麦克风语音输入听完即删；参考音频录音存 `<数据目录>/recordings/`，服务重启清空。
 - **浏览器录音**：麦克风音频在浏览器端解码、重采样为 16 kHz 单声道 WAV；转换时量峰值，整段低于 -60 dBFS（约 0.001）视为输入设备没有信号，不落盘、不上传，界面点名该设备并提示换输入设备。
+- **内录**（`infra/loopback.py`、`usecase/capture.py`）：录默认输出设备上正在播放的声音，走 WASAPI loopback（`soundcard`），浏览器不参与。44.1/48 kHz 单声道 PCM16、边录边写盘、60 分钟自动收尾；全程静音不是失败，结果带 `peak` 与 `silent` 由调用方提示。产物落 `recordings/`，与参考音频同一套清空规则。起停只有两个入口：托盘菜单与全局热键（托盘 `RegisterHotKey`，组合键由 `usecase.capture.HOTKEY` 下发）；热键注册结果写回应用层，供设置页显示可用性。`start.bat` 无托盘时热键不注册，界面显示「托盘启动后可用」。
 
 ## 8. 对话模型
 
@@ -252,6 +253,16 @@ FastAPI（单进程）
 - 启用 / 停用生产方：停用是服务端状态（`config.json` 的 `producers_disabled`），启动时不构造该插件的服务、不跑它的自动启动，接口一律拒绝；重启也不会自己起来。导航收起只是它的结果。项目、配置与成品都保留，随时可以再启用；启用时立刻构造服务，audio.cpp 开着自动启动就在这一刻拉起实例。
 
 当前内置 `audiobook`（导航名「创作」）与 `audiocpp`（导航名「audio.cpp」，属工具型工作区、不声明流水线步骤）：实例地址与模型 id 取自**引擎设置里的服务地址**（不另存端口表），且只列**模型已装在本机**的实例（引擎里配了地址不等于这里有服务；跑着的服务仍会列出，免得藏掉别人的进程）；用内置运行包或用户指定的 audio.cpp 程序拉起，装第一台模型时没有可点的实例，安装动作会先按引擎地址拉起一台空实例；模型清单取自上游 `model_specs`，安装/停止/删除转发实例自己的 `/v1/ui/models/*`。拉起的实例带 `ui` + `ui_management`（0.9.4 起 native model manager 编进运行时），所以实例行给「界面」入口，用户也能在它自带的 WebUI 里装模型；插件是一台实例一个模型、靠进程隔离，不用 audio.cpp 单进程多模型那套 LRU 卸载（`--max-loaded-models` / `--idle-unload-ms` / `--min-free-memory-mb`，默认全关）。实例行**没有**「接入」这个动作：那些端口本来就是引擎在用的地址，VoiceHub 合成时连的就是它们；服务在别处（换了机器或端口）时才用服务卡底部的「其他地址」做一次只读接入，断开即回到实例视图。数据模型、阶段、状态与失效规则见 [audiobook-flow.md](audiobook-flow.md)。
+
+### 音色处理（voiceclean）
+
+工具型工作区，左栏复用音色库（`voice_rail=true`、`rail_mode="pick"`），对象是样例行而不是项目。**目标只有一个**：点音色卡 = 处理这条音色的全部样例，卡右「选样例」进详情点「使用」= 只处理那一条。目标落在宿主的 `store.pick`（`voiceId` + `file`），卡片列的高亮、工作区顶上的音频条、详情里的「使用」三处读的都是它；文件夹树只用来筛左栏，不再是一种范围。平台音色没有本地文件，选它只提示，开始按钮保持禁用。
+
+一条音频的执行顺序固定为「原声副本 → 勾选的模型步骤 → 规整」：编排在插件里，ffmpeg 由核心提供（`infra/ffmpeg.normalize`），模型由本机 audio.cpp 的 `POST /v1/tasks/run` 提供（`task=sep|s2s`，`request.audio` 给服务端本机路径；响应里的音频按 `audio` / `result.audio` / `artifacts[]` 依次取，分离取人声那一路）。步骤卡的模型清单来自 audio.cpp 的 catalog（`producers/builtin/audiocpp/catalog.py`）：已装的排在前面，未装的给安装入口，安装转发实例的 `/v1/ui/models/install`。
+
+两条产物（`origin.wav` / `result.wav`）留在任务目录，逐条 A/B 试听后勾选替换，确认之前不动库。替换走 `LibraryService.replace_sample_audio`：同目录临时文件 + `os.replace`，原件进回收站，文件名、逐字稿、主样例都保留，处理链记进 sidecar 的 `params`。时长偏差超过 50 ms 的条目不参与替换——长度变了，贴齐、逐字稿与平台凭据全部错位。
+
+接口在 `/api/v1/producers/voiceclean`：`state`（步骤、模型、可用性）、`run`（目标 `{voice_id, file}`，`file` 空 = 整条音色）/ `job` / `job/cancel`、`job/audio`（原声或结果）、`job/apply`（按勾选替换）、`models/install`。
 
 ## 10. API
 
@@ -286,6 +297,7 @@ FastAPI（单进程）
 | PUT | `/engines/{key}/settings` | 保存引擎配置（保存即添加） |
 | PUT | `/engines/{key}/channel` | 保存音色通道 |
 | POST | `/engines/{key}/refresh` | 拉取平台音色清单 |
+| DELETE | `/engines/{key}/voices` | 清除该引擎在库内的音色条目（只删库） |
 | POST | `/engines/{key}/clone` | 音色克隆 |
 | PUT | `/engines/{key}/output` | 该引擎的音色保存目录 |
 | POST | `/synthesize` | 合成（`persist` 决定落盘方式） |
@@ -293,6 +305,9 @@ FastAPI（单进程）
 | POST | `/asr/transcribe` | 识别库内样例 |
 | POST | `/asr/dictation` | 麦克风语音输入 |
 | POST | `/recordings` | 参考音频录音 |
+| POST | `/capture/start` | 开始内录（系统输出） |
+| POST | `/capture/stop` | 停止内录，返回文件与峰值 |
+| GET | `/capture/status` | 内录可用性、进度与热键注册状态 |
 | GET/PUT | `/service` | 监听范围、令牌与开机自启；前两项写入配置、重启后生效，自启立刻生效且仅桌面版可用 |
 | GET | `/release` | 检查 GitHub 最新正式发布；只读，不下载、不替换文件 |
 | GET/PUT | `/texts` | 文案库 |
@@ -341,7 +356,7 @@ FastAPI（单进程）
 
 ### 状态与验证
 
-`web/src/store/` 按域拆分（library / engine / synth / asr / shell），各域导出的函数合并为统一 `actions`；播放器为全局单实例。点音色卡封面时把当前显示列表的主样例排成一条队列、从这一条开始，播放条的上一段/下一段沿这条队列走；每条只放主样例。样例队列的标题写音频文件名，不写逐字稿——逐字稿属于详情里的编辑内容，底栏回答的是"现在放的是哪一个文件"。
+`web/src/store/` 按域拆分（library / engine / synth / asr / shell），各域导出的函数合并为统一 `actions`；播放器为全局单实例。点音色卡封面时把当前显示列表的主样例排成一条队列、从这一条开始，播放条的上一段/下一段沿这条队列走；每条只放主样例。样例队列的标题写音频文件名，不写逐字稿——逐字稿属于详情里的编辑内容，播放条回答的是"现在放的是哪一个文件"。
 
 验证手段：
 

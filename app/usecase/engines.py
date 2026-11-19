@@ -50,6 +50,7 @@ __all__ = [
     "asr_settings_for",
     "catalog_payload",
     "channel_of",
+    "clear_engine_voices",
     "clone_voice",
     "enabled_keys",
     "engine_entries",
@@ -881,6 +882,28 @@ async def refresh_voices(service: Any, key: str) -> dict[str, Any]:
         "total": len(result.items),
         "cost_note": result.cost_note,
     }
+
+
+def clear_engine_voices(service: Any, key: str) -> dict[str, Any]:
+    """清除这台引擎在库里的全部音色条目，返回 ``{key, label, removed}``。
+
+    只删库：平台音色的条目就是音色 id 与元数据；已生成的样例在引擎保存目录里，
+    不进回收站、不动磁盘，由用户自行处理。没有这台引擎也能清（插件已卸载时
+    ``key`` 就是库里的来源名）。
+    """
+    source = (key or "").strip()
+    if not source:
+        raise EngineError("缺少引擎标识。")
+    engine = list_engines().get(source)
+    label = engine.label if engine else source
+    removed = service.clear_source_voices(source)
+    CHANNEL.info(
+        f"{label} 的音色条目已清除：{removed} 条。",
+        source="engines",
+        engine=source,
+        removed=removed,
+    )
+    return {"key": source, "label": label, "removed": removed}
 
 
 async def clone_voice(service: Any, key: str, req: CloneRequest) -> VoiceMeta:

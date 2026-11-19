@@ -94,6 +94,15 @@
               拉取音色清单
             </ActionButton>
             <ActionButton size="sm" @click="openVoicesInLibrary">在全部音色中查看</ActionButton>
+            <ActionButton
+              v-if="ownCount"
+              size="sm"
+              variant="danger"
+              :loading="clearing"
+              @click="clearVoices"
+            >
+              清除音色（{{ ownCount }}）
+            </ActionButton>
           </div>
         </PanelCard>
 
@@ -682,6 +691,28 @@ async function openVoicesInLibrary() {
   store.selection = { kind: 'platform', name: engine.value.key }
   await actions.openLibrary()
   await actions.loadVoices()
+}
+
+// ---- 清除这台引擎的音色条目 ----
+const clearing = ref(false)
+
+/** 只删库：平台账号的数据不变，已生成的样例在保存目录里，由用户自行处理。 */
+async function clearVoices() {
+  const value = engine.value
+  if (!value || !ownCount.value) return
+  const ok = window.confirm(
+    `清除「${value.label}」在库里的 ${ownCount.value} 个音色条目？\n\n` +
+      '只删库内条目；平台侧数据不变。已生成的样例仍在音色保存目录里，需要时手工删除。'
+  )
+  if (!ok) return
+  clearing.value = true
+  try {
+    await actions.clearEngineVoices(value.key)
+  } catch (error) {
+    say(error instanceof Error ? error.message : String(error))
+  } finally {
+    clearing.value = false
+  }
 }
 
 // ---- 保存目录 ----

@@ -3590,44 +3590,31 @@ expect(
 await page.evaluate(`fetch("/api/v1/scan", { method: "POST" })`);
 await new Promise((r) => setTimeout(r, 700));
 
-// ---- 播放条：**声音归那颗圆钮，不归某一页** ----
+// ---- 播放条：**声音归顶栏那一行，不归某一页** ----
 //
-// 这一段守两件事：
-//  1. 试听走的是右下角那颗圆钮：收起时只占一个角、内容不让位，移上去展开成一条坞才让
-//     出末尾那一截；「全部试听」把一串音频排成队列、放完自动接下一段；
-//  2. **再点一次「生成」不能把正在放的声音掐掉**——用户报的就是这一条：从前播放器
+// 这一段守三件事：
+//  1. 点卡片封面（= 播放键）后，顶栏左侧出现一条播放条：音色名 + 样例位置；
+//     这条音色有多段样例时带「上一段 / 下一段」，可以就地切；
+//  2. 「打开音色卡」把这条音色的详情抽屉叫出来；
+//  3. **再点一次「生成」不能把正在放的声音掐掉**——用户报的就是这一条：从前播放器
 //     是结果行里的 `<audio controls>`，整排结果被重写时那个元素一起没了。
 //     现在 `<audio>` 挂在 body 上、状态在 store 里，所以这里量的是"元素还在、src 没变"。
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-// 圆钮与坞分开量：坞收起时是 `visibility: hidden`，**布局盒还在**，
-// 所以"看不看得见"读 visibility，不能读 rect 宽窄。
+
 const barState = `(() => {
-  const fold = document.querySelector(".player-fold");
-  const chip = document.querySelector(".pb-chip");
-  const dock = document.querySelector(".pb-dock");
+  const bar = document.querySelector(".pb-bar");
+  const top = document.querySelector(".sh-topbar");
   const el = document.querySelector("#vh-player");
-  const scroller = document.querySelector(
-    ".grid-wrap, .rows-wrap, .rail-list, .rail-chapters, .synth-col-main, .synth-side, .logview-list"
-  );
-  const chipRect = chip ? chip.getBoundingClientRect() : null;
+  const rect = bar ? bar.getBoundingClientRect() : null;
+  const topRect = top ? top.getBoundingClientRect() : null;
   return {
-    fold: Boolean(fold),
-    open: Boolean(fold?.classList.contains("is-open")),
-    pinned: Boolean(fold?.classList.contains("is-pinned")),
-    label: (document.querySelector(".pb-label")?.textContent || "").trim(),
+    bar: Boolean(bar),
+    inTopbar: Boolean(rect && topRect && rect.top >= topRect.top - 1 && rect.bottom <= topRect.bottom + 1),
+    left: rect ? Math.round(rect.left) : null,
+    label: (document.querySelector(".pb-name")?.textContent || "").trim(),
     count: (document.querySelector(".pb-count")?.textContent || "").trim(),
-    buttons: [...document.querySelectorAll(".pb-dock .pb-btn")].map((b) => b.getAttribute("aria-label") || ""),
-    chip: chipRect ? [Math.round(chipRect.width), Math.round(chipRect.height)] : [],
-    bottom: chipRect ? Math.round(window.innerHeight - chipRect.bottom) : null,
-    right: chipRect ? Math.round(window.innerWidth - chipRect.right) : null,
-    corner: chipRect ? chipRect.right > window.innerWidth / 2 && chipRect.bottom < window.innerHeight : false,
-    dockW: dock ? Math.round(dock.getBoundingClientRect().width) : null,
-    dockVisible: dock ? getComputedStyle(dock).visibility === "visible" : false,
-    pad: scroller ? Math.round(Number.parseFloat(getComputedStyle(scroller).paddingBottom)) : null,
-    siderH: Math.round(document.querySelector(".sider")?.getBoundingClientRect().height || 0),
-    vh: window.innerHeight,
-    // 有没有悬停可用决定展开怎么触发：能悬停就真移鼠标，不能就点圆钮。
-    hover: window.matchMedia("(hover: hover)").matches,
+    seek: Boolean(document.querySelector(".pb-seek")),
+    buttons: [...document.querySelectorAll(".pb-bar .pb-btn")].map((b) => b.getAttribute("aria-label") || ""),
     paused: el ? el.paused : null,
     src: el ? el.getAttribute("src") || "" : "",
     dur: el ? Number((el.duration || 0).toFixed(2)) : 0,
@@ -3635,7 +3622,7 @@ const barState = `(() => {
 })()`;
 
 const cardPlayed = await page.evaluate(`(() => {
-  const b = [...document.querySelectorAll(".card button")].find((x) => x.textContent.includes("试听"));
+  const b = document.querySelector(".card .cover-wrap");
   if (!b) return false;
   b.click();
   return true;
@@ -3643,82 +3630,33 @@ const cardPlayed = await page.evaluate(`(() => {
 let bar1 = null;
 for (let i = 0; i < 20; i += 1) {
   bar1 = await page.evaluate(barState);
-  if (bar1.fold && bar1.dur > 0) break;
+  if (bar1.bar && bar1.dur > 0) break;
   await wait(100);
 }
 expect(
-  "点卡片上的「试听」→ 右下角出现一颗圆钮（48×48），坞还收着",
-  cardPlayed &&
-    bar1 &&
-    bar1.fold &&
-    bar1.chip.join("×") === "48×48" &&
-    bar1.bottom === 22 &&
-    bar1.corner &&
-    !bar1.dockVisible,
-  bar1 ? `圆钮=${bar1.chip.join("×")} 距底=${bar1.bottom} 距右=${bar1.right} 坞可见=${bar1.dockVisible}` : "没有播放条"
+  "点卡片封面 → 顶栏里出现播放条：音色名 + 样例位置 + 下沿的进度线",
+  cardPlayed && bar1 && bar1.bar && bar1.inTopbar && bar1.left > 150 && bar1.label.length > 0 && bar1.seek,
+  bar1 ? `在顶栏里=${bar1.inTopbar} 左=${bar1.left} 名字="${bar1.label}" 位置=${bar1.count || "—"}` : "没有播放条"
 );
 expect(
-  "收起时内容不为它让位（末尾那一截是各页滚动容器自己的）",
-  bar1 && bar1.siderH === bar1.vh,
-  bar1 ? `左栏高=${bar1.siderH} / 视口=${bar1.vh} 让位=${bar1.pad}` : ""
+  "它真的在放：<audio> 拿得到时长",
+  bar1 && bar1.dur > 0 && bar1.paused === false,
+  bar1 ? `时长=${bar1.dur}s 暂停=${bar1.paused}` : ""
 );
 expect(
-  "它真的在放：<audio> 拿得到时长、坞上写着放的是哪一段",
-  bar1 && bar1.dur > 0 && bar1.label.length > 0 && bar1.paused === false,
-  bar1 ? `时长=${bar1.dur}s 标题="${bar1.label}" 暂停=${bar1.paused}` : ""
+  "音色有多段样例时带「上一段 / 下一段」，位置从 1 / N 起",
+  bar1 &&
+    /^1 \/ [2-9]$/.test(bar1.count) &&
+    bar1.buttons.includes("上一段") &&
+    bar1.buttons.includes("下一段"),
+  bar1 ? `位置=${bar1.count || "—"} 按钮=${bar1.buttons.join("/")}` : ""
 );
 
-// ---- 展开与收起：悬停驱动的（没有悬停可用时点圆钮） ----
-const chipAt = await page.evaluate(`(() => {
-  const r = document.querySelector(".pb-chip")?.getBoundingClientRect();
-  return r ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null;
-})()`);
-const hoverIn = async () => {
-  if (!chipAt) return;
-  if (bar1.hover) {
-    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: chipAt.x, y: chipAt.y });
-  } else {
-    await page.clickAt(".pb-chip");
-  }
-};
-const hoverOut = async () => {
-  if (!chipAt) return;
-  if (bar1.hover) {
-    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 120, y: 120 });
-  } else {
-    await page.clickAt(".pb-chip");
-  }
-};
-await hoverIn();
-let barOpen = null;
-for (let i = 0; i < 15; i += 1) {
-  barOpen = await page.evaluate(barState);
-  if (barOpen.dockVisible) break;
-  await wait(80);
-}
-expect(
-  "移到圆钮上就展开成一条坞（528 宽），末尾那一截跟着让出来",
-  barOpen && barOpen.open && barOpen.dockW === 528 && barOpen.pad === 96,
-  barOpen ? `展开=${barOpen.open} 坞宽=${barOpen.dockW} 让位=${bar1.pad}→${barOpen.pad}（--player-space=96；悬停可用=${barOpen.hover}）` : "没展开"
-);
-await hoverOut();
-let barClosed = null;
-for (let i = 0; i < 15; i += 1) {
-  barClosed = await page.evaluate(barState);
-  if (!barClosed.dockVisible) break;
-  await wait(80);
-}
-expect(
-  "移开就收回：260ms 后坞收掉，让位那一截还回去",
-  barClosed && !barClosed.open && !barClosed.pinned && barClosed.pad === bar1.pad,
-  barClosed ? `展开=${barClosed.open} 让位=${barClosed.pad}` : "没收回"
-);
-
-// 全部试听：一条音色的几段排成队列（demo 库里「胡桃」有 3 段）。
-// 「全部」就摆在**卡片上**（试听旁边）：点它不打开详情抽屉，直接在播放条上放。
-const allClicked = await page.evaluate(`(() => {
-  const b = [...document.querySelectorAll(".card button")].find((x) =>
-    x.textContent.includes("全部")
+// 下一段：样例位置前进一格，`<audio>` 真的换源。
+const beforeNext = bar1?.src || "";
+const nextClicked = await page.evaluate(`(() => {
+  const b = [...document.querySelectorAll(".pb-bar .pb-btn")].find(
+    (x) => (x.getAttribute("aria-label") || "") === "下一段"
   );
   if (!b) return false;
   b.click();
@@ -3727,30 +3665,37 @@ const allClicked = await page.evaluate(`(() => {
 let bar2 = null;
 for (let i = 0; i < 20; i += 1) {
   bar2 = await page.evaluate(barState);
-  if (bar2.fold && bar2.count) break;
+  if (bar2.src && bar2.src !== beforeNext) break;
   await wait(100);
 }
 expect(
-  "「全部试听」把这几段排成一条队列：坞上写着 1 / N，上一段/下一段跟着出现",
-  allClicked &&
-    bar2 &&
-    /^1 \/ [2-9]$/.test(bar2.count) &&
-    bar2.buttons.includes("上一段") &&
-    bar2.buttons.includes("下一段"),
-  bar2 ? `队列=${bar2.count} 按钮=${bar2.buttons.join("/")}` : "没点着"
+  "「下一段」换到下一条样例：位置走到 2 / N，音频换了源",
+  nextClicked && bar2 && /^2 \/ /.test(bar2.count) && bar2.src !== beforeNext,
+  bar2 ? `位置=${bar2.count || "—"} 换源=${bar2.src !== beforeNext}` : "没切过去"
 );
-// 放完一段要**自己接下一段**（这就是"全部试听"的全部实现）。demo 的样例只有 1.2 秒。
-let advanced = "";
-for (let i = 0; i < 40; i += 1) {
-  advanced = (await page.evaluate(barState)).count;
-  if (advanced && !/^1 \/ /.test(advanced)) break;
+
+// 「打开音色卡」：抽屉里就是这一条。
+const cardOpened = await page.evaluate(`(() => {
+  const b = [...document.querySelectorAll(".pb-bar .pb-btn")].find(
+    (x) => (x.getAttribute("aria-label") || "") === "打开音色卡"
+  );
+  if (!b) return false;
+  b.click();
+  return true;
+})()`);
+let cardTitle = "";
+for (let i = 0; i < 20; i += 1) {
+  cardTitle = (await page.evaluate(`(document.querySelector(".vh-title")?.textContent || "").trim()`)) || "";
+  if (cardTitle) break;
   await wait(150);
 }
 expect(
-  "第一段放完自动接下一段（队列位置从 1/N 走到 2/N）",
-  /^2 \/ /.test(advanced),
-  `队列=${advanced || "(空)"}`
+  "「打开音色卡」打开的是正在放的那条音色",
+  cardOpened && cardTitle === (bar2?.label || ""),
+  `按到了=${cardOpened} 抽屉标题="${cardTitle}" 播放条="${bar2?.label || ""}"`
 );
+await page.evaluate(`document.querySelector('.vh-modal .vh-icon[title="关闭"]')?.click()`);
+await wait(300);
 
 // 收尾前先给那个 `<audio>` 盖个记号：一会儿比"还是不是同一个节点"。
 // **不要比 src**——队列正一段一段往前放，src 本来就会变（那是对的）。
@@ -3820,12 +3765,10 @@ for (let i = 0; i < 60; i += 1) {
 }
 const afterGen = await page.evaluate(`(() => {
   const el = document.querySelector("#vh-player");
-  const bar = document.querySelector(".player-fold");
   return {
-    bar: Boolean(bar),
+    bar: Boolean(document.querySelector(".pb-bar")),
     probe: el?.dataset.probe || "",
     src: el?.getAttribute("src") || "",
-    count: (document.querySelector(".pb-count")?.textContent || "").trim(),
   };
 })()`);
 expect(
@@ -3842,10 +3785,9 @@ for (const text of page.problems.filter((t) => t.includes("/api/v1/synthesize"))
   page.problems.splice(page.problems.indexOf(text), 1);
 }
 
-// 关掉它：圆钮与坞一起没了、声音停下、让位那一截还回去。
-const padBefore = (await page.evaluate(barState)).pad;
+// 关掉它：条没了、声音停下。
 const closed = await page.evaluate(`(() => {
-  const b = [...document.querySelectorAll(".pb-dock .pb-btn")].find(
+  const b = [...document.querySelectorAll(".pb-bar .pb-btn")].find(
     (x) => (x.getAttribute("aria-label") || "") === "关掉播放条"
   );
   if (!b) return false;
@@ -3855,9 +3797,9 @@ const closed = await page.evaluate(`(() => {
 await wait(300);
 const bar3 = await page.evaluate(barState);
 expect(
-  "「关掉播放条」：圆钮没了、让位那一截还回去、声音停下",
-  closed && !bar3.fold && bar3.paused === true && bar3.pad <= padBefore,
-  `按到了=${closed} 条还在=${bar3.fold} 让位=${padBefore}→${bar3.pad} 暂停=${bar3.paused}`
+  "「关掉播放条」：条没了、声音停下",
+  closed && !bar3.bar && bar3.paused === true,
+  `按到了=${closed} 条还在=${bar3.bar} 暂停=${bar3.paused}`
 );
 
 // 回音色库：后面深色那一段要看卡片。

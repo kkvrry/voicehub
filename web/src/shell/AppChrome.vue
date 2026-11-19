@@ -35,6 +35,12 @@
         </span>
       </button>
 
+      <!-- 播放条属于这次会话，不属于某一页：挂在顶栏上，换页断不了声音。
+           放完自动收起（见 store/playback.js 的 ended）。 -->
+      <Transition name="pb">
+        <PlayerBar v-if="app.player.url" />
+      </Transition>
+
       <div v-if="showSearch" class="sh-search">
         <Search :size="16" :stroke-width="1.8" aria-hidden="true" />
         <input
@@ -113,12 +119,6 @@
     </div>
 
     <slot name="append" />
-
-    <!-- 播放条属于这次会话，不属于某一页：挂在壳上，换页断不了声音。
-         放完自动收起（见 store/playback.js 的 ended）。 -->
-    <Transition name="pb">
-      <PlayerBar v-if="app.player.url" />
-    </Transition>
   </div>
 </template>
 
@@ -193,6 +193,10 @@ function navigate(key: string) {
   }
   if (key === 'synth') {
     void actions.openSynth()
+    return
+  }
+  if (key === 'audio') {
+    actions.openAudio()
     return
   }
   if (key === 'logs') {

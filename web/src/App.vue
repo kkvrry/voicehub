@@ -20,6 +20,7 @@
       <!-- 设置屏是分类栏，引擎页是插件清单，其余页面的第二列都是音色结构树。 -->
       <SettingsRail v-if="isSettings" />
       <PluginRail v-else-if="store.view === 'engine'" />
+      <AudioRail v-else-if="store.view === 'audio'" />
       <SourceTree v-else />
     </template>
 
@@ -42,13 +43,20 @@
       </template>
       <div v-else-if="store.view === 'producer'" class="producer-layout">
         <!-- 音色栏由插件自描述决定（`voice_rail`）：创作型工作区要挑音色，
-             audio.cpp 这类运行时管理页不需要，整列让给工作区。 -->
+             audio.cpp 这类运行时管理页不需要，整列让给工作区。
+             栏的用法同样自描述（`rail_mode`）：`pick` = 点卡即选中（处理目标），
+             `assign` = 卡右「指定」把音色交给工作区选角色。 -->
         <aside v-if="showProducerRail" class="producer-cards">
-          <SynthVoiceRail :pickable="false" assignable />
+          <SynthVoiceRail
+            :pickable="railMode === 'pick'"
+            :assignable="railMode !== 'pick'"
+            :target="railMode === 'pick' ? 'pick' : 'synth'"
+          />
         </aside>
         <ProducerWorkspace />
       </div>
       <SynthPanel v-else-if="store.view === 'synth'" />
+      <AudioLibrary v-else-if="store.view === 'audio'" />
       <LogView v-else-if="store.view === 'logs'" />
       <template v-else>
         <FilterBar />
@@ -67,7 +75,7 @@
       v-if="store.notice"
       :key="store.noticeAt"
       class="toast"
-      :class="[`is-${store.noticeKind}`, { 'is-above-player': store.player.url }]"
+      :class="`is-${store.noticeKind}`"
       role="status"
       aria-live="polite"
       @mouseenter="actions.setNoticePaused(true)"
@@ -159,18 +167,29 @@ import EngineCatalog from './components/EngineCatalog.vue'
 import EnginePanel from './components/EnginePanel.vue'
 import LlmPanel from './components/LlmPanel.vue'
 import SynthPanel from './components/SynthPanel.vue'
+import AudioLibrary from './components/AudioLibrary.vue'
+import AudioRail from './components/AudioRail.vue'
 import LogView from './components/LogView.vue'
 
 /** 设置屏是壳内的一屏：壳的形态（mode）与主区内容跟着它换，壳本身不换。 */
 const isSettings = computed(() => store.view === 'settings')
 
 /** 顶部搜索同一格绑两件事：音色库等页筛音色，设置屏搜设置项。
- *  音色那一份的规矩不变——三页都摆着音色卡片，搜索就地筛卡片；其余页面才回音色库看结果。 */
+ *  音色那一份的规矩不变——三页都摆着音色卡片，搜索就地筛卡片；其余页面才回音色库看结果。
+ *  音频库有自己的筛选词：那一页搜的是文本、文件名与音色名，不与音色库共用一份。 */
 const searchQuery = computed({
-  get: () => (isSettings.value ? settingsQuery.value : store.filters.q),
+  get: () => {
+    if (isSettings.value) return settingsQuery.value
+    if (store.view === 'audio') return store.audio.q
+    return store.filters.q
+  },
   set: (value: string) => {
     if (isSettings.value) {
       settingsQuery.value = value
+      return
+    }
+    if (store.view === 'audio') {
+      actions.setAudioQuery(value)
       return
     }
     store.filters.q = value
@@ -179,9 +198,11 @@ const searchQuery = computed({
   },
 })
 
-const searchPlaceholder = computed(() =>
-  isSettings.value ? '搜索设置项，例如「音量」「目录」' : '搜索音色、描述……'
-)
+const searchPlaceholder = computed(() => {
+  if (isSettings.value) return '搜索设置项，例如「音量」「目录」'
+  if (store.view === 'audio') return '搜索文本、文件名或音色……'
+  return '搜索音色、描述……'
+})
 
 /** 回车只在设置屏有意义：跳到第一个命中的设置项。 */
 function onSearchEnter() {
@@ -202,6 +223,13 @@ const activeNav = computed(() =>
 const showProducerRail = computed(() => {
   const entry = store.producers.find((item) => item.key === store.producer.key)
   return entry ? entry.voice_rail !== false : true
+})
+
+/** 音色栏怎么用：`pick` = 点卡即选中（处理型工作区），`assign` = 卡右「指定」
+ *  （创作型）。缺省按指定——老插件没这个字段。 */
+const railMode = computed(() => {
+  const entry = store.producers.find((item) => item.key === store.producer.key)
+  return entry?.rail_mode === 'pick' ? 'pick' : 'assign'
 })
 
 /** 工具型工作区（不要音色栏）也不显示音色结构树与音色搜索：这一页不归音色库管。 */

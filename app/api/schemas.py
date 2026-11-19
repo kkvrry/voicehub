@@ -18,6 +18,9 @@ from typing import Any, Generic, Literal, TypeVar
 from pydantic import BaseModel, Field
 
 __all__ = [
+    "AudioAbsorbIn",
+    "AudioAbsorbTargetIn",
+    "AudioDeleteIn",
     "ChatIn",
     "ChatMessageIn",
     "ChatOut",
@@ -221,6 +224,38 @@ class StorageOut(BaseModel):
     cache: CachePolicyOut | None = None
     #: 改生成结果目录并选择迁移时，搬了什么。
     moved: dict[str, Any] | None = None
+
+
+class AudioAbsorbTargetIn(BaseModel):
+    """入库目标。
+
+    ``origin`` 回这条音频原本的音色（生成物才有）、``voice`` 是选定的音色、
+    ``new`` 是就地新建一条本地音色——三者都要经过同一套样例写入。
+    """
+
+    kind: Literal["origin", "voice", "new"] = "voice"
+    voice_id: str = ""
+    name: str = ""
+    gender: str = ""
+    language: str = ""
+    #: 新建音色的归属文件夹（扫描根或它下面的一级子目录）。
+    folder: str = ""
+    #: 只作用于这一批里的第一条落点，不改变其它样例的主样例。
+    main_sample: bool = False
+    emotion: str = ""
+
+
+class AudioAbsorbIn(BaseModel):
+    """把音频库的条目登记为某条音色的样例。"""
+
+    ids: list[str] = Field(default_factory=list)
+    target: AudioAbsorbTargetIn = Field(default_factory=AudioAbsorbTargetIn)
+
+
+class AudioDeleteIn(BaseModel):
+    """移入回收站。生成物连 sidecar 记录一起摘。"""
+
+    ids: list[str] = Field(default_factory=list)
 
 
 class ChatMessageIn(BaseModel):

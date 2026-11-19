@@ -1,5 +1,5 @@
 // @ts-check
-// 播放这一域：一个 <audio> 实例 + 一条底栏（`PlayerBar.vue`）。
+// 播放这一域：一个 <audio> 实例 + 顶栏上的一条播放条（`PlayerBar.vue`）。
 // 播放不跟着列表被重画掉（从前生成页是行内 `<audio controls>`，重画即断声）；
 // 「全部试听」需要队列；底栏要的标题/进度/时长是同一份状态的几面。
 // 谁想放点什么就递一条曲目进来（`play` / `playAll`），界面上只读 `store.player`。

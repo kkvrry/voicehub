@@ -113,6 +113,13 @@ export const store = reactive({
   // 宿主不认识"角色"这件事，只负责把用户点的那条音色递过去。
   /** @type {any} */
   assignVoice: null,
+  // 「拾取」：声明 `rail_mode = pick` 的生产方工作区用它——点卡即选中音色，
+  // 卡右「选样例」再挑具体一条（`file` 空 = 整条音色）。
+  // 与 `synth` 分开：生成页那次用哪段声音，与这里处理谁，是两件事。
+  pick: {
+    voiceId: '',
+    file: '',
+  },
   // 生产方插件：宿主只记「清单」与「当前打开哪一家」。
   // 项目、章节、行这些书籍状态在插件自己的 store 里（producers/<key>/store.js），
   // 宿主不认识它们的数据形状。
@@ -138,7 +145,28 @@ export const store = reactive({
   // ---- 生成（docs/request-spec.md 那一套）----
   //: 主区在放什么：音色库列表 / 生成页 / 引擎（TTS 与对话插件）/ 日志页 / 设置页 /
   //: 某个生产方的工作区（`producer`，具体是哪一家看 `producer.key`）。
-  view: 'library', // 'library' | 'synth' | 'engine' | 'logs' | 'settings' | 'producer'
+  view: 'library', // 'library' | 'audio' | 'synth' | 'engine' | 'logs' | 'settings' | 'producer'
+
+  // 音频库：录音、内录、生成物三类音频的同一张表。
+  // 列表、计数与引擎分组都由后端算（`GET /api/v1/audio`），这里只存当前这一屏的结果；
+  // 选择与播放留在本机。
+  audio: {
+    items: /** @type {any[]} */ ([]),
+    counts: { all: 0, record: 0, loopback: 0, engine: 0 },
+    engines: /** @type {{ label: string, count: number }[]} */ ([]),
+    total: 0,
+    unabsorbed: 0,
+    hasMore: false,
+    loading: false,
+    error: '',
+    q: '',
+    source: 'all', // 'all' | 'record' | 'loopback' | 'engine'
+    engine: '', // 生成物按引擎目录再分一层；空 = 不分
+    range: 'all', // 'all' | 'today' | '7d' | '30d'
+    absorbed: '', // '' | 'no' | 'yes'
+    selected: /** @type {string[]} */ ([]),
+  },
+
   spec: {
     groups: /** @type {any[]} */ ([]),
     fields: /** @type {any[]} */ ([]),

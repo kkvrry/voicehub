@@ -1870,10 +1870,6 @@ select.sh-field {
   .sh-page-head h1 {
     font-size: 22px;
   }
-  /* 小窗仍然贴右下角：改的是它的右边距，不是把它拉成横栏。 */
-  .app-shell .player-fold {
-    right: calc(var(--sh-gutter) + 2px);
-  }
 }
 
 /* 手机：导航也横过来，单列内容 */
@@ -2410,224 +2406,158 @@ select.sh-field {
   border-radius: 10px;
 }
 
-/* 播放小窗：右下角一颗**圆钮**，鼠标移到它上面就展开成一条坞，离开 260ms 后收回。
-   双击固定（常驻展开，盘面右上角出一枚角标），按住可拖到任意位置（存 vh.player.pos），
-   右键回到这里给的默认右下角。收起时它只占一个 48px 的角、内容不为它让位；
-   展开或固定时坞才要那一截让位（下面的 `:has(.player-fold.is-open)`）。 */
-.app-shell .player-fold {
-  position: fixed;
-  left: auto;
-  right: calc(var(--sh-gutter) + var(--sh-pane-offset) + 4px);
-  bottom: 22px;
-}
-/* 坞默认朝左伸（圆钮右边那 10px 是它和圆钮的缝）；圆钮被拖到靠左时改朝右，
-   `data-side` 由组件量过窗口宽度再定。 */
-.app-shell .pb-dock {
-  position: absolute;
-  right: calc(var(--player-chip) + 10px);
-  bottom: 0;
-  width: min(528px, calc(100vw - 32px));
-  max-width: 528px;
-  height: var(--player-h);
-  border-radius: 999px;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateX(12px) scale(0.97);
-  transform-origin: right bottom;
-  pointer-events: none;
-  /* 收起时 visibility 延到动画末尾再翻：翻早了会切断淡出，也提前把按钮交回键盘。 */
-  transition:
-    opacity 170ms var(--sh-ease),
-    transform 210ms var(--sh-ease),
-    visibility 0s linear 210ms;
-}
-.app-shell .player-fold[data-side='r'] .pb-dock {
-  right: auto;
-  left: calc(var(--player-chip) + 10px);
-  transform-origin: left bottom;
-  transform: translateX(-12px) scale(0.97);
-}
-.app-shell .player-fold.is-open .pb-dock {
-  opacity: 1;
-  visibility: visible;
-  transform: none;
-  pointer-events: auto;
-  transition-delay: 0s;
-}
-.app-shell .player-fold.is-dragging .pb-dock {
-  transition: none;
-}
-/* 圆钮与坞是同一个面：颜色、毛玻璃、阴影一处说定，四套外观各自压平。 */
-.app-shell .player-fold :is(.pb-disc, .pb-dock) {
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(26px) saturate(180%);
-  -webkit-backdrop-filter: blur(26px) saturate(180%);
-  box-shadow: 0 18px 42px -22px rgba(19, 43, 79, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-:root[data-theme='dark'] .app-shell .player-fold :is(.pb-disc, .pb-dock) {
-  background: rgba(18, 29, 48, 0.62);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 18px 42px -22px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-.app-shell .pb-disc {
-  color: var(--sh-text-2);
-  transition: color var(--sh-t-fast) var(--sh-ease);
-}
-.app-shell .pb-chip:hover .pb-disc {
-  color: var(--sh-accent);
-}
-/* 焦点环画在盘面上：整颗圆钮只有一个可聚焦元素，环跟着它走。 */
-.app-shell .pb-chip {
-  outline: none;
-}
-.app-shell .pb-chip:focus-visible .pb-disc {
-  color: var(--sh-accent);
-  box-shadow: 0 18px 42px -22px rgba(19, 43, 79, 0.4), 0 0 0 3px var(--sh-accent-ring);
-}
-/* 播放中的呼吸：环在盘面的 ::before 上，压不过盘面自己的浮影。 */
-.app-shell .pb-disc::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-}
-.app-shell .player-fold.is-playing .pb-disc::before {
-  animation: pb-chip-breath 2.6s var(--sh-ease) infinite;
-}
-@keyframes pb-chip-breath {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 var(--sh-accent-soft);
-  }
-  50% {
-    box-shadow: 0 0 0 5px var(--sh-accent-soft);
-  }
-}
-/* 固定态的角标：一眼知道"这条不会自己收回去"。 */
-.app-shell .player-fold.is-pinned .pb-disc::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--sh-accent);
-}
-/* 坞上的按钮与进度条：浮起来以后手要够得着，热区比原来大一号 */
-.app-shell .pb-btn {
-  border-color: var(--sh-line);
-  background: var(--sh-glass-strong);
-  color: var(--sh-text-2);
+/* 播放条：顶栏里的一行，没有边框与底色，只有图标、一行字与下沿的一条进度线。
+   它不占浮层，内容不为它让位；四套外观都不必再压平——本来就没有玻璃。 */
+.app-shell .pb-name {
+  color: var(--sh-text);
 }
 .app-shell .pb-btn:hover:not(:disabled) {
-  border-color: var(--sh-accent);
+  color: var(--sh-accent);
+  background: var(--sh-hover);
+}
+.app-shell .pb-btn:focus-visible {
   color: var(--sh-accent);
   background: var(--sh-accent-soft);
+  box-shadow: 0 0 0 2px var(--sh-accent-ring);
 }
-.app-shell .pb-btn.close {
-  color: var(--sh-text-4);
-}
-/* 「收藏」「指定」属于"正在放谁"，不属于传输键：小一号，但要看着就点得动——
-   纯图标＋描边＋底色，靠 title 与 aria-label 说清是谁。 */
-.app-shell .pb-btn.pb-act {
-  width: 28px;
-  height: 28px;
-  color: var(--sh-text-3);
-}
-.app-shell .pb-btn.pb-act:hover:not(:disabled) {
-  color: var(--sh-accent);
-}
-.app-shell .pb-btn.pb-act.lit {
-  border-color: var(--star);
+.app-shell .pb-btn.is-act.lit {
   color: var(--star);
   background: color-mix(in srgb, var(--star) 14%, transparent);
 }
+/* 下沿那条线：轨道是中性色，进度是强调色到第二强调的渐变，末端一颗珠子；
+   播放时一道流光扫过（关掉动效时停）。手柄层是透明的，只负责点与拖。 */
+.app-shell .pb-track {
+  background: var(--sh-track);
+}
+.app-shell .pb-fill {
+  background: linear-gradient(90deg, var(--sh-accent), var(--sh-accent-2));
+  box-shadow: 0 0 10px -2px var(--sh-accent-ring);
+}
+.app-shell .pb-bar.is-playing .pb-fill::after {
+  animation: pb-flow 2.2s linear infinite;
+}
+@keyframes pb-flow {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+.app-shell[data-motion='off'] .pb-bar .pb-fill::after {
+  animation: none;
+}
+/* 末端那颗珠子：指针移上来才现身，其余时候只有那条线。 */
+.app-shell .pb-track::after {
+  content: '';
+  position: absolute;
+  left: var(--p, 0%);
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  border-radius: 50%;
+  background: var(--sh-accent-2);
+  box-shadow: 0 0 0 2px var(--sh-accent-soft);
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 140ms var(--sh-ease);
+}
+.app-shell .pb-bar:hover .pb-track::after,
+.app-shell .pb-bar:has(.pb-seek:focus-visible) .pb-track::after {
+  opacity: 1;
+}
 .app-shell .pb-seek {
-  height: 12px;
   -webkit-appearance: none;
   appearance: none;
   background: transparent;
-  accent-color: var(--sh-accent);
 }
 .app-shell .pb-seek::-webkit-slider-runnable-track {
-  height: 3px;
-  border-radius: 99px;
-  background: var(--sh-track);
+  height: 14px;
+  background: transparent;
 }
 .app-shell .pb-seek::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 9px;
-  height: 9px;
-  margin-top: -3px;
+  width: 12px;
+  height: 12px;
+  margin-top: 1px;
+  border: 0;
   border-radius: 50%;
-  border: 2px solid #fff;
-  background: var(--sh-accent);
-  box-shadow: 0 1px 4px rgba(19, 43, 79, 0.35);
-  cursor: pointer;
-  transition: width 130ms var(--sh-ease), height 130ms var(--sh-ease);
-}
-.app-shell .pb-seek:hover::-webkit-slider-thumb {
-  width: 11px;
-  height: 11px;
-  margin-top: -4px;
-}
-.app-shell .pb-seek:disabled::-webkit-slider-thumb {
-  background: var(--sh-text-4);
+  background: transparent;
 }
 .app-shell .pb-seek::-moz-range-track {
-  height: 3px;
-  border-radius: 99px;
-  background: var(--sh-track);
+  height: 14px;
+  background: transparent;
+}
+.app-shell .pb-seek::-moz-range-progress {
+  background: transparent;
 }
 .app-shell .pb-seek::-moz-range-thumb {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  background: var(--sh-accent);
+  width: 12px;
+  height: 12px;
+  border: 0;
+  background: transparent;
 }
-.app-shell .pb-label {
-  color: var(--sh-text);
+/* 播放条始终停在居中搜索框的左侧，绝不把它挤走。
+   宽屏放得下全部：名字 + 收藏 / 指定 / 开卡；窄一档先收名字，再窄收掉两颗管理键。
+   再窄（1100 以下）顶栏没有中缝可用，播放条回到这一行里排，搜索框随之让出宽度——
+   那是让位，不是被推走。 */
+@media (min-width: 1100px) and (max-width: 1300px) {
+  .app-shell .pb-name {
+    display: none;
+  }
 }
-.app-shell .pb-sub,
-.app-shell .pb-time {
-  color: var(--sh-text-3);
+@media (min-width: 1100px) and (max-width: 1260px) {
+  .app-shell .pb-btn.is-act {
+    display: none;
+  }
 }
-.app-shell .pb-bub {
-  background: var(--sh-panel);
-  border: 1px solid var(--sh-line);
-  color: var(--sh-text-2);
-  box-shadow: 0 6px 16px -10px rgba(19, 43, 79, 0.5);
+@media (min-width: 721px) and (max-width: 1099px) {
+  .app-shell .pb-bar {
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    transform: none;
+    max-width: none;
+  }
+  .app-shell.has-player .sh-search {
+    position: static;
+    transform: none;
+    flex: 1 1 auto;
+    width: auto;
+    max-width: 420px;
+    min-width: 0;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .app-shell.has-player .sh-topbar-right {
+    margin-left: 0;
+  }
 }
+/* 手机：同一套流内排法，名字留给样例位置。 */
+@media (max-width: 720px) {
+  .app-shell .pb-bar {
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    transform: none;
+    max-width: none;
+  }
+  .app-shell .pb-name {
+    display: none;
+  }
+}
+
 .pb-enter-active,
 .pb-leave-active {
-  transition: opacity 180ms var(--sh-ease), transform 220ms var(--sh-ease-out);
+  transition: opacity 140ms var(--sh-ease);
 }
 .pb-enter-from,
 .pb-leave-to {
   opacity: 0;
-  transform: translateY(12px) scale(0.99);
-}
-/* 让位只在坞真的摊开时发生：收起时那颗 48px 的圆钮不值得整幅内容给它腾地方，
-   腾了反而在底部切出一条横线（那正是从前"看着像被底栏压住"的来源）。
-   设置页的滚动在 `.sh-content` 自己身上（应用页是 `.sh-content-app` 里的各页滚动）：
-   只给它加，应用页不加——那一层是整幅容器，加了就又切出一条横线。 */
-.app-shell.has-player:has(.player-fold.is-open) :is(
-    .grid-wrap,
-    .rows-wrap,
-    .rail-list,
-    .rail-chapters,
-    .synth-col-main,
-    .synth-side,
-    .logview-list
-  ) {
-  padding-bottom: var(--player-space);
-}
-.app-shell.has-player:has(.player-fold.is-open) .sh-content:not(.sh-content-app) {
-  padding-bottom: var(--player-space);
 }
 
 /* 换组时右侧轻轻上浮一下——硬切会像"点空了" */
@@ -2642,47 +2572,6 @@ select.sh-field {
   to {
     opacity: 1;
     transform: none;
-  }
-}
-
-@media (max-width: 720px) {
-  /* 窄屏：圆钮仍待在右下角，坞展开成一条贴底的横条（在圆钮上方）。
-     组件在这种宽度下不放开拖动——贴边的横条挪到哪儿都还挡着。 */
-  .app-shell .player-fold {
-    left: var(--sh-gutter);
-    right: var(--sh-gutter);
-    bottom: 16px;
-  }
-  .app-shell .pb-chip {
-    margin-left: auto;
-  }
-  .app-shell .pb-dock,
-  .app-shell .player-fold[data-side='r'] .pb-dock {
-    left: 0;
-    right: 0;
-    bottom: calc(var(--player-chip) + 8px);
-    width: auto;
-    max-width: none;
-  }
-  /* 收起时从底下浮上来一点，不再左右翻（翻给谁看呢，它已经铺满了）。 */
-  .app-shell .player-fold:not(.is-open) .pb-dock {
-    transform: translateY(8px) scale(0.98);
-  }
-  /* 名字与时间码都要地方：让位给标题，两颗动作键与传输键各小一号。 */
-  .app-shell .pb-ident {
-    max-width: none;
-  }
-  .app-shell .pb-btn {
-    width: 27px;
-    height: 27px;
-  }
-  .app-shell .pb-btn.play {
-    width: 30px;
-    height: 30px;
-  }
-  .app-shell .pb-btn.pb-act {
-    width: 26px;
-    height: 26px;
   }
 }
 

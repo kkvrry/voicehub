@@ -64,7 +64,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Cpu, Library, ScrollText, Settings as SettingsIcon, Sparkles } from 'lucide-vue-next'
+import { AudioLines, Cpu, Library, ScrollText, Settings as SettingsIcon, Sparkles } from 'lucide-vue-next'
 import { store } from '../store'
 
 defineProps<{
@@ -78,6 +78,8 @@ type NavItem = { key: string; label: string; icon?: any; img?: string }
 
 const items = computed<NavItem[]>(() => [
   { key: 'library', label: '音色库', icon: Library },
+  // 音频库排在音色库之后：两者都是库，之后才是动作页（生成）与生产方工作区。
+  { key: 'audio', label: '音频库', icon: AudioLines },
   { key: 'synth', label: '生成', icon: Sparkles },
   // 生产方插件自带工作区：位置由插件声明（order），图标用插件目录里的那一张。
   // 停用的插件不进导航；清单本身仍留着，设置 → 插件里可以再启用。

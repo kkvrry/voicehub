@@ -70,6 +70,10 @@ class ProducerPlugin(ABC):
     settings_local_only: ClassVar[bool] = False
     #: 工作区左侧是否需要宿主那条音色栏。工具型插件（如 audio.cpp）不需要。
     voice_rail: ClassVar[bool] = True
+    #: 音色栏的用法：``assign`` = 卡片右端「指定」把音色交给工作区（创作型），
+    #: ``pick`` = 点卡即选中、卡右「选样例」挑一条（处理型）。
+    #: 宿主只按这个字段摆栏，不认识具体插件。
+    rail_mode: ClassVar[str] = "assign"
 
     @classmethod
     def settings_schema(cls) -> type[BaseModel] | None:
@@ -139,6 +143,8 @@ class ProducerPlugin(ABC):
             "order": self.order,
             # 工作区左侧要不要音色栏：插件自描述，宿主不按 key 写分支。
             "voice_rail": self.voice_rail,
+            # 栏的用法（指定 / 选中）：同上，宿主只认这两个值。
+            "rail_mode": self.rail_mode,
             "icon_url": f"/api/v1/producers/{self.key}/icon",
             "steps": [asdict(step) for step in self.steps()],
             "settings_schema": schema,

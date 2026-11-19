@@ -249,6 +249,21 @@ export const api = {
   /** @param {Record<string, any>} filters */
   voices: (filters) => listRequest(`/api/v1/voices${query(filters)}`),
   /**
+   * 音频库：录音、内录、生成物的同一张表。筛选与计数都由后端算。
+   * @param {Record<string, any>} filters source / engine / q / status / span / limit
+   */
+  audio: (filters) => request(`/api/v1/audio${query(filters)}`),
+  /**
+   * 入库：把这几条音频复制进目标音色并登记为样例。
+   * @param {{ ids: string[], target: Record<string, unknown> }} body
+   */
+  absorbAudio: (body) => request('/api/v1/audio/absorb', { method: 'POST', body }),
+  /**
+   * 移入回收站：生成物连 sidecar 记录一起摘。
+   * @param {{ ids: string[] }} body
+   */
+  deleteAudio: (body) => request('/api/v1/audio', { method: 'DELETE', body }),
+  /**
    * 各标签剩几条（``tag`` 之外的筛选都算），给界面那排可点的标签用。
    * @param {Record<string, any>} filters
    */
@@ -378,6 +393,9 @@ export const api = {
       method: 'POST',
       timeout: 180_000,
     }),
+  /** 清除这台引擎在库里的音色条目（只删库，磁盘上的文件不动）。 @param {string} key */
+  clearEngineVoices: (key) =>
+    request(`/api/v1/engines/${encodeURIComponent(key)}/voices`, { method: 'DELETE' }),
   /**
    * 音色克隆走 multipart；音源可以是上传文件，也可以是库里已有样例的 id + 文件名。
    * @param {string} key
@@ -576,6 +594,10 @@ export const api = {
    */
   transcribeRecording: (name) =>
     request(`/api/v1/recordings/${encodeURIComponent(name)}/transcribe`, { method: 'POST' }),
+  /**
+   * 内录状态：可用性、热键与注册结果。起停由托盘热键完成，页面只读状态。
+   */
+  capture: () => request('/api/v1/capture/status'),
 
   // ---- 文案库 ----
   // 生成样例时"挑一句现成的"那几组句子。它写在服务的数据目录里、设置页可改，

@@ -29,6 +29,7 @@ from app.usecase import llm as llm_uc
 from app.usecase.engines import (
     active_engines,
     catalog_payload,
+    clear_engine_voices,
     clone_voice,
     engine_choices,
     engine_voices,
@@ -150,6 +151,15 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
         "没有拉到"是业务结果，不是协议错误——界面应显示为说明而非报错。
         """
         return {"object": "voice_refresh", **await refresh_voices(service, key)}
+
+    @router.delete("/engines/{key}/voices", summary="清除引擎音色", tags=["engines"])
+    def clear_voices_of_engine(key: str) -> dict[str, Any]:
+        """清除库里属于这台引擎的全部音色条目。
+
+        只删库：条目本身是音色 id 与元数据；已生成的样例在引擎保存目录里，不动磁盘。
+        重新「拉取音色清单」会再次写入这些条目。
+        """
+        return {"object": "voice_clear", **clear_engine_voices(service, key)}
 
     @router.post(
         "/engines/{key}/clone",

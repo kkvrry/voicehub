@@ -41,6 +41,7 @@ __all__ = [
     "extract_audio",
     "find_ffmpeg",
     "mux_media",
+    "normalize",
     "silence_spans",
     "slice_audio",
     "stage_ascii_path",
@@ -958,4 +959,53 @@ def encode_audio(
         command += ["-b:a", bitrate]
     command.append(str(target))
     _run_ffmpeg(command, timeout=timeout, what=f"导出音频（{target.name}）")
+    return target
+
+
+def normalize(
+    source: Path,
+    target: Path,
+    *,
+    rate: int = 0,
+    channels: int = 1,
+    highpass: int = 0,
+    peak: float = 0.891,
+    configured: str | None = None,
+    timeout: float = 900.0,
+) -> Path:
+    """把一段音频折成"可比较、可再喂给模型"的 WAV。
+
+    只做确定性的事：声道、采样率、低频切除、限峰。**不做响度归一**——把电平拉平会
+    抹掉两条素材之间的音量差，试听原声与结果时听到的就不再是处理本身。
+
+    :param rate: 目标采样率；``0`` = 保持源采样率（升采样只会让文件变大）。
+    :param peak: 限峰阈值（线性满刻度）；``0`` = 不限。默认 0.891 ≈ −1 dBFS。
+    :param highpass: 高通截止频率（Hz）；``0`` = 不切。口播素材 60 Hz 足够。
+    """
+    ffmpeg = _require_source(source, configured, "处理音频")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-nostdin",
+        "-y",
+        "-v",
+        "error",
+        "-i",
+        str(source),
+        "-vn",
+        "-ac",
+        str(channels),
+    ]
+    if rate:
+        command += ["-ar", str(rate)]
+    filters: list[str] = []
+    if highpass:
+        filters.append(f"highpass=f={int(highpass)}")
+    if peak:
+        filters.append(f"alimiter=limit={peak:.3f}:level=false")
+    if filters:
+        command += ["-af", ",".join(filters)]
+    command += ["-c:a", "pcm_s16le", str(target)]
+    _run_ffmpeg(command, timeout=timeout, what=f"处理音频（{target.name}）")
     return target

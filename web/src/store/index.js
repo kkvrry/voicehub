@@ -14,11 +14,13 @@ import {
   setThemeMode,
 } from './shell'
 import * as library from './library'
+import * as audio from './audio'
 import * as avatar from './avatar'
 import * as engine from './engine'
 import * as lexicon from './lexicon'
 import * as llm from './llm'
 import * as producers from './producers'
+import * as pick from './pick'
 import * as plugins from './plugins'
 import * as synth from './synth'
 import * as asr from './asr'
@@ -28,11 +30,13 @@ import * as playback from './playback'
 
 export const actions = {
   ...library,
+  ...audio,
   ...avatar,
   ...engine,
   ...lexicon,
   ...llm,
   ...producers,
+  ...pick,
   ...plugins,
   ...synth,
   ...asr,
