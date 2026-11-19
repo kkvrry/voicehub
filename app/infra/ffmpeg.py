@@ -914,7 +914,15 @@ def mux_media(
 
 
 #: 成品容器 → 编码器；码率只对有损容器生效。
-_ENCODERS = {"mp3": "libmp3lame", "m4a": "aac", "wav": "pcm_s16le", "flac": "flac"}
+_ENCODERS = {
+    "mp3": "libmp3lame",
+    "m4a": "aac",
+    "wav": "pcm_s16le",
+    "flac": "flac",
+    "aac": "aac",
+    "ogg": "libvorbis",
+    "opus": "libopus",
+}
 
 
 def encode_audio(
@@ -930,13 +938,16 @@ def encode_audio(
     """把混好的 wav 编成成品容器（后缀决定编码器）。
 
     容器由目标文件名决定，调用方不必先问"这个格式用什么编码器"——
-    ``mp3`` / ``m4a`` / ``wav`` / ``flac`` 之外的写不清，直接报错而不是悄悄出个坏文件。
+    可写容器之外的直接报错，而不是悄悄出个坏文件。``rate`` / ``channels`` 传 ``0``
+    表示沿用源流的参数（替换样例时用，不为导出规格改声道数）。
     """
     ffmpeg = _require_source(source, configured, "导出音频")
     suffix = target.suffix.lower().lstrip(".")
     encoder = _ENCODERS.get(suffix)
     if encoder is None:
-        raise FfmpegError(f"不支持导出成 .{suffix}：可选 mp3 / m4a / wav / flac。")
+        raise FfmpegError(
+            f"不支持导出成 .{suffix}：可选 mp3 / m4a / wav / flac / aac / ogg / opus。"
+        )
     target.parent.mkdir(parents=True, exist_ok=True)
     command = [
         ffmpeg,
@@ -948,13 +959,12 @@ def encode_audio(
         "-i",
         str(source),
         "-vn",
-        "-ac",
-        str(channels),
-        "-ar",
-        str(rate),
-        "-c:a",
-        encoder,
     ]
+    if channels:
+        command += ["-ac", str(channels)]
+    if rate:
+        command += ["-ar", str(rate)]
+    command += ["-c:a", encoder]
     if encoder != "pcm_s16le" and bitrate:
         command += ["-b:a", bitrate]
     command.append(str(target))
@@ -970,18 +980,40 @@ def normalize(
     channels: int = 1,
     highpass: int = 0,
     peak: float = 0.891,
+    start: float = 0.0,
+    duration: float = 0.0,
+    segments: list[tuple[float, float]] | None = None,
     configured: str | None = None,
     timeout: float = 900.0,
 ) -> Path:
     """把一段音频折成"可比较、可再喂给模型"的 WAV。
 
-    只做确定性的事：声道、采样率、低频切除、限峰。**不做响度归一**——把电平拉平会
-    抹掉两条素材之间的音量差，试听原声与结果时听到的就不再是处理本身。
+    只做确定性的事：声道、采样率、低频切除、限峰、可选的区间截取。**不做响度归一**——
+    把电平拉平会抹掉两条素材之间的音量差，试听原声与结果时听到的就不再是处理本身。
 
     :param rate: 目标采样率；``0`` = 保持源采样率（升采样只会让文件变大）。
     :param peak: 限峰阈值（线性满刻度）；``0`` = 不限。默认 0.891 ≈ −1 dBFS。
     :param highpass: 高通截止频率（Hz）；``0`` = 不切。口播素材 60 Hz 足够。
+    :param start: 从源的第几秒开始；输出定位放在 ``-i`` 之后，按解码时间精确切。
+    :param duration: 截取多长（秒）；``0`` = 到结尾。
+    :param segments: 要保留的若干区间 ``[(start, end), ...]``；给两段以上时按序拼接。
+        单段等价于 ``start`` / ``duration``，空表与 ``None`` 表示整段。
     """
+    keeps = [(float(a), float(b)) for a, b in (segments or []) if b > a]
+    if len(keeps) == 1:
+        start, duration = keeps[0][0], keeps[0][1] - keeps[0][0]
+    if len(keeps) > 1:
+        return _normalize_segments(
+            source,
+            target,
+            keeps,
+            rate=rate,
+            channels=channels,
+            highpass=highpass,
+            peak=peak,
+            configured=configured,
+            timeout=timeout,
+        )
     ffmpeg = _require_source(source, configured, "处理音频")
     target.parent.mkdir(parents=True, exist_ok=True)
     command = [
@@ -993,6 +1025,14 @@ def normalize(
         "error",
         "-i",
         str(source),
+    ]
+    # 输出定位（-ss 放在 -i 之后）按解码时间切，不受关键帧影响；素材都很短，
+    # 多解一段的代价可以忽略。裁剪与收尾是同一次解码，不生成中间文件。
+    if start > 0:
+        command += ["-ss", f"{float(start):.3f}"]
+    if duration > 0:
+        command += ["-t", f"{float(duration):.3f}"]
+    command += [
         "-vn",
         "-ac",
         str(channels),
@@ -1006,6 +1046,64 @@ def normalize(
         filters.append(f"alimiter=limit={peak:.3f}:level=false")
     if filters:
         command += ["-af", ",".join(filters)]
+    command += ["-c:a", "pcm_s16le", str(target)]
+    _run_ffmpeg(command, timeout=timeout, what=f"处理音频（{target.name}）")
+    return target
+
+
+def _normalize_segments(
+    source: Path,
+    target: Path,
+    keeps: list[tuple[float, float]],
+    *,
+    rate: int,
+    channels: int,
+    highpass: int,
+    peak: float,
+    configured: str | None,
+    timeout: float,
+) -> Path:
+    """多段保留：每段先切出来，按序接上，再过与单段相同的收尾滤镜。
+
+    段与段之间不补静音、不做交叉淡化：这是用户明确删掉中间内容的结果，
+    补任何东西都会改变他指定的保留范围。
+    """
+    ffmpeg = _require_source(source, configured, "处理音频")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    chains: list[str] = []
+    pieces: list[str] = []
+    for index, (begin, end) in enumerate(keeps):
+        chains.append(
+            f"[0:a]atrim=start={begin:.3f}:end={end:.3f},"
+            f"asetpts=PTS-STARTPTS[seg{index}]"
+        )
+        pieces.append(f"[seg{index}]")
+    chains.append(f"{''.join(pieces)}concat=n={len(pieces)}:v=0:a=1[joined]")
+    filters: list[str] = []
+    if highpass:
+        filters.append(f"highpass=f={int(highpass)}")
+    if peak:
+        filters.append(f"alimiter=limit={peak:.3f}:level=false")
+    chains.append(f"[joined]{','.join(filters) if filters else 'anull'}[out]")
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-nostdin",
+        "-y",
+        "-v",
+        "error",
+        "-i",
+        str(source),
+        "-filter_complex",
+        ";".join(chains),
+        "-map",
+        "[out]",
+        "-vn",
+        "-ac",
+        str(channels),
+    ]
+    if rate:
+        command += ["-ar", str(rate)]
     command += ["-c:a", "pcm_s16le", str(target)]
     _run_ffmpeg(command, timeout=timeout, what=f"处理音频（{target.name}）")
     return target

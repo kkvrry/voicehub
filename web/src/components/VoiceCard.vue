@@ -102,7 +102,9 @@
 import { computed } from 'vue'
 import { Pause, Play, Star } from 'lucide-vue-next'
 import { store, actions, vocab } from '../store'
+import { useSettingsStore } from '../stores/settings'
 import { useAvatarImage } from '../composables/avatar'
+import { avatarFill } from '../composables/avatarColor'
 import CoverImage from './ui/CoverImage.vue'
 import GenderPicker from './ui/GenderPicker.vue'
 import { toneOf } from './ui/tones'
@@ -110,6 +112,7 @@ import { toneOf } from './ui/tones'
 const props = defineProps({ voice: { type: Object, required: true } })
 
 const showAvatarImage = useAvatarImage('cards')
+const settings = useSettingsStore()
 const initial = computed(() => (props.voice.shown_name || '?').slice(0, 1))
 
 /** 设计音色：本体的全部就是那段描述。 */
@@ -138,21 +141,19 @@ const isPlayingMain = computed(
   () => store.player.playing && store.player.url === mainUrl.value
 )
 
-// 没封面时按名字散一个稳定的底色（同一音色永远同色）。
-const coverColor = computed(() => {
-  let hash = 0
-  for (const ch of props.voice.shown_name) hash = (hash * 31 + ch.codePointAt(0)) % 360
-  return `hsl(${hash}, 55%, 62%)`
-})
+// 没封面时按名字散一个稳定底色（玻璃 / 素瓷为渐变，其余平涂）。
+const coverColor = computed(() =>
+  avatarFill(props.voice.shown_name, settings.appearance.look)
+)
 
 async function open() {
   await actions.openDetail(props.voice)
 }
 
 function playMain() {
-  // 排的是当前列表的主样例队列：播放条才有上一段/下一段可按；
-  // 每条都只放主样例，不把音色的全部样例排进来。
-  if (mainUrl.value) actions.playVoiceFromList(props.voice)
+  // 头像播放键排这一条音色自己的样例队列，从主样例开始；
+  // 队列只供手动切上/下一段，放完当前这条不自动续播。
+  if (mainUrl.value) actions.playVoiceCard(props.voice)
 }
 
 async function toggleFavorite() {

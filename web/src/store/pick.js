@@ -8,14 +8,15 @@ import { store } from './state'
 /**
  * 点卡片 = 选中这条音色的全部样例。
  *
- * 已经是这条就不动：与生成页一致，再点一下不是"取消"，也不该把刚挑好的那一条
- * 样例换成整条——要回整条音色走「清除」或「换样例」。
+ * 已经停在整条时不动；停在它的一条样例上时，再点卡片回到整条——卡片表达的是
+ * "整条音色"，只处理一条要走「选样例」里的「使用」。再点一下不会取消选择。
  *
  * @param {any} voice
  */
 export function pickVoice(voice) {
   const id = String(voice?.id || '')
-  if (!id || store.pick.voiceId === id) return
+  if (!id) return
+  if (store.pick.voiceId === id && !store.pick.file) return
   store.pick = { voiceId: id, file: '' }
 }
 

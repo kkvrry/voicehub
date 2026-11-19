@@ -8,7 +8,14 @@ import { loadEngines } from './engine'
 import { loadAsr } from './asr'
 import { loadSpec } from './synth'
 import { ensureTexts } from './texts'
-import { playAll, playVoices, syncVoice, togglePlay } from './playback'
+import {
+  extendQueue,
+  manualizeCurrent,
+  playAll,
+  playSolo,
+  syncVoice,
+  togglePlay,
+} from './playback'
 
 function currentQuery() {
   const q = { ...store.filters }
@@ -261,36 +268,61 @@ export async function playAllSamples(voice) {
   )
 }
 
-/** 点音色卡的封面：把当前显示列表排成主样例队列，从这一条开始。
- *  队列只含主样例（不把每个音色的全部样例都排进来）；播放条的上一段/下一段
- *  因此能顺着卡片走，而不是每点一张都退化成单曲。
- *  `list` 给创作页音色栏用：它显示的是 `store.voices`，与库页的可见列表同源但
- *  可能带着隐藏项；传进来就按它排，不另换一份顺序。 */
-/**
- * @param {any} voice
- * @param {any[]} [list]
- */
-export function playVoiceFromList(voice, list = undefined) {
+/** 头像播放键：先出声，再把这条音色自己的样例补成队列。
+ *  队列从主样例开始，只含这一条音色的样例；手动队列，放完当前这条不自动续播。 */
+/** @param {any} voice */
+export function playVoiceCard(voice) {
   const url = voice?.main_audio_url
   if (!url) return
-  // 点正在放的那一条 = 暂停/继续：与 `play()` 的旧行为一致。
   if (store.player.url === url) {
-    togglePlay()
+    // 已经在放这一条：手动队列就暂停/继续；自动队列则收成手动队列，不打断声音。
+    if (store.player.manual) {
+      togglePlay()
+      return
+    }
+    manualizeCurrent()
+    if (!store.player.playing) togglePlay()
+  } else {
+    playSolo({ url, label: voice.shown_name, sub: '主样例', voice })
+  }
+  if ((voice.sample_count || 0) > 1) void extendWithSamples(voice, url)
+}
+
+/**
+ * @param {any} voice
+ * @param {string} url
+ */
+async function extendWithSamples(voice, url) {
+  let full = null
+  try {
+    full = await api.voice(voice.id)
+  } catch {
+    // 取不到就停在这条：声音已经成立，不为补齐队列把它掐掉。
     return
   }
-  const pool = (list && list.length ? list : visibleVoices()).filter(
-    /** @param {any} item */
-    (item) => item.main_audio_url
+  const samples = (full.samples || []).filter(
+    /** @param {any} sample */
+    (sample) => sample.audio_url
   )
-  const start = pool.findIndex(
-    /** @param {any} item */
-    (item) => item.id === voice.id
+  // 主样例排第一：点头像从 1 / N 开始，下一段总是有的可切。
+  const ordered = [...samples].sort((a, b) => {
+    const mainA = a.is_main || a.audio_url === url ? 1 : 0
+    const mainB = b.is_main || b.audio_url === url ? 1 : 0
+    return mainB - mainA
+  })
+  extendQueue(
+    url,
+    ordered.map(
+      /** @param {any} sample */
+      (sample) => ({
+        url: sample.audio_url,
+        // 身份始终是音色；样例文件放在 tooltip，位置由数量行回答。
+        label: full.shown_name,
+        sub: `${sample.file}${sample.is_main ? ' · 主样例' : ''}`,
+        voice: full,
+      })
+    )
   )
-  if (start < 0) {
-    playVoices([voice])
-    return
-  }
-  playVoices(pool, start)
 }
 
 /** 改的这一格，正好是当前筛选用的那一格吗？

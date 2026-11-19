@@ -509,6 +509,11 @@
   background: var(--sh-accent-soft);
   color: var(--sh-accent);
 }
+/* 收藏点亮的那一颗是状态，不是普通图标：悬停也保持金色。 */
+:root[data-look='celadon'] .app-shell .icon-btn.lit,
+:root[data-look='celadon'] .app-shell .icon-btn.lit:hover {
+  color: var(--star);
+}
 /* 实例卡右上角的运行按钮是主动作：素瓷也不收成透明图标。 */
 :root[data-look='celadon'] .app-shell .sh-btn.acp-run {
   color: var(--sh-accent-contrast);
@@ -721,35 +726,47 @@
   background: var(--sh-panel);
   box-shadow: var(--sh-inset-hi), var(--sh-shadow-1);
 }
+/* 素瓷用卡片式音色列（与玻璃同一版）：每张卡独立、留出外边距，
+   选中整卡抬起一块玻璃，左沿一道强调色。原色与纸墨仍是整列贴着面板的老样子。 */
 :root[data-look='celadon'] .app-shell .rail-card {
+  margin: 0 6px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-bottom: 0;
   border-radius: 12px;
-  border-color: var(--sh-line-soft);
-  background: var(--sh-panel);
+  background: transparent;
+  transition: background var(--sh-t-fast) var(--sh-ease),
+    border-color var(--sh-t-fast) var(--sh-ease),
+    box-shadow var(--sh-t-fast) var(--sh-ease);
 }
-:root[data-look='celadon'] .app-shell .rail-card:hover:not(.on) {
-  /* 同纸墨：悬停只改底，不动边框（这块面板只剩一道底边，改色就成了下划线） */
-  background: var(--sh-accent-soft);
+:root[data-look='celadon'] .app-shell .rail-card:hover:not(.on):not(.rail-frozen) {
+  /* 悬停只改底，不动边框：这一列的行就是卡片，边框留给选中说。 */
+  background: var(--sh-hover);
 }
 /* 录音那张卡不接点击：不亮悬停底色（选中态仍有强调）。 */
 :root[data-look='celadon'] .app-shell .rail-card.rec-card:not(.on):hover {
-  background: var(--sh-panel);
+  background: transparent;
 }
 :root[data-look='celadon'] .app-shell .rail-card.on {
-  /* 选中只换底与左沿那道强调（后者在 style.css 里），不换边框色：
-     这块面板只剩一道底边，给它上色就成了下划线。 */
-  background: var(--sh-accent-soft);
+  background: var(--sh-glass-strong);
+  border-color: var(--sh-line);
+  box-shadow: var(--sh-shadow-1), var(--sh-inset-hi), inset 3px 0 0 var(--sh-accent);
 }
-/* 钉住的那张（参考音频）：同纸墨——把它的底从面板色捡回朱砂淡晕，
-   左沿那道朱砂在 style.css 里，悬停时底再深一档。 */
+:root[data-look='celadon'] .app-shell .rail-card.on .rail-name {
+  color: var(--sh-accent);
+}
+/* 钉住的那张（参考音频）：底回到朱砂淡晕，左沿那道朱砂在 style.css 里；
+   悬停时底再深一档。卡片式之后底边不再随基础行画，这里单独补上分界线。 */
 :root[data-look='celadon'] .app-shell .rail-card.rail-frozen {
   background: var(--seal-wash);
-  border-bottom-color: color-mix(in srgb, var(--seal) 30%, var(--sh-line));
+  border-bottom: 1px solid color-mix(in srgb, var(--seal) 30%, var(--sh-line));
 }
 :root[data-look='celadon'] .app-shell .rail-card.rail-frozen:hover {
   background: var(--seal-wash-2);
 }
 :root[data-look='celadon'] .app-shell .rail-cover {
   border-radius: 9px;
+  box-shadow: var(--sh-inset-hi);
 }
 /* ------------------------------------------------------------ 书籍刊头 -- */
 :root[data-look='celadon'] .app-shell .producer-rail {
@@ -982,10 +999,15 @@
 }
 :root[data-look='celadon'] .app-shell .audio-btn {
   border-radius: 50%;
+}
+/* 普通播放键用浅釉底；生成 / 重试 / 过期三档保留各自的浅底与图标色。 */
+:root[data-look='celadon'] .app-shell
+  .audio-btn:not(.is-generate):not(.is-danger):not(.is-stale) {
   background: var(--sh-accent-soft);
   color: var(--sh-accent);
 }
-:root[data-look='celadon'] .app-shell .audio-btn:hover {
+:root[data-look='celadon'] .app-shell
+  .audio-btn:not(.is-generate):not(.is-danger):not(.is-stale):hover {
   filter: none;
   background: var(--sh-accent-soft-2);
 }
@@ -1172,7 +1194,8 @@
 :root[data-look='celadon'] .app-shell .pb-btn {
   border-radius: 50%;
 }
-:root[data-look='celadon'] .app-shell .pb-btn:hover:not(:disabled) {
+:root[data-look='celadon'] .app-shell
+  .pb-btn:not(.is-play):not(.lit):hover:not(:disabled) {
   background: var(--sh-accent-soft);
   color: var(--sh-accent);
 }

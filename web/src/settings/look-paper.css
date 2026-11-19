@@ -942,10 +942,15 @@
 }
 :root[data-look='paper'] .app-shell .audio-btn {
   border-radius: 2px;
+}
+/* 普通播放键压成实色；生成 / 重试 / 过期三档保留各自的浅底与图标色。 */
+:root[data-look='paper'] .app-shell
+  .audio-btn:not(.is-generate):not(.is-danger):not(.is-stale) {
   background: var(--sh-accent);
   color: var(--sh-accent-contrast);
 }
-:root[data-look='paper'] .app-shell .audio-btn:hover {
+:root[data-look='paper'] .app-shell
+  .audio-btn:not(.is-generate):not(.is-danger):not(.is-stale):hover {
   filter: none;
   background: var(--sh-accent-2);
 }

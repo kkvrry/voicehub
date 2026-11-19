@@ -1,20 +1,19 @@
 """步骤声明与可用的模型。
 
-清单的产地仍是 audio.cpp 插件（``catalog.snapshot.json``）：这里只做两件事——
-按步骤筛出**已验证过**的模型族，以及把包 id 折成界面要的四件事（名字、是否已装、
-输入格式、产物取哪一路）。清单读不到时退化成"只列服务端已加载的模型"。
+可选模型只认**运行中的 audio.cpp 实例注册了什么**（``/v1/models``）：没安装、
+没加载、没启动的模型不列，页面也不提供下载。catalog 只负责名字、说明与输入格式。
 
 输入格式按包 id 给：分离类要 44.1 kHz 立体声（伴奏信息在声道差里），语音增强类是
 16 kHz 或 48 kHz 单声道。喂错格式不会报错，只会得到更差的结果——这正是要写死的地方。
+服务端注册的是族名而不是包 id 时，按该步骤推荐的包取格式。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-__all__ = ["CORE_STEP", "STEPS", "Step", "candidates", "family_note"]
+__all__ = ["CORE_STEP", "STEPS", "Step", "family_note", "options_for"]
 
 #: 每个步骤允许哪些模型族。白名单，不是发现：清单里还有几十个 `s2s` 家族，其中多数
 #: 是音乐修复或超分，对人声素材只会补出并不存在的高频。
@@ -93,16 +92,18 @@ STEPS: tuple[Step, ...] = (
     Step("denoise", "语音降噪", "去除底噪与混响，保时长。", "s2s", 2, default=True),
 )
 
-#: 恒定在最后执行的步骤：不是模型，不勾选，也不允许省。
+#: 收尾步骤：不是模型，默认不选。名字直接说做了什么，避免"规整"这种没有
+#: 可验证含义的说法；执行内容全部写在 note 里。
 CORE_STEP: dict[str, Any] = {
     "key": "normalize",
-    "label": "规整",
+    "label": "统一声道与峰值",
     "order": 3,
     "core": True,
+    "default": False,
     "note": "单声道 · 采样率对齐 · 高通 60 Hz · 峰值 ≤ −1 dBFS · 时长校验",
 }
 
-#: 反过来的索引：包 id → 步骤，供 load/install 时反查 task。
+#: 反过来的索引：步骤 key → 声明，供 run 时反查 task 与顺序。
 def step_of(key: str) -> Step | None:
     return next((step for step in STEPS if step.key == key), None)
 
@@ -154,34 +155,57 @@ def _pick_packages(family: dict[str, Any], task: str) -> list[dict[str, Any]]:
     return default or packages[:1]
 
 
-def candidates(task: str, models_root: Path | None, installed: set[str]) -> list[dict[str, Any]]:
-    """某一步可选的模型：``[{id, label, family, note, installed, size}]``。
+def _package_label(family: dict[str, Any], package: dict[str, Any], fallback: str) -> str:
+    label = str(package.get("display_name") or family.get("name") or fallback)
+    return label.replace(" GGUF", "").strip()
 
-    排序：已装的在前，同组内保持清单原序（清单按族排序，等价于把常用的排前面）。
+
+def _option(task: str, item: dict[str, Any]) -> dict[str, Any] | None:
+    """一个运行中的模型 → 一行可选模型；不属于该步骤就返回空。
+
+    ``id`` 用服务端注册的那一个：族名与包 id 都认，合成时原样发回去。
     """
     from app.producers.builtin.audiocpp import catalog
 
-    rows: list[dict[str, Any]] = []
-    for family in catalog.families():
-        key = str(family.get("family") or "")
-        if key not in _ALLOWED.get(task, ()):
-            continue
-        for package in _pick_packages(family, task):
-            package_id = str(package.get("id") or "")
-            if not package_id:
-                continue
-            label = str(package.get("display_name") or family.get("name") or key)
-            label = label.replace(" GGUF", "").strip()
-            rows.append(
-                {
-                    "id": package_id,
-                    "label": label,
-                    "family": key,
-                    "note": package_note(package_id, key),
-                    "installed": package_id in installed,
-                    "size": int(package.get("size") or 0),
-                    "prep": list(_prep(package_id, key, task)),
-                }
-            )
-    rows.sort(key=lambda row: (not row["installed"], _rank(task, row["family"], row["id"])))
+    model_id = str(item.get("id") or "")
+    family = str(item.get("family") or "")
+    if not model_id or family not in _ALLOWED.get(task, ()):
+        return None
+    # 不按实例声明的 task 过滤：一个族可以服务两步（MossFormer2 的 ss / se 是同一族的
+    # 两个包），实例配置里的 task 只是族的第一项，不能代表当前加载的是哪个包。
+    found_family, package = catalog.package(str(item.get("package") or model_id), None)
+    if not package:
+        found_family, package = catalog.package(model_id, None)
+    if package and str(found_family.get("family") or "") != family:
+        found_family, package = {}, {}
+    if package:
+        package_id = str(package.get("id") or "")
+        return {
+            "id": model_id,
+            "label": _package_label(found_family, package, family),
+            "family": family,
+            "note": package_note(package_id, family),
+            "prep": list(_prep(package_id, family, task)),
+            "url": str(item.get("url") or ""),
+        }
+    family_row = catalog.family(family, None)
+    preferred = (_pick_packages(family_row, task) or [{}])[0]
+    package_id = str(preferred.get("id") or "")
+    return {
+        "id": model_id,
+        "label": str(family_row.get("name") or family).replace(" GGUF", "").strip(),
+        "family": family,
+        "note": package_note(package_id, family) if package_id else family_note(family),
+        "prep": list(_prep(package_id, family, task)),
+        "url": str(item.get("url") or ""),
+    }
+
+
+def options_for(task: str, running: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """某一步现在能选的模型：``[{id, label, family, note, prep}]``。
+
+    来源只有运行中的实例；顺序按步骤的推荐表，界面不再分"已装/未装"。
+    """
+    rows = [row for item in running if (row := _option(task, item)) is not None]
+    rows.sort(key=lambda row: _rank(task, row["family"], row["id"]))
     return rows

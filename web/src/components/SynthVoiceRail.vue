@@ -55,8 +55,9 @@
     <!-- 冻结卡：这次用谁的那一段。置顶、不随列表滚走——「参考音频」那一格撤掉之后，
          它是"当前参考是谁"唯一的落点，所以不给它一个能被滚出去的位置。
          长相与列表里的卡一样（同一套行高、同一个头像一个底），"它是钉住的那张"由三处说：
-         斜盖着的一枚「参考」章、一层朱砂淡底、左沿一道朱砂（后两处见 style.css 的
-         `.rail-frozen`：强调色是列表"选中"的语法，这里换成印章的朱砂，两者才分得开）。
+         斜盖着的一枚「参考」章（水印，压在内容下面，不占横向位置）、一层朱砂淡底、
+         左沿一道朱砂（后两处见 style.css 的 `.rail-frozen`：强调色是列表"选中"的语法，
+         这里换成印章的朱砂，两者才分得开）。
          章**不看有没有样例**：这一栏说的是"这次用这条音色配音"，盖的是这件事，
          不是"它有一段参考片段"——设计音色没有片段，照样是这次用的那条。 -->
     <div
@@ -255,7 +256,9 @@
 import { computed, ref } from 'vue'
 import { Mic, Pause, Play, Sparkles } from 'lucide-vue-next'
 import { actions, say, store, vocab } from '../store'
+import { useSettingsStore } from '../stores/settings'
 import { useAvatarImage } from '../composables/avatar'
+import { avatarFill } from '../composables/avatarColor'
 import { useCardPaging } from '../composables/cardPaging'
 import { useRailWindow } from '../composables/railWindow'
 import CoverImage from './ui/CoverImage.vue'
@@ -265,6 +268,7 @@ import MicButton from './ui/MicButton.vue'
 import { toneOf } from './ui/tones'
 
 const showAvatarImage = useAvatarImage('rail')
+const settings = useSettingsStore()
 
 const props = defineProps({
   /** 生成页：点卡片=选中这条音色，并直接用它自己的主样例当参考音频；
@@ -329,15 +333,13 @@ const { rendered, padTop, padBottom, horizontal } = useRailWindow(visible, listE
 const initialOf = (voice) => (voice.shown_name || '?').slice(0, 1)
 
 /**
- * 与卡片同一套：没封面时按名字散一个稳定底色。
+ * 与卡片同一套：没封面时按名字散一个稳定底色（玻璃 / 素瓷为渐变）。
  *
  * @param {any} voice
  */
 function coverStyle(voice) {
   if (voice.cover_url && showAvatarImage.value) return {}
-  let hash = 0
-  for (const ch of voice.shown_name || '') hash = (hash * 31 + ch.codePointAt(0)) % 360
-  return { background: `hsl(${hash}, 55%, 62%)` }
+  return { background: avatarFill(voice.shown_name, settings.appearance.look) }
 }
 
 /**
@@ -379,8 +381,9 @@ function chooseSample(voice) {
  */
 function play(voice) {
   if (!voice.main_audio_url) return
-  // 排这一栏当前显示的整列主样例：播放条才有上一段/下一段可按。
-  actions.playVoiceFromList(voice, visible.value)
+  // 头像播放键排这一条音色自己的样例队列，从主样例开始；
+  // 只供手动切上/下一段，放完当前这条不自动续播。
+  actions.playVoiceCard(voice)
 }
 
 /**

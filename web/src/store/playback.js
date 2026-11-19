@@ -51,6 +51,15 @@ function set(patch) {
   Object.assign(store.player, patch)
 }
 
+/** 播放条逐帧绘制用的实时进度（0–1）。
+ *  `timeupdate` 只有约 4Hz，直接拿它画整块底色会一段一段往前跳；
+ *  这里直接读隐藏 `<audio>` 的当前时间，由组件在每帧取一次。 */
+export function liveFraction() {
+  const duration = Number(el.duration)
+  if (!Number.isFinite(duration) || duration <= 0) return 0
+  return Math.min(1, Math.max(0, el.currentTime / duration))
+}
+
 /** 起播点（0–1 的比例）：换源那一瞬 `duration` 还是 NaN，换算不成秒，只能挂着
  *  等元数据到了再落。同一时刻最多挂一个。 */
 let pendingFrac = 0
@@ -108,8 +117,48 @@ export function play(item) {
     load(here)
     return
   }
-  set({ queue: [one] })
+  set({ queue: [one], manual: false })
   load(0)
+}
+
+/** 单条试听：只放这一条，替换掉当前队列；放完停住，不自动接下一段。
+ *  头像播放键先走这里出声，随后由 `library.playVoiceCard` 补成该音色的样例队列。 */
+/** @param {any} item */
+export function playSolo(item) {
+  const one = track(item)
+  if (!one.url) return
+  const here = store.player.url === one.url
+  set({ queue: [one], index: 0, manual: true })
+  if (here) togglePlay()
+  else load(0)
+}
+
+/** 起播后把单条试听补成完整队列，停在正在放的那一条；换过曲子就作废。
+ *  头像播放键的队列是手动队列：上/下一段可用，但播完当前这条不自动续播。 */
+/**
+ * @param {string} url
+ * @param {any[]} items
+ */
+export function extendQueue(url, items) {
+  if (!url || store.player.url !== url) return
+  const queue = (items || []).map(track).filter(
+    /** @param {{ url: string }} row */
+    (row) => row.url
+  )
+  const index = queue.findIndex(
+    /** @param {{ url: string }} row */
+    (row) => row.url === url
+  )
+  if (queue.length < 2 || index < 0) return
+  set({ queue, index, manual: true })
+}
+
+/** 把当前这条收成手动单选队列，不动声音。
+ *  从自动队列切到卡片队列时用：先别暂停，等样例清单回来再补齐。 */
+export function manualizeCurrent() {
+  const item = store.player.queue[store.player.index]
+  if (!item) return
+  set({ queue: [item], index: 0, manual: true })
 }
 
 /** 全部试听：把它们排成一条队列，从 `start` 那条开始；`frac` 是这条的起播点。 */
@@ -125,7 +174,7 @@ export function playAll(items, start = 0, frac = 0) {
   )
   if (!queue.length) return
   const index = Math.min(Math.max(start, 0), queue.length - 1)
-  set({ queue })
+  set({ queue, manual: false })
   load(index, frac)
 }
 
@@ -151,8 +200,7 @@ export function dropTrack(url) {
 }
 
 /** 把一批音色排成队列（只取有主样例的），从第 `start` 条开始。
- *  音色库标题、生成/创作页的左栏与音色卡共用：同一个「全部播放」与单卡试听，
- *  入队规则只写这一处；单卡试听也排整条可见列表，播放条才能顺着卡片切上一条/下一条。 */
+ *  只给「全部播放 / 全部试听」用；头像单条试听走 `playSolo`，不经过这里。 */
 /**
  * @param {any[]} voices
  * @param {number} [start]
@@ -221,7 +269,7 @@ export function prevTrack() {
 export function stop() {
   el.pause()
   set({
-    url: '', label: '', sub: '', queue: [], index: 0,
+    url: '', label: '', sub: '', queue: [], index: 0, manual: false,
     playing: false, position: 0, duration: 0, error: '',
   })
 }
@@ -240,7 +288,12 @@ el.addEventListener('loadedmetadata', () => {
   if (Number.isFinite(el.duration) && el.duration > 0) seek(ratio * el.duration)
 })
 // 放完接下一段：这就是「全部试听」的全部实现。
+// 手动队列（头像试听该音色的样例）不续播：停在当前这条，让用户自己点上/下一段。
 el.addEventListener('ended', () => {
+  if (store.player.manual) {
+    set({ playing: false, position: el.duration || store.player.position })
+    return
+  }
   if (store.player.index + 1 < store.player.queue.length) {
     load(store.player.index + 1)
     return

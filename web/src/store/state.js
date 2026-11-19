@@ -60,6 +60,8 @@ export const store = reactive({
   player: {
     url: '', label: '', sub: '',
     queue: /** @type {any[]} */ ([]), index: 0,
+    // 手动队列：放完当前这条不自动接下一段，上/下一段只由用户点。
+    manual: false,
     playing: false, position: 0, duration: 0, error: '',
   },
   // 「设置」是右侧主区那一页（`store.view === 'settings'`）：落在哪一栏

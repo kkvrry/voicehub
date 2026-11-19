@@ -22,6 +22,8 @@ class AudiocppRuntime(ProducerPlugin):
     settings_label = "audio.cpp 运行时"
     homepage = "https://github.com/0xShug0/audio.cpp"
     order = 80
+    #: 运行时管理是工具，不是日常页面：和引擎、日志摆在下半段。
+    nav_section = "tools"
     #: 运行时管理页，不是"给角色挑音色"的工作区：不要宿主那条音色栏。
     voice_rail = False
     #: 配置里能指定 ``exe``（本机任意可执行文件）：这个保存只能在本机发起。

@@ -346,7 +346,7 @@ input, select, textarea { font: inherit; color: inherit; }
 .synth-body {
   flex: 1; min-height: 0; display: grid; gap: 16px;
   grid-template-columns: 206px minmax(0, 1fr) minmax(276px, 316px);
-  padding: 14px 22px 16px;
+  padding: 10px 22px 16px;
 }
 /* Grid 子项的 min-width 默认是 auto：卡片列里那排横滑的卡会把整列撑到几千像素，
    三列就一起被推出屏幕（窄屏上下排列时尤其明显）。归零才轮得到各列自己滚。 */
@@ -459,6 +459,35 @@ input, select, textarea { font: inherit; color: inherit; }
 /* 选中：左沿一道强调色 + 淡底。不换边框——行间那条细线不该因为选中而断掉。 */
 .rail-card.on { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .rail-card:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* 玻璃外观：这一列改成一张张独立卡片，选中抬起一块玻璃，左沿一道强调色。
+   与 `look-celadon.css` 里的同一套写法（素瓷也用卡片式），原色与纸墨保持
+   上面那条"整列贴着面板、选中只换底"的老样子。 */
+:root[data-look='glass'] .app-shell .rail-card {
+  margin: 0 6px; padding: 7px 9px;
+  border: 1px solid transparent; border-bottom: 0;
+  border-radius: var(--sh-r-xs); background: transparent;
+  transition: background var(--sh-t-fast) var(--sh-ease),
+    border-color var(--sh-t-fast) var(--sh-ease),
+    box-shadow var(--sh-t-fast) var(--sh-ease);
+}
+:root[data-look='glass'] .app-shell .rail-card:hover:not(.rail-frozen):not(.rec-card) { background: var(--sh-hover); }
+:root[data-look='glass'] .app-shell .rail-card.on {
+  background: var(--sh-glass-strong);
+  border-color: var(--sh-line);
+  box-shadow: var(--sh-shadow-1), var(--sh-inset-hi), inset 3px 0 0 var(--sh-accent);
+}
+:root[data-look='glass'] .app-shell .rail-card.on .rail-name { color: var(--sh-accent); }
+/* 钉住的参考卡在玻璃里也要留住朱砂淡底：上面那条 `.rail-card` 把底刷透明了，
+   这里按更高一格的选择器捡回来。 */
+:root[data-look='glass'] .app-shell .rail-card.rail-frozen {
+  background: var(--seal-wash);
+  border-bottom: 1px solid color-mix(in srgb, var(--seal) 28%, var(--sh-line));
+  box-shadow: inset 3px 0 0 var(--seal);
+}
+:root[data-look='glass'] .app-shell .rail-card.rail-frozen:hover {
+  background: var(--seal-wash-2);
+}
+:root[data-look='glass'] .app-shell .rail-cover { box-shadow: var(--sh-inset-hi); }
 .rail-cover {
   width: 30px; height: 30px; border-radius: 50%; flex: none; overflow: hidden;
   display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 600;
@@ -490,7 +519,8 @@ button.rail-cover { border: 0; padding: 0; font: inherit; font-size: 13px; font-
    生成页不再摆收藏，也不再写「使用中」：选中由卡片红边说，参考由顶上那张冻结卡说。 */
 .rail-assign { border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; font-size: 11.5px; padding: 2px 3px; flex: none; }
 .rail-assign:hover { color: var(--accent); }
-/* 冻结行只有 200 来像素：章要占一截，右端这颗就不留左右内边距，把地方让给章 */
+/* 冻结行只有 200 来像素：名字优先，右端这颗就不留左右内边距。
+   章是水印，不占横向位置，压在哪一边都不挤走内容。 */
 .rail-frozen .rail-assign { padding: 2px 0; }
 /* 名字后面贴的那枚「设计」：配色与下面那排标签同一套，尺寸收一档，
    行高按行内算——它挤在名字与性别圆标之间，不能把名字行撑高。 */
@@ -527,18 +557,16 @@ button.rail-cover { border: 0; padding: 0; font: inherit; font-size: 13px; font-
   from { max-height: 0; opacity: 0; }
   to { max-height: 140px; opacity: 1; }
 }
-/* 没有「换样例」那颗按钮的那一行（设计音色 / 临时录音）：章往右挪到按钮该在的位置，
-   别在右端空出一截等一颗不存在的按钮。上下 9px 照旧——章是所有置顶卡都盖的。 */
-.rail-frozen.is-plain .rail-seal { right: 10px; }
-/* 章：一枚盖在卡上的朱砂印。绝对定位（不占一行）、斜 8°、竖排「参考」。
+/* 章：一枚盖在卡上的朱砂印。**它是水印**：绝对定位、压在内容下面，
+   不占一行，也不在名字与右端按钮之间留一格。
    朱文：**只画框和字，不铺底色**——铺满了就从"印"变成"色块"。
-   框贴着两个字走（26×40），比字大一圈即止；字取隶书，蚕头燕尾，古但认得出；
+   框贴着两个字走，比字大一圈即止；字取隶书，蚕头燕尾，古但认得出；
    两处缺墨由 SVG 蒙版挖成真正的洞（悬停换底色时不会露馅）。 */
 .rail-seal {
-  position: absolute; top: 50%; right: 58px;
-  width: 26px; height: 40px; flex: none;
+  position: absolute; top: 50%; right: 4px;
+  width: 36px; height: 52px; flex: none;
   transform: translateY(-50%) rotate(-8deg);
-  color: var(--seal); opacity: var(--seal-ink, 0.8);
+  color: var(--seal); opacity: calc(var(--seal-ink, 0.8) * 0.25);
   pointer-events: none; user-select: none;
 }
 .rail-seal .seal-frame { fill: none; stroke: currentColor; stroke-width: 2; }
@@ -1049,7 +1077,7 @@ button.rail-cover { border: 0; padding: 0; font: inherit; font-size: 13px; font-
   .synth-body {
     grid-template-columns: clamp(220px, 10vw, 330px) minmax(0, 1fr) clamp(300px, 16vw, 430px);
     gap: clamp(16px, 1.3vw, 26px);
-    padding: 18px clamp(24px, 2vw, 40px) 26px;
+    padding: 10px clamp(24px, 2vw, 40px) 26px;
   }
   .editor-title { font-size: 17px; margin-bottom: 10px; }
   .block-title { font-size: 15px; }
@@ -1790,26 +1818,71 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
 }
 
 /* ---------------- 播放条 ----------------
-   顶栏里的一行：它**不属于任何一页**，声音归隐藏的 <audio id="vh-player">，
-   所以换页与列表重画都断不了它（见 components/PlayerBar.vue 与 store/playback.js）。
+   顶栏中缝上的一只涨潮块：它**不属于任何一页**，声音归隐藏的
+   <audio id="vh-player">，所以换页与列表重画都断不了它
+   （见 components/PlayerBar.vue 与 store/playback.js）。
 
-   没有边框、没有底色。右沿贴住居中搜索框的左沿（留一格空隙），整体比顶栏中线低一点，
-   下沿那条线就是进度。颜色、流光与四套外观的差异在 `settings/theme.css` 与 `look-*.css`。 */
+   46px 高的圆角面板，右沿贴住居中搜索框的左沿（留一格空隙）；面板底色就是
+   进度，从左侧涨到当前时间，前沿一道水线。没有第二条进度线，因此不会和顶栏
+   自己的下框线或纸墨装饰线混在一起。
+   颜色与四套外观的差异在 `settings/theme.css` 与 `look-*.css`。 */
 .pb-bar {
   position: absolute;
   left: auto;
   /* 搜索框左沿距右边 = 50% + min(210px, 17vw)；再让开 12px。 */
   right: calc(50% + min(210px, 17vw) + 12px);
-  top: calc(50% + 8px);
-  transform: translateY(-50%);
+  /* 在顶栏里垂直居中，不吃满整行。 */
+  top: calc((var(--sh-topbar-h) - 46px) / 2);
   z-index: 1;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 2px;
   min-width: 0;
-  height: 36px;
-  padding-bottom: 2px;
+  height: 46px;
+  padding: 0 8px;
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-md);
+  background: var(--sh-field);
+  box-shadow: var(--sh-shadow-1), var(--sh-inset-hi);
+  isolation: isolate;
   user-select: none;
+}
+/* 涨潮层：只铺底色与水线，文字与按钮压在它上面。 */
+.pb-tide {
+  position: absolute;
+  z-index: 0;
+  inset: 1px;
+  overflow: hidden;
+  border-radius: calc(var(--sh-r-md) - 1px);
+  pointer-events: none;
+}
+.pb-tide::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  transform: scaleX(var(--p, 0));
+  transform-origin: left center;
+  background: color-mix(in srgb, var(--sh-accent) 12%, transparent);
+  will-change: transform;
+}
+/* 水线：填充前沿的一道细竖线，不是圆点，也不发光。 */
+.pb-tide::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--p, 0) * 100% - 1px);
+  width: 1px;
+  background: color-mix(in srgb, var(--sh-accent) 32%, transparent);
+}
+.pb-ident,
+.pb-transport,
+.pb-right {
+  position: relative;
+  z-index: 1;
 }
 /* 搜索框不在这一页时不贴它，退回音色栏上方。 */
 .sh-topbar:not(:has(.sh-search)) .pb-bar {
@@ -1830,17 +1903,35 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
 }
 .pb-btn:active:not(:disabled) { transform: scale(0.94); }
 .pb-btn:disabled { opacity: 0.35; cursor: default; }
-.pb-btn.is-play { width: 30px; height: 30px; color: var(--text); }
+.pb-btn.is-play {
+  width: 30px;
+  height: 30px;
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+}
 .pb-btn.is-act { width: 26px; height: 26px; }
-/* 身份：一行字。名字长了先收名字，样例位置不动。 */
+/* 管理动作成组：收藏 / 指定 / 开卡留在同一簇，与状态和收条分开。 */
+.pb-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding-left: 6px;
+  border-left: 1px solid var(--sh-line);
+}
+/* 身份：左边两行。音色名在上，样例位置紧贴其下；名字长了先收名字。
+   靠主按钮一侧收口：名字与三颗传输键之间只留一格，不悬在左端当孤儿。 */
 .pb-ident {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
   min-width: 0;
-  padding: 0 8px 0 6px;
+  padding: 0 10px 0 2px;
+  justify-self: end;
 }
 .pb-name {
+  max-width: 104px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1850,45 +1941,34 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
 }
 .pb-count {
   flex: none;
-  font-size: 11px;
+  font-size: 10.5px;
+  line-height: 1.15;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-/* 下沿的进度：轨道铺满整行，填充宽度只认 `--p`。 */
-.pb-track {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 3px;
-  border-radius: 3px;
-  background: var(--sh-track);
+/* 三颗主按钮是这一行的中心：身份与右侧管理动作各自靠边，中间自动留白。 */
+.pb-transport {
+  display: flex;
+  align-items: center;
+  justify-self: center;
+  gap: 2px;
 }
-.pb-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: var(--p, 0%);
-  border-radius: 3px;
-  overflow: hidden;
+.pb-right {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 2px;
 }
-.pb-fill::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
-  transform: translateX(-100%);
-}
-/* 手柄层：看不见的轨道，只负责点与拖；线由 `.pb-track` 画。
-   热区压在线的上下各一格，不盖住上面那排按钮。 */
+/* 手柄层：看不见的滑轨，只负责点与拖；进度由 `.pb-tide` 画。
+   热区压在块的下沿，不盖住上面那排按钮。 */
 .pb-seek {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -6px;
+  left: 8px;
+  right: 8px;
+  bottom: -5px;
+  z-index: 3;
   width: auto;
-  height: 10px;
+  height: 12px;
   margin: 0;
   cursor: pointer;
 }
@@ -1896,7 +1976,7 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
 .pb-error {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 150px;
+  max-width: 104px;
   padding: 0 6px;
   font-size: 11.5px;
   color: var(--warn);

@@ -1,7 +1,7 @@
-"""audio.cpp 服务的薄客户端：列模型、查模型目录、装模型、跑一次任务。
+"""audio.cpp 服务的薄客户端：跑一次分离或增强任务。
 
-模型步骤与 TTS 引擎同构（填地址、发请求、收音频），但端点不同：分离与增强走通用
-``POST /v1/tasks/run``，请求体是 ``{"model": id, "request": {...}}``，音频只能给
+端点与 TTS 不同：走通用 ``POST /v1/tasks/run``，请求体是
+``{"model": id, "request": {"audio": path, "options": {...}}}``，音频只能给
 **服务端本机路径**或 base64，不支持 multipart。同机部署传路径，省一次编码传输。
 
 上游没有把响应结构写进公开文档，所以音频取回按"已知的几种形状"依次试：``audio`` /
@@ -14,57 +14,17 @@ from __future__ import annotations
 import base64
 import binascii
 import contextlib
-import json
-import socket
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
 
 from app.producers.base import ProducerError
 
-__all__ = [
-    "install",
-    "loaded_models",
-    "models_root",
-    "normalize_host",
-    "reachable",
-    "run_task",
-]
+__all__ = ["run_task"]
 
 #: 分离任务的产物里，这几个词表示"人声那一路"。
 _VOCAL_HINTS = ("vocal", "voice", "speech", "target", "speaker")
-
-
-def normalize_host(raw: str) -> str:
-    """用户填的地址：补协议、去尾斜杠、只留 ``scheme://host:port``。"""
-    text = str(raw or "").strip().strip('"').rstrip("/")
-    if not text:
-        return ""
-    if "://" not in text:
-        text = f"http://{text}"
-    parsed = urlparse(text)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        raise ProducerError("服务地址须为 http://主机:端口。")
-    return f"{parsed.scheme}://{parsed.netloc}"
-
-
-def reachable(host: str, timeout: float = 0.4) -> bool:
-    """端口是否有人听。
-
-    先做这一层再发 HTTP：本机端口没人听时，Windows 会静默丢 SYN，连接要等满超时
-    （实测 httpx 一次要 2.5 秒），界面为了一个"服务没起"白等三秒不值得。
-    """
-    parsed = urlparse(host)
-    if not parsed.hostname:
-        return False
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    try:
-        with socket.create_connection((parsed.hostname, port), timeout=timeout):
-            return True
-    except OSError:
-        return False
 
 
 def _client(timeout: float) -> httpx.Client:
@@ -90,20 +50,6 @@ def _error(response: httpx.Response) -> str:
     return text[:200] or f"HTTP {response.status_code}"
 
 
-def _get(host: str, path: str, timeout: float = 5.0) -> Any:
-    url = f"{host}{path}"
-    try:
-        with _client(timeout) as client:
-            response = client.get(url)
-    except httpx.HTTPError:
-        raise ProducerError(f"无法连接 audio.cpp（{host}）：服务未启动或地址不对。") from None
-    if response.status_code >= 400:
-        raise ProducerError(f"{url} 返回 {response.status_code}：{_error(response)}")
-    with contextlib.suppress(ValueError):
-        return response.json()
-    return {}
-
-
 def _post(host: str, path: str, body: dict[str, Any], timeout: float) -> Any:
     url = f"{host}{path}"
     try:
@@ -112,37 +58,12 @@ def _post(host: str, path: str, body: dict[str, Any], timeout: float) -> Any:
     except httpx.TimeoutException:
         raise ProducerError(f"{url} 超时（{timeout:.0f} 秒）。") from None
     except httpx.HTTPError:
-        raise ProducerError(f"无法连接 audio.cpp（{host}）：服务未启动或地址不对。") from None
+        raise ProducerError(f"无法连接 audio.cpp（{host}）：服务已退出或地址变了。") from None
     if response.status_code >= 400:
         raise ProducerError(f"{url} 返回 {response.status_code}：{_error(response)}")
     with contextlib.suppress(ValueError):
         return response.json()
     return {}
-
-
-def loaded_models(host: str, timeout: float = 5.0) -> list[str]:
-    """服务端注册的模型 id（``GET /v1/models``）。"""
-    payload = _get(host, "/v1/models", timeout=timeout)
-    rows = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(rows, list):
-        return []
-    return [str(row.get("id")) for row in rows if isinstance(row, dict) and row.get("id")]
-
-
-def models_root(host: str, timeout: float = 3.0) -> Path | None:
-    """模型目录（``GET /v1/ui/models-root``）；未开动态管理时为空。"""
-    try:
-        payload = _get(host, "/v1/ui/models-root", timeout=timeout)
-    except ProducerError:
-        return None
-    raw = str((payload or {}).get("models_root") or "").strip()
-    return Path(raw) if raw else None
-
-
-def install(host: str, package_id: str) -> dict[str, Any]:
-    """按包 id 安装；进度由服务端任务表回，插件不自己下。"""
-    payload = _post(host, "/v1/ui/models/install", {"id": package_id}, timeout=30.0)
-    return payload if isinstance(payload, dict) else {}
 
 
 def _decode(raw: str) -> bytes | None:
@@ -232,8 +153,3 @@ def run_task(
     if len(audio_bytes) < 200:
         raise ProducerError(f"模型「{model}」返回的音频仅 {len(audio_bytes)} 字节。")
     return audio_bytes
-
-
-def describe_response(payload: Any) -> str:
-    """调试用：响应字段一览（不写进界面文案）。"""
-    return json.dumps(sorted(payload.keys()), ensure_ascii=False) if isinstance(payload, dict) else ""

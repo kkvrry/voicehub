@@ -228,7 +228,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { AudioLines, FolderOpen, ImagePlus, ListMusic, Pause, Play, Star, Trash2, X } from 'lucide-vue-next'
 import { api } from '../api'
 import { store, actions, vocab, say } from '../store'
+import { useSettingsStore } from '../stores/settings'
 import { useAvatarImage } from '../composables/avatar'
+import { avatarFill } from '../composables/avatarColor'
 import AvatarPicker from './AvatarPicker.vue'
 import ChipSelect from './ui/ChipSelect.vue'
 import GenderPicker from './ui/GenderPicker.vue'
@@ -376,18 +378,18 @@ const isPlayingMain = computed(
 
 function playMain() {
   if (!mainUrl.value) return
-  // 排当前可见列表的主样例队列：详情里点主样例也能顺着卡片切上一条/下一条。
-  actions.playVoiceFromList(voice.value)
+  // 与卡片、左栏头像同一条路：排这条音色自己的样例队列，从主样例开始，
+  // 上/下一条只由用户点，播完当前这条不自动续播。
+  actions.playVoiceCard(voice.value)
 }
 /** 点开标题时，输入框里先放**现在显示的名字**（没单独设过就是文件夹名）：
  *  空着一个框、把名字塞进占位词，看起来像"这条没有名字"。 */
 const titleValue = computed(() => form.display || titleText.value)
 const initial = computed(() => (titleText.value || '?').slice(0, 1))
-const coverColor = computed(() => {
-  let hash = 0
-  for (const ch of titleText.value) hash = (hash * 31 + ch.codePointAt(0)) % 360
-  return `hsl(${hash}, 55%, 62%)`
-})
+const settings = useSettingsStore()
+const coverColor = computed(() =>
+  avatarFill(titleText.value, settings.appearance.look)
+)
 /** 来源徽标：平台音色挂引擎名，引擎目录里生成的本地音色挂那台引擎。
  *  普通本地音色不挂——"本地"这件事由这一颗与下面的样例区各自说过了。
  *  设计音色也不挂引擎：它只是那段描述，用哪家现由合成时选。

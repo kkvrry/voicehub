@@ -6,8 +6,9 @@
 分工：
 
 - **核心**做 ffmpeg：单声道、采样率、高通、限峰、时长校验（:mod:`app.infra.ffmpeg`）；
-- **模型**走本机 audio.cpp 服务的 ``POST /v1/tasks/run``（``task`` 为 ``sep`` / ``s2s``），
-  与 TTS 引擎同一种"填地址、发请求、收音频"的接法，不另起运行时；
+- **模型**走 audio.cpp 运行实例的 ``POST /v1/tasks/run``（``task`` 为 ``sep`` / ``s2s``）：
+  可选模型与地址都从正在运行的实例里取，插件不保存地址，也不在这里下载模型；
+  一台都没启动时只做裁剪；
 - **落库**走 :class:`app.usecase.library.LibraryService`：原件进回收站，sidecar 记处理链。
 """
 
@@ -30,7 +31,7 @@ __all__ = ["VoiceClean"]
 class VoiceClean(ProducerPlugin):
     key = "voiceclean"
     label = "音色处理"
-    description = "对音色样例做分离、降噪与规整，逐条试听后替换。"
+    description = "对音色样例做分离、降噪与裁剪，逐条试听后替换。"
     version = "0.1.0"
     settings_label = "音色处理"
     homepage = "https://github.com/0xShug0/audio.cpp"

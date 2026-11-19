@@ -314,7 +314,9 @@
   background: var(--sh-accent);
   box-shadow: none;
 }
-:root[data-look='classic'] .app-shell .audio-btn {
+/* 只压平普通播放键；生成 / 重试 / 过期三档自带底色，压平会把图标与底色刷成同一色。 */
+:root[data-look='classic'] .app-shell
+  .audio-btn:not(.is-generate):not(.is-danger):not(.is-stale) {
   background: var(--sh-accent);
 }
 

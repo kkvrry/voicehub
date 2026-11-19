@@ -66,6 +66,9 @@ class ProducerPlugin(ABC):
     homepage: ClassVar[str] = ""
     #: 导航顺序，小的在前。
     order: ClassVar[int] = 100
+    #: 导航分组：``main`` = 日常页面（音色库 / 生成 / 各生产方 / 音频库）；
+    #: ``tools`` = 下半段工具组（引擎 / 日志）。运行时管理这类工具型工作区放 ``tools``。
+    nav_section: ClassVar[str] = "main"
     #: 配置里含"指定并执行本机程序"这类字段：保存只认本机来源。默认不设限。
     settings_local_only: ClassVar[bool] = False
     #: 工作区左侧是否需要宿主那条音色栏。工具型插件（如 audio.cpp）不需要。
@@ -141,6 +144,8 @@ class ProducerPlugin(ABC):
             "version": self.version,
             "homepage": self.homepage,
             "order": self.order,
+            # 导航落哪一组：宿主只按这个字段摆位置，不认识具体插件。
+            "nav_section": self.nav_section,
             # 工作区左侧要不要音色栏：插件自描述，宿主不按 key 写分支。
             "voice_rail": self.voice_rail,
             # 栏的用法（指定 / 选中）：同上，宿主只认这两个值。

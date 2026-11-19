@@ -30,6 +30,7 @@ __all__ = [
     "set_enabled",
     "settings_for",
     "settings_payload",
+    "started_service",
 ]
 
 
@@ -115,6 +116,23 @@ def runtime_for(plugin: ProducerPlugin) -> ProducerRuntime:
     """一个插件一个代理；启动挂路由与设置页开关共用同一个实例。"""
     with _RUN_LOCK:
         return _RUNTIMES.setdefault(plugin.key, ProducerRuntime(plugin))
+
+
+def started_service(key: str) -> Any | None:
+    """已构造的插件服务；没构造、已停用或取不到时返回 ``None``。
+
+    查询别的插件（音色处理读 audio.cpp 实例）不该为了读一次状态去构造它：
+    audio.cpp 的构造函数会按自动启动清单拉进程。宿主启动时已经构造过启用插件，
+    这里只取现成的。
+    """
+    with _RUN_LOCK:
+        runtime = _RUNTIMES.get(key)
+    if runtime is None or not runtime.started:
+        return None
+    try:
+        return runtime.get()
+    except ProducerError:
+        return None
 
 
 def set_enabled(key: str, enabled: bool) -> dict[str, Any]:

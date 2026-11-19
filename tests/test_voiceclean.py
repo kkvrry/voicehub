@@ -24,7 +24,12 @@ def scanned(service, demo_library: Path):
 
 @pytest.fixture()
 def clean(scanned, tmp_path: Path):
-    return VoiceCleanService(tmp_path / "voiceclean", lambda: VoiceCleanSettings(host="http://127.0.0.1:9"))
+    """没有运行中的 audio.cpp：可选模型为空，规整仍然可用。"""
+    return VoiceCleanService(
+        tmp_path / "voiceclean",
+        lambda: VoiceCleanSettings(),
+        running_models=list,
+    )
 
 
 def _voice(service, name: str):
@@ -47,6 +52,82 @@ class TestScope:
         assert [item.file for item in items] == [target]
         assert target in info["label"]
 
+    def test_selected_files_scope(self, clean, scanned):
+        voice = _voice(scanned, "胡桃")
+        detail = scanned.get_voice(voice.id)
+        wanted = [detail.samples[0].file, detail.samples[-1].file]
+        items, info = clean._resolve({"voice_id": voice.id, "files": wanted})
+        assert sorted(item.file for item in items) == sorted(wanted)
+        assert info["count"] == 2
+        assert set(info["files"]) == set(wanted)
+
+    def test_trim_is_kept_per_file(self, clean, scanned):
+        voice = _voice(scanned, "胡桃")
+        detail = scanned.get_voice(voice.id)
+        target = next(row for row in detail.samples if row.duration >= 0.4).file
+        items, _info = clean._resolve(
+            {
+                "voice_id": voice.id,
+                "files": [target],
+                "trims": {target: {"start": 0.1, "end": 0.3}},
+            }
+        )
+        assert items[0].trim_start == 0.1
+        assert items[0].trim_end == 0.3
+        assert items[0].trimmed is True
+
+    def test_segments_are_kept_per_file(self, clean, scanned):
+        voice = _voice(scanned, "胡桃")
+        detail = scanned.get_voice(voice.id)
+        target = next(row for row in detail.samples if row.duration >= 0.4).file
+        items, _info = clean._resolve(
+            {
+                "voice_id": voice.id,
+                "files": [target],
+                "trims": {
+                    target: {
+                        "segments": [
+                            {"start": 0.0, "end": 0.1},
+                            {"start": 0.3, "end": 0.4},
+                        ]
+                    }
+                },
+            }
+        )
+        assert items[0].segments == [(0.0, 0.1), (0.3, 0.4)]
+        assert items[0].trim_start == 0.0
+        assert items[0].trim_end == 0.4
+        assert items[0].trimmed is True
+
+    def test_full_segment_is_not_a_trim(self, clean, scanned):
+        voice = _voice(scanned, "胡桃")
+        sample = scanned.get_voice(voice.id).samples[0]
+        items, _info = clean._resolve(
+            {
+                "voice_id": voice.id,
+                "files": [sample.file],
+                "trims": {
+                    sample.file: {
+                        "segments": [{"start": 0.0, "end": sample.duration}]
+                    }
+                },
+            }
+        )
+        assert items[0].trimmed is False
+        assert items[0].segments == []
+
+    def test_bad_trim_is_refused(self, clean, scanned):
+        voice = _voice(scanned, "胡桃")
+        target = scanned.get_voice(voice.id).samples[0].file
+        with pytest.raises(ProducerError, match="起点必须早于终点"):
+            clean._resolve(
+                {
+                    "voice_id": voice.id,
+                    "files": [target],
+                    "trims": {target: {"start": 0.3, "end": 0.1}},
+                }
+            )
+
     def test_missing_target_is_refused(self, clean, scanned):
         with pytest.raises(ProducerError, match="未选择音色"):
             clean._resolve({})
@@ -59,6 +140,83 @@ class TestScope:
         voice = _voice(scanned, "胡桃")
         with pytest.raises(ProducerError, match="没有这条音频"):
             clean._resolve({"voice_id": voice.id, "file": "没有这条.wav"})
+
+
+class TestFileTarget:
+    def test_save_source_keeps_name_and_duration(self, clean, tmp_path: Path):
+        from conftest import make_wav
+
+        wav = tmp_path / "我的录音.wav"
+        make_wav(wav, seconds=0.4)
+        out = clean.save_source(wav.read_bytes(), wav.name)
+        assert out["name"] == "我的录音.wav"
+        assert 0.35 <= out["duration"] <= 0.45
+        assert clean.source_file(out["token"]).is_file()
+        assert clean.source_name(out["token"]) == "我的录音.wav"
+
+    def test_file_scope_is_one_target(self, clean, tmp_path: Path):
+        from conftest import make_wav
+
+        wav = tmp_path / "input.wav"
+        make_wav(wav, seconds=0.5)
+        out = clean.save_source(wav.read_bytes(), wav.name)
+        items, info = clean._resolve({"kind": "file", "token": out["token"]})
+        assert info["kind"] == "file"
+        assert info["label"] == "文件「input.wav」"
+        assert len(items) == 1
+        assert items[0].file == "input.wav"
+        assert items[0].voice_id == f"file:{out['token']}"
+
+    def test_file_scope_honours_trim(self, clean, tmp_path: Path):
+        from conftest import make_wav
+
+        wav = tmp_path / "input.wav"
+        make_wav(wav, seconds=0.5)
+        out = clean.save_source(wav.read_bytes(), wav.name)
+        items, _info = clean._resolve(
+            {
+                "kind": "file",
+                "token": out["token"],
+                "trims": {"input.wav": {"start": 0.1, "end": 0.3}},
+            }
+        )
+        assert items[0].trimmed is True
+        assert items[0].trim_start == 0.1
+        assert items[0].trim_end == 0.3
+
+    def test_unknown_suffix_is_refused(self, clean):
+        with pytest.raises(ProducerError, match="不是可处理的音频"):
+            clean.save_source(b"hello", "note.txt")
+
+    def test_expired_token_is_refused(self, clean):
+        with pytest.raises(ProducerError, match="已失效"):
+            clean.source_file("0123456789ab")
+
+    def test_download_name_marks_processed(self, clean, tmp_path: Path):
+        from conftest import make_wav
+
+        wav = tmp_path / "input.wav"
+        make_wav(wav, seconds=0.3)
+        out = clean.save_source(wav.read_bytes(), wav.name)
+        item = {
+            "index": 0,
+            "voice_id": f"file:{out['token']}",
+            "voice": out["name"],
+            "file": out["name"],
+            "source": str(clean.source_file(out["token"])),
+            "state": "done",
+            "replaceable": True,
+        }
+        clean._job = _Job(
+            id="t1",
+            folder=tmp_path / "job",
+            scope={"kind": "file", "token": out["token"]},
+            steps=[],
+            items=[_Item(**item)],
+        )
+        assert clean.download_name("t1", 0) == "input（处理）.wav"
+        with pytest.raises(ProducerError, match="电脑文件"):
+            clean.apply("t1", [0])
 
 
 class TestReplace:
@@ -169,16 +327,64 @@ class TestDeclaration:
 
 
 class TestClient:
-    def test_state_is_mounted(self, client):
+    def test_state_is_mounted(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "app.producers.builtin.voiceclean.service._runtime_models", list
+        )
         payload = client.get("/api/v1/producers/voiceclean/state").json()
         assert [step["key"] for step in payload["steps"]] == ["separate", "denoise"]
         assert payload["core"]["key"] == "normalize"
-        assert payload["ready"] is False  # 测试环境没有 audio.cpp
+        assert payload["core"]["default"] is False
+        assert payload["core"]["label"] == "统一声道与峰值"
+        assert payload["core"]["note"]
+        # 没有运行中的实例：步骤卡只留一句说明，页面本身仍然可用（规整不依赖服务）。
+        assert all(step["models"] == [] for step in payload["steps"])
+        assert all(step["reason"] for step in payload["steps"])
 
-    def test_run_refuses_without_steps(self, client):
-        response = client.post("/api/v1/producers/voiceclean/run", json={"scope": {}})
+    def test_source_upload_and_playback(self, client, tmp_path: Path):
+        from conftest import make_wav
+
+        wav = tmp_path / "input.wav"
+        make_wav(wav, seconds=0.3)
+        response = client.post(
+            "/api/v1/producers/voiceclean/source",
+            files={"file": ("input.wav", wav.read_bytes(), "audio/wav")},
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["object"] == "voiceclean_source"
+        assert payload["name"] == "input.wav"
+        audio = client.get(
+            f"/api/v1/producers/voiceclean/source/audio?token={payload['token']}"
+        )
+        assert audio.status_code == 200
+        assert audio.content[:4] == b"RIFF"
+
+    def test_source_upload_refuses_non_audio(self, client):
+        response = client.post(
+            "/api/v1/producers/voiceclean/source",
+            files={"file": ("note.txt", b"hello", "text/plain")},
+        )
         assert response.status_code == 400
-        assert "至少勾选" in response.json()["error"]["message"]
+        assert "不是可处理的音频" in response.json()["error"]["message"]
+
+    def test_run_with_only_core_still_needs_a_target(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "app.producers.builtin.voiceclean.service._runtime_models", list
+        )
+        response = client.post(
+            "/api/v1/producers/voiceclean/run", json={"scope": {}, "steps": []}
+        )
+        assert response.status_code == 400
+        assert "未选择音色" in response.json()["error"]["message"]
+
+    def test_run_refuses_when_every_step_is_off(self, clean, scanned):
+        voice = _voice(scanned, "胡桃")
+        with pytest.raises(ProducerError, match="没有要执行的步骤"):
+            clean.run(
+                {"voice_id": voice.id},
+                [{"key": "normalize", "enabled": False}],
+            )
 
     def test_audio_picks_vocal_stem(self):
         vocal = base64.b64encode(b"RIFF" + b"\0" * 300).decode()
@@ -212,6 +418,28 @@ class TestNormalize:
             assert handle.getnchannels() == 1
             assert handle.getsampwidth() == 2
             assert handle.getframerate() == source_rate  # 源采样率，未升采样
+
+    def test_normalize_trims_to_range(self, tmp_path: Path):
+        from conftest import make_wav
+
+        source = tmp_path / "src.wav"
+        make_wav(source, seconds=0.5)
+        target = tmp_path / "out.wav"
+        ffmpeg.normalize(source, target, start=0.1, duration=0.2)
+        with wave.open(str(target), "rb") as handle:
+            seconds = handle.getnframes() / handle.getframerate()
+        assert 0.15 <= seconds <= 0.25
+
+    def test_normalize_joins_segments(self, tmp_path: Path):
+        from conftest import make_wav
+
+        source = tmp_path / "src.wav"
+        make_wav(source, seconds=0.8)
+        target = tmp_path / "out.wav"
+        ffmpeg.normalize(source, target, segments=[(0.0, 0.1), (0.4, 0.5)])
+        with wave.open(str(target), "rb") as handle:
+            seconds = handle.getnframes() / handle.getframerate()
+        assert 0.15 <= seconds <= 0.25
 
 
 class _StubModel:
@@ -271,27 +499,64 @@ class _StubModel:
         self.server.server_close()
 
 
+class TestModels:
+    def _service(self, tmp_path: Path, rows):
+        return VoiceCleanService(
+            tmp_path / "vc", lambda: VoiceCleanSettings(), running_models=lambda: rows
+        )
+
+    def test_steps_only_offer_running_models(self, tmp_path: Path):
+        service = self._service(
+            tmp_path,
+            [
+                {"id": "sidon_f32", "family": "sidon", "task": "s2s", "url": "http://127.0.0.1:18103"},
+                {"id": "cosyvoice3", "family": "cosyvoice3", "task": "tts", "url": "http://127.0.0.1:18092"},
+            ],
+        )
+        steps = {row["key"]: row for row in service.state()["steps"]}
+        assert [row["id"] for row in steps["denoise"]["models"]] == ["sidon_f32"]
+        assert steps["denoise"]["models"][0]["prep"] == [48000, 1]
+        # TTS 模型不属于任何一步；分离步骤没有可选项，但有说明。
+        assert steps["separate"]["models"] == []
+        assert steps["separate"]["reason"]
+
+    def test_family_registered_model_uses_step_package(self, tmp_path: Path):
+        """服务端注册族名时按该步骤推荐的包取名字与输入格式。"""
+        service = self._service(
+            tmp_path,
+            [{"id": "mossformer2", "family": "mossformer2", "task": "s2s", "url": "http://127.0.0.1:18101"}],
+        )
+        steps = {row["key"]: row for row in service.state()["steps"]}
+        denoise = steps["denoise"]["models"][0]
+        separate = steps["separate"]["models"][0]
+        assert denoise["id"] == separate["id"] == "mossformer2"
+        assert denoise["prep"] == [48000, 1]
+        assert separate["prep"] == [16000, 1]
+        assert "MossFormer2" in denoise["label"]
+
+    def test_run_refuses_model_that_is_not_running(self, clean, scanned):
+        voice = _voice(scanned, "胡桃")
+        with pytest.raises(ProducerError, match="没有在运行"):
+            clean.run(
+                {"voice_id": voice.id},
+                [{"key": "denoise", "enabled": True, "model": "sidon_f32", "options": {}}],
+            )
+
+
 class TestPipeline:
     def test_run_processes_and_is_replaceable(self, scanned, tmp_path: Path):
         from conftest import make_wav
 
-        from app.producers.builtin.audiocpp import catalog
-
-        models_root = tmp_path / "models"
-        models_root.mkdir()
-        for family in catalog.families():
-            for item in family.get("packages") or []:
-                if item.get("id") in {"sidon_f32", "mossformer2_se_48k_f32"}:
-                    for path in catalog.package_files(models_root, item):
-                        path.parent.mkdir(parents=True, exist_ok=True)
-                        path.write_bytes(b"x")
-
         sample_wav = tmp_path / "reply.wav"
         make_wav(sample_wav, seconds=0.5)
-        stub = _StubModel(sample_wav, models_root)
+        stub = _StubModel(sample_wav, tmp_path / "models")
         try:
             clean = VoiceCleanService(
-                tmp_path / "vc", lambda: VoiceCleanSettings(host=stub.url, timeout=60)
+                tmp_path / "vc",
+                lambda: VoiceCleanSettings(timeout=60),
+                running_models=lambda: [
+                    {"id": "sidon_f32", "family": "sidon", "task": "s2s", "url": stub.url}
+                ],
             )
             clean.run(
                 {"voice_id": _first_local(scanned)},
@@ -308,6 +573,155 @@ class TestPipeline:
             assert view["items"][0]["result_seconds"] > 0
             out = clean.apply(view["id"], [0])
             assert out["replaced"] == 1
+        finally:
+            stub.close()
+
+    @pytest.mark.skipif(not ffmpeg.find_ffmpeg(None), reason="本机没有 ffmpeg")
+    def test_core_only_still_processes(self, scanned, tmp_path: Path):
+        """没有任何模型时，最后一步「规整」照样能把整条音色跑完。"""
+        voice = _voice(scanned, "胡桃")
+        target = scanned.get_voice(voice.id).samples[0].file
+        clean = VoiceCleanService(
+            tmp_path / "vc", lambda: VoiceCleanSettings(), running_models=list
+        )
+        clean.run({"voice_id": voice.id, "file": target}, [])
+        for _ in range(120):
+            view = clean.job_view()
+            if view and view["state"] != "running":
+                break
+            time.sleep(0.1)
+        view = clean.job_view()
+        assert view["state"] == "done"
+        assert view["items"][0]["replaceable"] is True
+        assert view["steps"] == []
+
+    @pytest.mark.skipif(not ffmpeg.find_ffmpeg(None), reason="本机没有 ffmpeg")
+    def test_core_only_honours_trim(self, scanned, tmp_path: Path):
+        voice = _voice(scanned, "胡桃")
+        sample = next(
+            row for row in scanned.get_voice(voice.id).samples if row.duration >= 0.4
+        )
+        clean = VoiceCleanService(
+            tmp_path / "vc", lambda: VoiceCleanSettings(), running_models=list
+        )
+        clean.run(
+            {
+                "voice_id": voice.id,
+                "files": [sample.file],
+                "trims": {sample.file: {"start": 0.1, "end": 0.3}},
+            },
+            [],
+        )
+        for _ in range(120):
+            view = clean.job_view()
+            if view and view["state"] != "running":
+                break
+            time.sleep(0.1)
+        view = clean.job_view()
+        item = view["items"][0]
+        assert view["state"] == "done"
+        assert item["trimmed"] is True
+        assert 0.15 <= item["origin_seconds"] <= 0.25
+        assert 0.15 <= item["result_seconds"] <= 0.25
+        assert item["replaceable"] is True
+
+    @pytest.mark.skipif(not ffmpeg.find_ffmpeg(None), reason="本机没有 ffmpeg")
+    def test_trim_only_runs_without_steps(self, scanned, tmp_path: Path):
+        """没有模型步骤、也不做收尾时，只裁剪仍然能生成可替换的结果。"""
+        voice = _voice(scanned, "胡桃")
+        sample = next(
+            row for row in scanned.get_voice(voice.id).samples if row.duration >= 0.4
+        )
+        clean = VoiceCleanService(
+            tmp_path / "vc", lambda: VoiceCleanSettings(), running_models=list
+        )
+        clean.run(
+            {
+                "voice_id": voice.id,
+                "files": [sample.file],
+                "trims": {
+                    sample.file: {
+                        "segments": [
+                            {"start": 0.0, "end": 0.1},
+                            {"start": 0.3, "end": 0.4},
+                        ]
+                    }
+                },
+            },
+            [{"key": "normalize", "enabled": False}],
+        )
+        for _ in range(120):
+            view = clean.job_view()
+            if view and view["state"] != "running":
+                break
+            time.sleep(0.1)
+        view = clean.job_view()
+        item = view["items"][0]
+        assert view["state"] == "done"
+        assert view["steps"] == []
+        assert item["trimmed"] is True
+        assert len(item["segments"]) == 2
+        assert 0.15 <= item["origin_seconds"] <= 0.25
+        assert item["replaceable"] is True
+
+    @pytest.mark.skipif(not ffmpeg.find_ffmpeg(None), reason="本机没有 ffmpeg")
+    def test_file_target_processes_without_replace(self, scanned, tmp_path: Path):
+        """电脑文件只产出结果：不做 50 ms 替换校验，给下载名。"""
+        from conftest import make_wav
+
+        wav = tmp_path / "input.wav"
+        make_wav(wav, seconds=0.4)
+        clean = VoiceCleanService(
+            tmp_path / "vc", lambda: VoiceCleanSettings(), running_models=list
+        )
+        source = clean.save_source(wav.read_bytes(), wav.name)
+        clean.run({"kind": "file", "token": source["token"]}, [])
+        for _ in range(120):
+            view = clean.job_view()
+            if view and view["state"] != "running":
+                break
+            time.sleep(0.1)
+        view = clean.job_view()
+        assert view["state"] == "done"
+        assert view["scope"]["kind"] == "file"
+        assert view["items"][0]["replaceable"] is True
+        assert view["items"][0]["error"] == ""
+        assert clean.download_name(view["id"], 0) == "input（处理）.wav"
+        with pytest.raises(ProducerError, match="电脑文件"):
+            clean.apply(view["id"], [0])
+
+    def test_core_can_be_skipped_next_to_a_model_step(self, scanned, tmp_path: Path):
+        from conftest import make_wav
+
+        sample_wav = tmp_path / "reply.wav"
+        make_wav(sample_wav, seconds=0.5)
+        stub = _StubModel(sample_wav, tmp_path / "models")
+        try:
+            voice = _voice(scanned, "胡桃")
+            target = scanned.get_voice(voice.id).samples[0].file
+            clean = VoiceCleanService(
+                tmp_path / "vc",
+                lambda: VoiceCleanSettings(timeout=60),
+                running_models=lambda: [
+                    {"id": "sidon_f32", "family": "sidon", "task": "s2s", "url": stub.url}
+                ],
+            )
+            clean.run(
+                {"voice_id": voice.id, "files": [target]},
+                [
+                    {"key": "normalize", "enabled": False},
+                    {"key": "denoise", "enabled": True, "model": "sidon_f32", "options": {}},
+                ],
+            )
+            for _ in range(120):
+                view = clean.job_view()
+                if view and view["state"] != "running":
+                    break
+                time.sleep(0.1)
+            view = clean.job_view()
+            assert view["normalize"] is False
+            assert view["state"] == "done"
+            assert view["items"][0]["replaceable"] is True
         finally:
             stub.close()
 

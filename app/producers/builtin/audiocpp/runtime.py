@@ -1277,6 +1277,45 @@ class RuntimeService:
             )
         return rows
 
+    def running_models(self) -> list[dict[str, Any]]:
+        """正在运行的实例注册的模型：``[{id, family, task, path, url}]``。
+
+        音色处理按这份清单找模型与地址：只认 ``/v1/models`` 里真有的——
+        装了没启动、或实例没加载那个包，都不该出现在可选列表里。
+        """
+        if self.endpoint:
+            urls = [self.endpoint]
+        else:
+            items = self.instances()
+            probes = self.pool.probe_many(item.port for item in items)
+            urls = [
+                url_of(item.port)
+                for item in items
+                if probes.get(item.port, (False, 0))[0]
+            ]
+        found: dict[str, dict[str, Any]] = {}
+        for url in urls:
+            conn = manager.Connection.open(url, 0.8)
+            if conn is None:
+                continue
+            try:
+                rows = conn.models()
+            except ProducerError:
+                continue
+            for row in rows:
+                model_id = str(row.get("id") or "")
+                if not model_id or model_id in found:
+                    continue
+                found[model_id] = {
+                    "id": model_id,
+                    "family": str(row.get("family") or ""),
+                    "task": str(row.get("task") or ""),
+                    "path": str(row.get("path") or ""),
+                    "package": str(row.get("package_id") or ""),
+                    "url": url,
+                }
+        return list(found.values())
+
     def state(self) -> dict[str, Any]:
         self.pool.reap()
         conn = self.connection()

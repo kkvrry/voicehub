@@ -1,6 +1,7 @@
-"""音色处理配置：只有一个模型服务地址。
+"""音色处理配置：只有处理超时。
 
-模型清单、已装与否都问那台服务，本插件不保存第二份；换服务地址即换全部模型。
+服务地址不在这里存：模型与地址都从 audio.cpp 插件的运行实例里取，运行着几台就
+用几台；哪台都没有时，页面仍可只做裁剪，不要求先填一个地址。
 """
 
 from __future__ import annotations
@@ -11,15 +12,10 @@ from app.domain.uischema import ui_hints
 
 __all__ = ["GROUP_SERVICE", "VoiceCleanSettings"]
 
-GROUP_SERVICE = "模型服务"
+GROUP_SERVICE = "处理"
 
 
 class VoiceCleanSettings(BaseModel):
-    host: str = Field(
-        default="http://127.0.0.1:8080",
-        description="本机 audio.cpp 服务地址；模型安装与推理都发往这里。",
-        json_schema_extra=ui_hints("服务地址", group=GROUP_SERVICE),
-    )
     timeout: int = Field(
         default=600,
         ge=10,

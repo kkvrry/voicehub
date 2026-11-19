@@ -2406,7 +2406,7 @@ select.sh-field {
   border-radius: 10px;
 }
 
-/* 播放条：顶栏里的一行，没有边框与底色，只有图标、一行字与下沿的一条进度线。
+/* 播放条：顶栏中缝里的一只涨潮块，圆角面板 + 轻表面，底色就是进度。
    它不占浮层，内容不为它让位；四套外观都不必再压平——本来就没有玻璃。 */
 .app-shell .pb-name {
   color: var(--sh-text);
@@ -2424,49 +2424,17 @@ select.sh-field {
   color: var(--star);
   background: color-mix(in srgb, var(--star) 14%, transparent);
 }
-/* 下沿那条线：轨道是中性色，进度是强调色到第二强调的渐变，末端一颗珠子；
-   播放时一道流光扫过（关掉动效时停）。手柄层是透明的，只负责点与拖。 */
-.app-shell .pb-track {
-  background: var(--sh-track);
+/* 播放键是这一行唯一的实心动作：浅强调底、强调色图标，不抢成一颗主按钮。 */
+.app-shell .pb-btn.is-play {
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft);
 }
-.app-shell .pb-fill {
-  background: linear-gradient(90deg, var(--sh-accent), var(--sh-accent-2));
-  box-shadow: 0 0 10px -2px var(--sh-accent-ring);
+.app-shell .pb-btn.is-play:hover:not(:disabled) {
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft-2);
 }
-.app-shell .pb-bar.is-playing .pb-fill::after {
-  animation: pb-flow 2.2s linear infinite;
-}
-@keyframes pb-flow {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(100%);
-  }
-}
-.app-shell[data-motion='off'] .pb-bar .pb-fill::after {
-  animation: none;
-}
-/* 末端那颗珠子：指针移上来才现身，其余时候只有那条线。 */
-.app-shell .pb-track::after {
-  content: '';
-  position: absolute;
-  left: var(--p, 0%);
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin-left: -3.5px;
-  border-radius: 50%;
-  background: var(--sh-accent-2);
-  box-shadow: 0 0 0 2px var(--sh-accent-soft);
-  opacity: 0;
-  transform: translateY(-50%);
-  transition: opacity 140ms var(--sh-ease);
-}
-.app-shell .pb-bar:hover .pb-track::after,
-.app-shell .pb-bar:has(.pb-seek:focus-visible) .pb-track::after {
-  opacity: 1;
-}
+/* 进度是播放器自己的底色：从左向右涨，前沿只留一道水线，
+   不带圆点、发光与流光；到 100% 时整块面板都略偏向强调色。 */
 .app-shell .pb-seek {
   -webkit-appearance: none;
   appearance: none;
@@ -2500,20 +2468,20 @@ select.sh-field {
   background: transparent;
 }
 /* 播放条始终停在居中搜索框的左侧，绝不把它挤走。
-   宽屏放得下全部：名字 + 收藏 / 指定 / 开卡；窄一档先收名字，再窄收掉两颗管理键。
-   再窄（1100 以下）顶栏没有中缝可用，播放条回到这一行里排，搜索框随之让出宽度——
+   宽屏放得下全部：名字 + 收藏 / 指定 / 开卡；1439 以下先收掉两颗管理键。
+   1259 以下顶栏没有中缝可用，播放条回到这一行里排，搜索框随之让出宽度——
    那是让位，不是被推走。 */
-@media (min-width: 1100px) and (max-width: 1300px) {
-  .app-shell .pb-name {
-    display: none;
-  }
-}
-@media (min-width: 1100px) and (max-width: 1260px) {
+@media (max-width: 1439px) {
   .app-shell .pb-btn.is-act {
     display: none;
   }
+  /* 中间这段没有两颗管理键的位置，名字与报错也让出宽度，块不许压到品牌。 */
+  .app-shell .pb-name,
+  .app-shell .pb-error {
+    max-width: 60px;
+  }
 }
-@media (min-width: 721px) and (max-width: 1099px) {
+@media (min-width: 721px) and (max-width: 1259px) {
   .app-shell .pb-bar {
     position: relative;
     top: auto;
@@ -3483,8 +3451,7 @@ select.sh-field {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 10px 8px 0;
-  border-right: 1px solid var(--sh-line-soft);
+  padding: 10px 0 0;
 }
 /* 平板宽度下收起音色卡片列：180px 宽会把卡片挤成半截，反而不如把这一列
    整段让给行表；挑音色仍可从行表上方的「音色管理」进。 */
@@ -3503,7 +3470,7 @@ select.sh-field {
 .producer-cards > .synth-rail {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 0 4px 0 0;
+  padding: 0;
 }
 /* 章节表与行表都要一行一行读，窗口再宽也不铺满。 */
 .app-page[data-page='producer'] {

@@ -180,6 +180,8 @@ def test_plugin_is_workspace_only() -> None:
     assert plugin.settings_schema() is None
     assert plugin.describe()["icon_url"] == "/api/v1/producers/audiocpp/icon"
     assert plugin.describe()["voice_rail"] is False
+    # 运行时管理是工具：导航与引擎、日志同组，不进日常页。
+    assert plugin.describe()["nav_section"] == "tools"
 
 
 def test_state_has_no_host_config(service: rt.RuntimeService) -> None:
