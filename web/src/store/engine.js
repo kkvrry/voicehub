@@ -422,6 +422,20 @@ export async function refreshEngine(key) {
 }
 
 /**
+ * 清除这台引擎在库里的音色条目。只删库：平台侧数据与磁盘上的样例都不动。
+ *
+ * @param {string} key
+ */
+export async function clearEngineVoices(key) {
+  const result = await api.clearEngineVoices(key)
+  // 详情正开着这张引擎的某条音色时先摘掉，刷新时不再按 id 去取（那条已不在库里）。
+  if (store.detail && store.detail.source === key) store.detail = null
+  await refresh()
+  say(result.removed ? `已清除 ${result.removed} 个音色条目` : '库里没有这台引擎的音色')
+  return result
+}
+
+/**
  * @param {string} key
  * @param {any} payload
  */

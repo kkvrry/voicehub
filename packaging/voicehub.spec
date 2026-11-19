@@ -61,7 +61,9 @@ for name in ("ffmpeg.exe", "ffprobe.exe", "LICENSE", "README.txt"):
 for path in sorted(VENDOR.glob("*.dll")):
     binaries.append((str(path), "vendor/ffmpeg"))
 
-hiddenimports = ["app.main", "voicehub_tray", "multipart", "multipart.multipart"]
+# soundcard 走延迟导入（内录），显式列出，避免静态分析漏掉平台后端；
+# 它自带 PyInstaller hook（hook-dirs），后端模块与 cffi 由 hook 负责。
+hiddenimports = ["app.main", "voicehub_tray", "soundcard", "multipart", "multipart.multipart"]
 for package in (
     "app.engines.builtin",
     "app.llm.builtin",

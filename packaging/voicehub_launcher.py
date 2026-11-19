@@ -327,6 +327,8 @@ def _icon_path() -> Path:
 def _run_tray(server_thread: threading.Thread, url: str) -> None:
     from voicehub_tray import TrayIcon
 
+    from app.usecase import capture as capture_uc
+
     tray = TrayIcon(
         title=f"{APP_NAME} · 音色库与有声书",
         icon_path=_icon_path(),
@@ -334,6 +336,11 @@ def _run_tray(server_thread: threading.Thread, url: str) -> None:
         on_toggle_autostart=_toggle_autostart,
         is_autostart_enabled=autostart_enabled,
         on_quit=lambda: _quit(tray),
+        on_toggle_capture=lambda: _toggle_capture(tray),
+        capture_state=capture_uc.service.peek,
+        hotkey=capture_uc.HOTKEY,
+        # 热键只有在托盘里才注册得成：结果写回应用层，设置页据此显示可用性。
+        on_hotkey_result=lambda ok, reason: capture_uc.service.note_hotkey(ok, reason),
     )
 
     def watch() -> None:
@@ -342,6 +349,38 @@ def _run_tray(server_thread: threading.Thread, url: str) -> None:
 
     threading.Thread(target=watch, name="voicehub-watch", daemon=True).start()
     tray.run()
+
+
+def _toggle_capture(tray) -> None:
+    """热键与托盘菜单共用的起停：结果只通过气泡与日志说明。"""
+    from app.infra.loghub import CHANNEL
+    from app.usecase import capture as capture_uc
+
+    service = capture_uc.service
+    try:
+        if service.peek()["recording"]:
+            result = service.stop()
+            seconds = int(result["seconds"])
+            silent = bool(result.get("silent"))
+            text = f"已保存 {Path(result['file']).name}（{seconds} 秒）"
+            if silent:
+                text += "，未检测到声音。"
+            tray.notify("内录已停止", text, warning=silent)
+            CHANNEL.info(
+                f"内录已停止：{text}",
+                source="capture",
+                file=result["file"],
+                seconds=seconds,
+                peak=result.get("peak"),
+                silent=silent,
+            )
+        else:
+            service.start()
+            tray.notify("内录已开始", "再按一次停止。")
+            CHANNEL.info("内录已开始。", source="capture")
+    except capture_uc.CaptureError as exc:
+        tray.notify("内录失败", str(exc), warning=True)
+        CHANNEL.warning(f"内录失败：{exc}", source="capture")
 
 
 def _toggle_autostart() -> None:
@@ -354,6 +393,14 @@ def _quit(tray) -> None:
     state["server"].should_exit = True
 
     def wait_and_stop() -> None:
+        # 先收内录：进程退出前不关闭文件，wav 头里的长度就停在占位值上。
+        from app.usecase import capture as capture_uc
+
+        try:
+            if capture_uc.service.peek()["recording"]:
+                capture_uc.service.stop()
+        except Exception:  # noqa: BLE001 - 收尾失败不改变退出流程
+            _LOG.warning("退出前停止内录失败", exc_info=True)
         state["server_thread"].join(timeout=15)
         tray.stop()
 

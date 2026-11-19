@@ -378,6 +378,9 @@ export const api = {
       method: 'POST',
       timeout: 180_000,
     }),
+  /** 清除这台引擎在库里的音色条目（只删库，磁盘上的文件不动）。 @param {string} key */
+  clearEngineVoices: (key) =>
+    request(`/api/v1/engines/${encodeURIComponent(key)}/voices`, { method: 'DELETE' }),
   /**
    * 音色克隆走 multipart；音源可以是上传文件，也可以是库里已有样例的 id + 文件名。
    * @param {string} key
@@ -576,6 +579,10 @@ export const api = {
    */
   transcribeRecording: (name) =>
     request(`/api/v1/recordings/${encodeURIComponent(name)}/transcribe`, { method: 'POST' }),
+  /**
+   * 内录状态：可用性、热键与注册结果。起停由托盘热键完成，页面只读状态。
+   */
+  capture: () => request('/api/v1/capture/status'),
 
   // ---- 文案库 ----
   // 生成样例时"挑一句现成的"那几组句子。它写在服务的数据目录里、设置页可改，

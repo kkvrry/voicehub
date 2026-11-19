@@ -309,6 +309,22 @@ class TestPlatformVoices:
         with pytest.raises(Exception, match="本地音色"):
             service.delete_platform_voice(hutao.id)
 
+    def test_clearing_a_source_removes_only_its_entries(self, service):
+        from app.engines.base import VoiceMeta
+
+        service.add_platform_voice("fish_audio", VoiceMeta(id="f1", name="甲"))
+        service.add_platform_voice("fish_audio", VoiceMeta(id="f2", name="乙"))
+        service.add_platform_voice("minimax", VoiceMeta(id="m1", name="丙"))
+
+        assert service.clear_source_voices("fish_audio") == 2
+        assert service.list_voices(source="fish_audio") == []
+        assert [v.source for v in service.list_voices()] == ["minimax"]
+
+    def test_local_voices_cannot_be_cleared_by_source(self, scanned):
+        service, _ = scanned
+        with pytest.raises(LibraryError, match="平台来源"):
+            service.clear_source_voices("local")
+
 
 class TestReference:
     def test_reference_gives_path_text_emotion_in_one_call(self, scanned):

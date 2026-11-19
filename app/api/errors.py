@@ -85,6 +85,11 @@ CODES: dict[str, str] = {
     "asr_not_installed": "识别引擎未就绪",
     "dictation_required": "没有可转写的音频",
     "recording_required": "没有收到录音",
+    # 内录
+    "capture_unavailable": "内录不可用",
+    "capture_in_progress": "内录已在进行中",
+    "capture_idle": "当前没有内录",
+    "capture_failed": "内录失败",
     # 对话模型
     "llm_failed": "对话模型调用失败",
     "llm_not_found": "对话模型不存在",

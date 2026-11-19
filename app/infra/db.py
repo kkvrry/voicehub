@@ -547,6 +547,21 @@ class HubDB:
             conn.execute("DELETE FROM samples WHERE voice_id = ?", (voice_id,))
             conn.execute("DELETE FROM voices WHERE id = ?", (voice_id,))
 
+    def delete_voices_by_source(self, source: str) -> int:
+        """删掉某个来源的全部音色行（连同样例记录），返回条数。只动库。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM voices WHERE source = ?", (source,)
+            ).fetchone()
+            count = int(row[0]) if row else 0
+            conn.execute(
+                "DELETE FROM samples WHERE voice_id IN"
+                " (SELECT id FROM voices WHERE source = ?)",
+                (source,),
+            )
+            conn.execute("DELETE FROM voices WHERE source = ?", (source,))
+        return count
+
     def touch_recent(self, voice_id: str) -> None:
         with self._connect() as conn:
             conn.execute(

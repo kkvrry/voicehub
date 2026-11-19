@@ -195,6 +195,10 @@ function navigate(key: string) {
     void actions.openSynth()
     return
   }
+  if (key === 'audio') {
+    actions.openAudio()
+    return
+  }
   if (key === 'logs') {
     actions.openLogs()
     return

@@ -71,28 +71,20 @@
       <!-- 主样例：**一颗按钮两副长相**——亮着就是主样例，灰的就是没指定。
            设别的会自动换过去，所以不需要"取消指定"这第二个动作。
            宽度给最小值：两副长相的字数不同，盒子一样宽，播放钮才不会被推来推去。
-           生成页点开这张详情是为了"这次用哪一段当参考"：同一个位置改说「使用」，
-           点它就把这一条钉成参考音频（卡片列顶上一张冻结卡），主样例那条规矩不动。 -->
+           生成页与处理页点开这张详情是为了"这次用哪一段"：同一个位置改说「使用」，
+           点它就把这一条落成当前目标，主样例那条规矩不动。 -->
       <button
-        v-if="inSynth || multiple"
+        v-if="choosing || multiple"
         type="button"
         class="sample-main set-main"
-        :class="{ 'is-on': inSynth ? chosen : sample.is_main }"
-        :disabled="inSynth ? chosen : sample.is_main"
-        :aria-pressed="inSynth ? chosen : sample.is_main"
-        :title="
-          inSynth
-            ? chosen
-              ? '这一条就是这次生成的参考音频'
-              : '用这一条当这次生成的参考音频'
-            : sample.is_main
-              ? '这一条就是主样例（设别的会自动换过去）'
-              : '只指定音色名时，引擎默认用这一条做参考'
-        "
-        @click.stop="inSynth ? useReference() : setMain()"
+        :class="{ 'is-on': choosing ? chosen : sample.is_main }"
+        :disabled="choosing ? chosen : sample.is_main"
+        :aria-pressed="choosing ? chosen : sample.is_main"
+        :title="choosing ? useTitle : sample.is_main ? '这一条就是主样例（设别的会自动换过去）' : '只指定音色名时，引擎默认用这一条做参考'"
+        @click.stop="choosing ? useReference() : setMain()"
       >
-        <Check v-if="inSynth ? chosen : sample.is_main" :size="12" :stroke-width="1.8" />
-        <span v-if="inSynth">{{ chosen ? '使用中' : '使用' }}</span>
+        <Check v-if="choosing ? chosen : sample.is_main" :size="12" :stroke-width="1.8" />
+        <span v-if="choosing">{{ chosen ? '使用中' : '使用' }}</span>
         <span v-else>{{ sample.is_main ? '主样例' : '设为主样例' }}</span>
       </button>
       <!-- 「更多」：识别与移除都收在这里。菜单**不再只在识别引擎就绪时出现**——
@@ -163,17 +155,34 @@ const moreEl = ref(/** @type {any} */ (null))
  *  用 `ready` 而不是 `current`：引擎配错地址时后者仍非空，点了只能报错。 */
 const asrReady = computed(() => Boolean(store.asr.ready))
 
-/** 这张详情是从生成页点开的、而且就是这次生成的那条音色：那颗按钮改说「使用」，
- *  点它 = 把这一条指定为这次的参考音频。
+/** 这一页是不是在"挑一条音频当这次的目标"：生成页用它当参考音频，
+ *  声明了 `rail_mode = pick` 的生产方工作区用它当处理目标。 */
+const pickingTarget = computed(() => {
+  if (store.view === 'synth') return true
+  if (store.view !== 'producer') return false
+  const entry = store.producers.find((item) => item.key === store.producer.key)
+  return entry?.rail_mode === 'pick'
+})
+
+/** 这张详情是从"挑音频"的那一页点开的、而且就是这条音色：那颗按钮改说「使用」，
+ *  点它 = 把这一条落成当前目标。
  *  判据看**打开的那条音色**，不看当前选中：从生成页点开 A 时若 `voiceId` 还停在 B，
- *  在这里点「使用」应当连音色一起落到 A（`pinReference` 会一起改）。 */
-const inSynth = computed(
-  () => store.view === 'synth' && Boolean(store.detail?.id) && store.detail.id === props.voice.id
+ *  在这里点「使用」应当连音色一起落到 A。 */
+const choosing = computed(
+  () => pickingTarget.value && Boolean(store.detail?.id) && store.detail.id === props.voice.id
 )
-/** 这一条是不是"这次的参考"。 */
-const chosen = computed(
-  () => inSynth.value && store.synth.values.reference_audio === props.sample.path
-)
+/** 这一条是不是"这次用的那一条"。 */
+const chosen = computed(() => {
+  if (!choosing.value) return false
+  if (store.view === 'synth') return store.synth.values.reference_audio === props.sample.path
+  return store.pick.voiceId === props.voice.id && store.pick.file === props.sample.file
+})
+/** 「使用」那颗按钮的说明：两个页面要落的不是同一个地方。 */
+const useTitle = computed(() => {
+  const synth = store.view === 'synth'
+  if (chosen.value) return synth ? '这一条就是这次生成的参考音频' : '这一条就是这次处理的目标'
+  return synth ? '用这一条当这次生成的参考音频' : '只处理这一条音频'
+})
 
 /** 听出这段音频念的话，填进「说话内容」。已写过字时先问一句（可能是手打的），
  *  空着就直接填——那种时候"识别一下"与"填上"是同一件事。 */
@@ -299,11 +308,12 @@ async function setMain() {
   await actions.setMain(props.sample.file)
 }
 
-/** 生成页的「使用」：这一条就是这次生成的参考音频，卡片列顶上立刻钉住它。
- *  选完就关掉详情：这一步的收尾是回生成页看那张冻结卡，不是留在详情里看别的东西
- *  （要换一条，点冻结卡又回到这张详情，不用再从头找）。 */
+/** 「使用」：这一条就是这次要用的音频。
+ *  生成页钉成参考音频（卡片列顶上立刻钉住它）；处理页落成处理目标（工作区顶上那条）。
+ *  选完就关掉详情：这一步的收尾是回去看那条目标，不是留在详情里看别的东西。 */
 function useReference() {
-  actions.pinReference(props.voice, props.sample)
+  if (store.view === 'synth') actions.pinReference(props.voice, props.sample)
+  else actions.pickSample(props.voice, props.sample)
   actions.closeDetail()
 }
 

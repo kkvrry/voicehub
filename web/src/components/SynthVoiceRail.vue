@@ -6,8 +6,8 @@
       <!-- 这一栏的功能条：左边写它管什么，右边是三个动作。目录名与条数留给左栏树
            （树的选中态已经说明范围），这一行不重复它。 -->
       <div class="rail-head">
-        <!-- 生成页这一栏管的是"这次用谁的声音"；创作页那一列只是挑音色，写「音色」。 -->
-        <span class="rail-title">{{ pickable ? '参考音频' : '音色' }}</span>
+        <!-- 生成页这一栏管的是"这次用谁的声音"；创作页与处理页只是挑音色，写「音色」。 -->
+        <span class="rail-title">{{ target === 'synth' && pickable ? '参考音频' : '音色' }}</span>
         <div class="rail-acts" role="group" aria-label="参考音频">
           <!-- 录一段：录下的就是这次的参考，落在下面那张冻结卡上。 -->
           <MicButton
@@ -60,7 +60,7 @@
          章**不看有没有样例**：这一栏说的是"这次用这条音色配音"，盖的是这件事，
          不是"它有一段参考片段"——设计音色没有片段，照样是这次用的那条。 -->
     <div
-      v-if="pickable && reference"
+      v-if="target === 'synth' && pickable && reference"
       class="rail-card rail-frozen"
       :class="{ 'is-plain': !reference.canChange }"
       role="button"
@@ -268,8 +268,10 @@ const showAvatarImage = useAvatarImage('rail')
 
 const props = defineProps({
   /** 生成页：点卡片=选中这条音色，并直接用它自己的主样例当参考音频；
-   *  卡片右端的「选样例」才开详情挑别的一条。 */
+   *  卡片右端的「选样例」才开详情挑别的一条。处理页同理，只是落到 `store.pick`。 */
   pickable: { type: Boolean, default: true },
+  /** 选中落到哪一份：`synth` = 生成页的参考音频，`pick` = 生产方工作区的处理目标。 */
+  target: { type: String, default: 'synth' },
   /** 创作页：卡片右上角是「指定」而不是收藏。 */
   assignable: { type: Boolean, default: false },
   /** 生成页：列头摆一颗「录一段」（录下的就是这次的参考音频）。 */
@@ -286,7 +288,9 @@ const designOpen = ref(false)
 const listEl = ref(/** @type {any} */ (null))
 useCardPaging(listEl)
 
-const activeId = computed(() => (props.pickable ? store.synth.voiceId : ''))
+const activeId = computed(() =>
+  props.pickable ? (props.target === 'pick' ? store.pick.voiceId : store.synth.voiceId) : ''
+)
 
 /** 这一列只展示已经筛好的结果：搜索与性别 / 年龄 / 语言 / 情绪在顶部栏，查完再进来。 */
 const visible = computed(() => store.voices)
@@ -341,10 +345,17 @@ function coverStyle(voice) {
  * （顶上那张冻结卡会立刻出现）。要挑别的样例走卡片右端那颗「选样例」，
  * 弹窗只在那条路上出现——选音色是高频动作，不该每次都先开一张详情卡。
  *
+ * 处理页（`target === 'pick'`）同一个手势，但落到 `store.pick`：那边没有冻结卡，
+ * 选中的结果由工作区顶上那条音频显示。
+ *
  * @param {any} voice
  */
 function pick(voice) {
   if (!props.pickable) return
+  if (props.target === 'pick') {
+    actions.pickVoice(voice)
+    return
+  }
   // 已经是这条：不动。再点一下就把用户刚挑好的那条样例换回主样例，是纯损失。
   if (store.synth.voiceId === voice.id) return
   store.synth.voiceId = voice.id

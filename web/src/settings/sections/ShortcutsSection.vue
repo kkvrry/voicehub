@@ -63,6 +63,27 @@
       </template>
     </SettingCard>
 
+    <SettingCard v-if="capture" title="系统内录" keywords="内录 系统声音 录制 热键">
+      <template #icon><Mic :size="16" :stroke-width="1.8" /></template>
+
+      <SettingRow
+        :title="capture.label"
+        :desc="capture.hint"
+        :keywords="`内录 ${capture.label}`"
+      >
+        <div class="sc-control">
+          <template v-if="captureAvailable">
+            <kbd v-for="part in prettyCombo(capture.hotkey.text)" :key="part" class="sh-kbd">
+              {{ part }}
+            </kbd>
+          </template>
+          <span v-if="captureNote" class="sc-note">{{ captureNote }}</span>
+        </div>
+      </SettingRow>
+
+      <template #note>由托盘注册，作用于整个系统。</template>
+    </SettingCard>
+
     <SettingCard title="按键规则" keywords="规则 说明 Ctrl Alt Shift 系统 冲突">
       <template #icon><Info :size="16" :stroke-width="1.8" /></template>
 
@@ -89,8 +110,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
-import { AlertTriangle, Command, Info, Keyboard, RotateCcw, X } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { AlertTriangle, Command, Info, Keyboard, Mic, RotateCcw, X } from 'lucide-vue-next'
+import { api } from '../../api'
 import { SHORTCUT_LABELS, useSettingsStore } from '../../stores/settings'
 import type { ShortcutAction } from '../../stores/settings'
 import { comboFromEvent, findDuplicates, isSafeBareKey, recorder } from '../keymap'
@@ -117,6 +139,27 @@ const pending = ref<ShortcutAction | ''>('')
 const error = ref('')
 
 const duplicates = computed(() => findDuplicates(store.shortcuts))
+
+/** 内录：由托盘注册全局热键，页面只显示组合键与可用性。 */
+const capture = ref<null | Record<string, any>>(null)
+const captureAvailable = computed(() => capture.value?.available !== false)
+const captureNote = computed(() => {
+  const info = capture.value
+  if (!info) return ''
+  if (!info.available) return info.reason || '不可用'
+  if (info.hotkey_ok === false) return info.hotkey_reason || '热键不可用'
+  if (info.hotkey_ok === null) return '托盘启动后可用'
+  return ''
+})
+
+onMounted(async () => {
+  try {
+    capture.value = await api.capture()
+  } catch {
+    // 旧后端没有这个接口：整块不显示，设置页其余部分照常。
+    capture.value = null
+  }
+})
 
 function startRecord(action: ShortcutAction) {
   stopRecord()
@@ -223,6 +266,10 @@ onBeforeUnmount(stopRecord)
 }
 .sc-error-inline {
   color: var(--sh-danger);
+}
+.sc-note {
+  font-size: 11.8px;
+  color: var(--sh-text-3);
 }
 .sc-rules {
   display: flex;
