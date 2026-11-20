@@ -398,20 +398,20 @@ class VoiceCleanService:
     # ---------------------------------------------------------------- 目标
 
     def _resolve(self, scope: dict[str, Any]) -> tuple[list[_Item], dict[str, Any]]:
-        """目标音色或电脑文件 → 待处理条目。
+        """目标音色、音色组或电脑文件 → 待处理条目。
 
         音色只收本地的：平台音色的样例在引擎目录里，替换会让平台侧凭据指向被换的
-        文件。``files`` 是处理前勾选的样例；为空时退回 ``file``（单条）或整条音色。
-        ``kind='file'`` 时只认上传得到的 ``token``，不查音色库。
-        ``trims`` 按文件名给裁剪区间，未给的按整段处理。
+        文件。``files`` 是处理前选中的样例；为空时退回 ``file``（单条）或整条音色。
+        ``voices`` 是跨音色的处理序列，按数组顺序拼接条目。``kind='file'`` 时只认
+        上传得到的 ``token``，不查音色库。``trims`` 按文件名给裁剪区间，未给的按整段处理。
         """
-        voice_id = str(scope.get("voice_id") or "").strip()
         only_file = str(scope.get("file") or "").strip()
         want_files = [
             str(value).strip()
             for value in (scope.get("files") or [])
             if str(value).strip()
         ]
+        want_files = list(dict.fromkeys(want_files))
         trims = scope.get("trims") or {}
         if not isinstance(trims, dict):
             raise ProducerError("裁剪范围格式不对，刷新页面后重试。")
@@ -441,6 +441,11 @@ class VoiceCleanService:
                 "files": [name],
             }
 
+        groups = scope.get("voices") or []
+        if isinstance(groups, list) and groups:
+            return self._resolve_groups(groups)
+
+        voice_id = str(scope.get("voice_id") or "").strip()
         if not voice_id:
             raise ProducerError("未选择音色。")
         library = self._library()
@@ -450,54 +455,7 @@ class VoiceCleanService:
             raise ProducerError(str(exc)) from exc
         if not detail.is_local or not detail.folder:
             raise ProducerError(f"「{detail.shown_name}」是平台音色，样例不在本机，无法处理。")
-
-        items: list[_Item] = []
-        matched: set[str] = set()
-        folder = Path(detail.folder)
-        for sample in detail.samples:
-            if only_file and sample.file != only_file:
-                continue
-            if want_files and sample.file not in want_files:
-                continue
-            path = folder / sample.file
-            if path.suffix.lower() not in {".wav", ".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus"}:
-                continue
-            if not path.is_file():
-                continue
-            segments, trimmed = _segments_for(trims, sample.file, sample.duration)
-            start, end = (
-                (segments[0][0], segments[-1][1]) if segments else (0.0, 0.0)
-            )
-            matched.add(sample.file)
-            items.append(
-                _Item(
-                    index=len(items),
-                    voice_id=detail.id,
-                    voice=detail.shown_name,
-                    file=sample.file,
-                    source=str(path),
-                    segments=segments,
-                    trim_start=start,
-                    trim_end=end,
-                    trimmed=trimmed,
-                )
-            )
-        missing = [name for name in want_files if name not in matched]
-        if missing:
-            raise ProducerError(
-                f"这些音频不在「{detail.shown_name}」的可处理范围里："
-                + "、".join(missing[:3])
-                + ("…" if len(missing) > 3 else "")
-            )
-        if not items:
-            if only_file:
-                raise ProducerError(f"「{detail.shown_name}」里没有这条音频：{only_file}")
-            if want_files:
-                raise ProducerError("没有选中任何可处理的音频。")
-            raise ProducerError(f"「{detail.shown_name}」没有可处理的音频。")
-        items.sort(key=lambda item: item.file)
-        for index, item in enumerate(items):
-            item.index = index
+        items = self._voice_items(detail, want_files, only_file, trims, start=0)
         label = f"音色「{detail.shown_name}」"
         if only_file:
             label = f"「{detail.shown_name}」· {only_file}"
@@ -509,6 +467,131 @@ class VoiceCleanService:
             "kind": "voice",
             "voice_id": detail.id,
             "file": only_file,
+            "label": label,
+            "count": len(items),
+            "files": [item.file for item in items],
+        }
+
+    def _voice_items(
+        self,
+        detail: Any,
+        files: list[str],
+        only_file: str,
+        trims: dict[str, Any],
+        start: int,
+    ) -> list[_Item]:
+        """一条音色里按 ``files`` 的顺序取可处理样例，条目编号从 ``start`` 接下去。"""
+        if not isinstance(trims, dict):
+            raise ProducerError("裁剪范围格式不对，刷新页面后重试。")
+        items: list[_Item] = []
+        matched: set[str] = set()
+        folder = Path(detail.folder)
+        order = {name: index for index, name in enumerate(files)}
+        for sample in detail.samples:
+            if only_file and sample.file != only_file:
+                continue
+            if files and sample.file not in files:
+                continue
+            path = folder / sample.file
+            if path.suffix.lower() not in {".wav", ".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus"}:
+                continue
+            if not path.is_file():
+                continue
+            segments, trimmed = _segments_for(trims, sample.file, sample.duration)
+            trim_start, trim_end = (
+                (segments[0][0], segments[-1][1]) if segments else (0.0, 0.0)
+            )
+            matched.add(sample.file)
+            items.append(
+                _Item(
+                    index=0,
+                    voice_id=detail.id,
+                    voice=detail.shown_name,
+                    file=sample.file,
+                    source=str(path),
+                    segments=segments,
+                    trim_start=trim_start,
+                    trim_end=trim_end,
+                    trimmed=trimmed,
+                )
+            )
+        missing = [name for name in files if name not in matched]
+        if missing:
+            raise ProducerError(
+                f"这些音频不在「{detail.shown_name}」的可处理范围里："
+                + "、".join(missing[:3])
+                + ("…" if len(missing) > 3 else "")
+            )
+        if not items:
+            if only_file:
+                raise ProducerError(f"「{detail.shown_name}」里没有这条音频：{only_file}")
+            if files:
+                raise ProducerError("没有选中任何可处理的音频。")
+            raise ProducerError(f"「{detail.shown_name}」没有可处理的音频。")
+        if files:
+            items.sort(key=lambda item: order.get(item.file, len(order)))
+        else:
+            items.sort(key=lambda item: item.file)
+        for offset, item in enumerate(items):
+            item.index = start + offset
+        return items
+
+    def _resolve_groups(
+        self, groups: list[Any]
+    ) -> tuple[list[_Item], dict[str, Any]]:
+        """跨音色的处理序列：按组的先后拼接条目，组内按 ``files`` 顺序。"""
+        library = self._library()
+        items: list[_Item] = []
+        summaries: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for raw in groups:
+            if not isinstance(raw, dict):
+                continue
+            voice_id = str(raw.get("voice_id") or "").strip()
+            if not voice_id:
+                continue
+            try:
+                detail = library.get_voice(voice_id)
+            except LibraryError as exc:
+                raise ProducerError(str(exc)) from exc
+            if not detail.is_local or not detail.folder:
+                raise ProducerError(f"「{detail.shown_name}」是平台音色，样例不在本机，无法处理。")
+            files: list[str] = []
+            for value in raw.get("files") or []:
+                name = str(value).strip()
+                if name and name not in files:
+                    files.append(name)
+            only_file = str(raw.get("file") or "").strip()
+            rows = self._voice_items(
+                detail,
+                files,
+                only_file,
+                raw.get("trims") or {},
+                start=len(items),
+            )
+            fresh = [row for row in rows if (row.voice_id, row.file) not in seen]
+            if not fresh:
+                continue
+            for row in fresh:
+                seen.add((row.voice_id, row.file))
+            items.extend(fresh)
+            summaries.append(
+                {"voice_id": detail.id, "label": detail.shown_name, "count": len(fresh)}
+            )
+        if not items:
+            raise ProducerError("处理序列里没有可处理的音频。")
+        for index, item in enumerate(items):
+            item.index = index
+        label = (
+            f"{summaries[0]['label']} · {len(items)} 条"
+            if len(summaries) == 1
+            else f"{len(summaries)} 个音色 · {len(items)} 条"
+        )
+        return items, {
+            "kind": "voices",
+            "voice_id": summaries[0]["voice_id"],
+            "voices": summaries,
+            "file": "",
             "label": label,
             "count": len(items),
             "files": [item.file for item in items],

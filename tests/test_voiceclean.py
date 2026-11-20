@@ -61,6 +61,56 @@ class TestScope:
         assert info["count"] == 2
         assert set(info["files"]) == set(wanted)
 
+    def test_multi_voice_scope_keeps_order(self, clean, scanned):
+        voices = list(scanned.list_voices())[:2]
+        details = [scanned.get_voice(row.id) for row in voices]
+        picks = [detail.samples[0].file for detail in details]
+        items, info = clean._resolve(
+            {
+                "voices": [
+                    {"voice_id": details[1].id, "files": [picks[1]]},
+                    {"voice_id": details[0].id, "files": [picks[0]]},
+                ]
+            }
+        )
+        assert info["kind"] == "voices"
+        assert info["count"] == 2
+        assert [(item.voice_id, item.file) for item in items] == [
+            (details[1].id, picks[1]),
+            (details[0].id, picks[0]),
+        ]
+        assert [row["voice_id"] for row in info["voices"]] == [
+            details[1].id,
+            details[0].id,
+        ]
+
+    def test_multi_voice_scope_keeps_trims_per_voice(self, clean, scanned):
+        voices = list(scanned.list_voices())[:2]
+        details = [scanned.get_voice(row.id) for row in voices]
+        targets = [
+            max(detail.samples, key=lambda row: row.duration).file for detail in details
+        ]
+        items, _info = clean._resolve(
+            {
+                "voices": [
+                    {
+                        "voice_id": details[0].id,
+                        "files": [targets[0]],
+                        "trims": {targets[0]: {"start": 0.05, "end": 0.2}},
+                    },
+                    {
+                        "voice_id": details[1].id,
+                        "files": [targets[1]],
+                        "trims": {targets[1]: {"start": 0.0, "end": 0.15}},
+                    },
+                ]
+            }
+        )
+        assert [(item.trim_start, item.trim_end) for item in items] == [
+            (0.05, 0.2),
+            (0.0, 0.15),
+        ]
+
     def test_trim_is_kept_per_file(self, clean, scanned):
         voice = _voice(scanned, "胡桃")
         detail = scanned.get_voice(voice.id)
@@ -575,6 +625,39 @@ class TestPipeline:
             assert out["replaced"] == 1
         finally:
             stub.close()
+
+    @pytest.mark.skipif(not ffmpeg.find_ffmpeg(None), reason="本机没有 ffmpeg")
+    def test_multi_voice_run_and_apply(self, scanned, tmp_path: Path):
+        """跨音色的序列跑一轮，替换按条目各自的音色落库。"""
+        voices = list(scanned.list_voices())[:2]
+        details = [scanned.get_voice(row.id) for row in voices]
+        files = [detail.samples[0].file for detail in details]
+        clean = VoiceCleanService(
+            tmp_path / "vc", lambda: VoiceCleanSettings(), running_models=list
+        )
+        clean.run(
+            {
+                "voices": [
+                    {"voice_id": detail.id, "files": [name]}
+                    for detail, name in zip(details, files)
+                ]
+            },
+            [],
+        )
+        for _ in range(120):
+            view = clean.job_view()
+            if view and view["state"] != "running":
+                break
+            time.sleep(0.1)
+        view = clean.job_view()
+        assert view["state"] == "done"
+        assert view["scope"]["kind"] == "voices"
+        assert [(item["voice_id"], item["file"]) for item in view["items"]] == [
+            (detail.id, name) for detail, name in zip(details, files)
+        ]
+        out = clean.apply(view["id"], [0, 1])
+        assert out["replaced"] == 2
+        assert not out["failures"]
 
     @pytest.mark.skipif(not ffmpeg.find_ffmpeg(None), reason="本机没有 ffmpeg")
     def test_core_only_still_processes(self, scanned, tmp_path: Path):

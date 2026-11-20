@@ -22,5 +22,16 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // 依赖与业务代码分开打包：依赖不随业务改动变化，升级后可复用浏览器缓存。
+        // 图标单独成块：lucide 按图标拆模块，变化频率与运行时不同。
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('lucide-vue-next')) return 'icons'
+          return 'vendor'
+        },
+      },
+    },
   },
 })

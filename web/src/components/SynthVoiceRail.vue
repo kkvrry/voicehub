@@ -229,10 +229,10 @@
           v-else-if="pickable"
           type="button"
           class="rail-assign"
-          title="挑一段样例当这次的参考音频"
-          @click.stop="chooseSample(voice)"
+          :title="target === 'pick' ? '把这条音色的样例加入处理序列' : '挑一段样例当这次的参考音频'"
+          @click.stop="target === 'pick' ? addCard(voice) : chooseSample(voice)"
         >
-          选样例
+          {{ target === 'pick' ? '添加' : '选样例' }}
         </button>
       </div>
       <div
@@ -272,7 +272,8 @@ const settings = useSettingsStore()
 
 const props = defineProps({
   /** 生成页：点卡片=选中这条音色，并直接用它自己的主样例当参考音频；
-   *  卡片右端的「选样例」才开详情挑别的一条。处理页同理，只是落到 `store.pick`。 */
+   *  卡片右端的「选样例」才开详情挑别的一条。处理页同理，只是落到 `store.pick`，
+   *  那颗按钮叫「添加」，把整张卡（全部样例）加入处理序列。 */
   pickable: { type: Boolean, default: true },
   /** 选中落到哪一份：`synth` = 生成页的参考音频，`pick` = 生产方工作区的处理目标。 */
   target: { type: String, default: 'synth' },
@@ -366,12 +367,22 @@ function pick(voice) {
 }
 
 /**
- * 卡片右端那颗「选样例」：开这条音色的详情，在里面挑具体某一 段。
+ * 卡片右端那颗按钮（生成页「选样例」、处理页「添加」）：开这条音色的详情，在里面挑具体某一段。
  *
  * @param {any} voice
  */
 function chooseSample(voice) {
   void actions.openDetail(voice)
+}
+
+/**
+ * 处理页的「添加」：把这张卡（整条音色）加入处理序列，不开详情。
+ * 同一条音色再点一次也会把移出的样例补回来。
+ *
+ * @param {any} voice
+ */
+function addCard(voice) {
+  actions.addPickVoice(voice)
 }
 
 /**

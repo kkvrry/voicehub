@@ -115,12 +115,14 @@ export const store = reactive({
   // 宿主不认识"角色"这件事，只负责把用户点的那条音色递过去。
   /** @type {any} */
   assignVoice: null,
-  // 「拾取」：声明 `rail_mode = pick` 的生产方工作区用它——点卡即选中音色，
-  // 卡右「选样例」再挑具体一条（`file` 空 = 整条音色）。
+  // 「拾取」：声明 `rail_mode = pick` 的生产方工作区用它——点卡即选中音色并替换序列，
+  // 卡右「添加」把整张卡追加进序列（`mode` 区分两种动作，`rev` 每次递增）。
   // 与 `synth` 分开：生成页那次用哪段声音，与这里处理谁，是两件事。
   pick: {
     voiceId: '',
     file: '',
+    mode: '',
+    rev: 0,
   },
   // 生产方插件：宿主只记「清单」与「当前打开哪一家」。
   // 项目、章节、行这些书籍状态在插件自己的 store 里（producers/<key>/store.js），

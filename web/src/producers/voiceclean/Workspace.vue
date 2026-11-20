@@ -8,8 +8,19 @@
   >
     <header class="panel-head">
       <div class="panel-head-main">
-        <div class="engine-title">音色处理</div>
-        <div class="muted">{{ scopeLabel() }}</div>
+        <div class="vc-head-line">
+          <div class="engine-title">音色处理</div>
+          <button
+            type="button"
+            class="vc-icon-btn vc-head-play"
+            :disabled="!targetSamples.length"
+            title="按顺序试听处理序列"
+            aria-label="按顺序试听处理序列"
+            @click="playQueue"
+          >
+            <Play :size="14" :stroke-width="1.8" fill="currentColor" />
+          </button>
+        </div>
       </div>
       <div class="vc-head-acts">
         <div
@@ -40,11 +51,12 @@
 
     <template v-else>
       <div class="vc-body">
-        <div v-if="!voice" class="vc-empty" :class="{ 'is-drag': dragging }">
+        <div v-if="!voice && state.loadingVoice" class="muted vc-loading">读取样例…</div>
+        <div v-else-if="!voice" class="vc-empty" :class="{ 'is-drag': dragging }">
           <span class="vc-empty-icon"><AudioLines :size="24" :stroke-width="1.6" /></span>
           <span class="vc-empty-title">从左侧选一个音色，或放入一个文件</span>
           <span class="vc-empty-hint">
-            点卡片处理它的全部样例；卡右「选样例」只处理一条。也可以把音频拖到这里，或从电脑选一个。
+            在左栏点卡片把它的样例放进处理序列；卡右「添加」把整张卡追加进来，可以混着多个音色。也可以把音频拖到这里，或从电脑选一个。
           </span>
           <button
             type="button"
@@ -63,21 +75,23 @@
           <section class="vc-chain">
             <div class="vc-chain-head">
               <span class="vc-chain-title">处理链</span>
-              <span class="vc-chain-sum">{{ chainSummary }}</span>
-              <button
-                v-if="!running"
-                type="button"
-                class="sh-btn is-primary vc-chain-run"
-                :disabled="!canStart"
-                :title="startHint"
-                @click="onStart"
-              >
-                {{ startLabel }}
-              </button>
-              <span v-else class="vc-chain-live">
-                <LoaderCircle class="vc-spin" :size="14" :stroke-width="1.8" />
-                {{ state.job?.finished || 0 }} / {{ state.job?.total || 0 }}
-              </span>
+              <span v-if="chainSummary" class="vc-chain-sum">{{ chainSummary }}</span>
+              <div class="vc-chain-acts">
+                <button
+                  v-if="!running"
+                  type="button"
+                  class="sh-btn is-primary vc-chain-run"
+                  :disabled="!canStart"
+                  :title="startHint"
+                  @click="onStart"
+                >
+                  {{ startLabel }}
+                </button>
+                <span v-else class="vc-chain-live">
+                  <LoaderCircle class="vc-spin" :size="14" :stroke-width="1.8" />
+                  {{ state.job?.finished || 0 }} / {{ state.job?.total || 0 }}
+                </span>
+              </div>
             </div>
             <div class="vc-step-grid">
               <div
@@ -143,19 +157,60 @@
             </div>
           </section>
 
-          <!-- 目标音色：头像、名字、样例选择、波形与裁剪都在这一张卡里。 -->
+          <!-- 目标音色：头像、名字、样例选择、波形与裁剪都在这一张卡里。
+               序列里有多张音色卡时，顶上排成一行页签：每张卡一个窗口，切换不混行。 -->
           <section class="vc-target">
+            <div v-if="windows.length > 1" class="vc-tabs" role="tablist" aria-label="处理序列里的音色卡">
+              <div
+                v-for="win in windows"
+                :key="win.voiceId"
+                class="vc-tab"
+                :class="{ on: win.active }"
+                role="tab"
+                :aria-selected="win.active"
+                :tabindex="win.active ? 0 : -1"
+                @click="openWindow(win.voiceId)"
+                @keydown.enter.prevent="openWindow(win.voiceId)"
+              >
+                <span class="vc-tab-name">{{ win.name }}</span>
+                <span class="vc-tab-count">{{ win.count }}</span>
+                <button
+                  type="button"
+                  class="vc-tab-x"
+                  :disabled="lockedSelect"
+                  :title="`把「${win.name}」移出处理序列`"
+                  :aria-label="`把「${win.name}」移出处理序列`"
+                  @click.stop="onCloseWindow(win.voiceId)"
+                >
+                  <X :size="12" :stroke-width="1.8" />
+                </button>
+              </div>
+            </div>
             <div class="vc-target-head">
-              <span class="vc-avatar" :style="avatarStyle">
-                <FileAudio v-if="isFile" :size="20" :stroke-width="1.8" />
-                <template v-else>{{ initial }}</template>
+              <button
+                v-if="!isFile"
+                type="button"
+                class="vc-avatar vc-avatar-play"
+                :class="{ 'is-playing': voicePlaying }"
+                :style="avatarStyle"
+                :disabled="!voice?.main_audio_url"
+                title="按顺序播放这条音色的样例"
+                aria-label="按顺序播放这条音色的样例"
+                @click="playVoiceQueue"
+              >
+                {{ initial }}
+                <span class="vc-avatar-play-hint" aria-hidden="true">
+                  <Pause v-if="voicePlaying" :size="16" :stroke-width="1.8" fill="currentColor" />
+                  <Play v-else :size="16" :stroke-width="1.8" fill="currentColor" />
+                </span>
+              </button>
+              <span v-else class="vc-avatar" :style="avatarStyle">
+                <FileAudio :size="20" :stroke-width="1.8" />
               </span>
               <div class="vc-target-ident">
                 <div class="vc-target-line">
                   <span class="vc-target-name">{{ voice.shown_name }}</span>
-                  <span class="vc-target-tag">
-                    {{ isFile ? '电脑文件' : store.pick.file ? '单条样例' : '整条音色' }}
-                  </span>
+                  <span v-if="isFile" class="vc-target-tag">电脑文件</span>
                   <span v-if="voice.is_design" class="vc-target-tag">设计</span>
                   <span v-if="!isLocal" class="vc-target-tag is-warn">平台音色</span>
                 </div>
@@ -165,64 +220,41 @@
                 <button
                   v-if="isFile"
                   type="button"
-                  class="sh-btn is-soft"
+                  class="sh-btn is-soft vc-mini-btn"
                   :disabled="running || busy !== ''"
                   @click="onPickFile"
                 >
                   换个文件
                 </button>
                 <button
-                  v-else
                   type="button"
-                  class="sh-btn is-soft"
-                  :disabled="!hasSamples || running || busy !== ''"
-                  @click="changeSample"
-                >
-                  换样例
-                </button>
-                <button
-                  type="button"
-                  class="sh-btn is-ghost"
+                  class="vc-icon-btn vc-target-close"
+                  title="清除目标"
+                  aria-label="清除目标"
                   :disabled="running || busy !== ''"
                   @click="onClearTarget"
                 >
-                  清除
-                </button>
-              </div>
-            </div>
-
-            <div class="vc-toolbar">
-              <span class="vc-sel-count">
-                已选 <b>{{ selectedCount }}</b> / {{ targetSamples.length }} 条
-                <span class="vc-sep">·</span>
-                {{ selectedCount ? `约 ${selectedSeconds.toFixed(1)} s` : '未选择' }}
-              </span>
-              <span class="vc-toolbar-note">{{ toolbarNote }}</span>
-              <div v-if="!isFile" class="vc-toolbar-acts">
-                <button type="button" class="sh-btn is-ghost" :disabled="lockedSelect" @click="selectAll(true)">
-                  全选
-                </button>
-                <button type="button" class="sh-btn is-ghost" :disabled="lockedSelect" @click="selectAll(false)">
-                  清空
+                  <X :size="14" :stroke-width="1.8" />
                 </button>
               </div>
             </div>
 
             <div class="vc-audios">
-              <template v-for="(sample, position) in targetSamples" :key="sample.file">
-                <div
-                  class="vc-audio"
-                  :class="{ on: state.selected[sample.file], locked: lockedSelect }"
-                  role="button"
-                  :tabindex="lockedSelect ? -1 : 0"
-                  :aria-pressed="Boolean(state.selected[sample.file])"
-                  :title="state.selected[sample.file] ? '取消选择这一条' : '选择这一条'"
-                  @click="onToggleRow(sample)"
-                  @keydown.enter.prevent="onToggleRow(sample)"
-                  @keydown.space.prevent="onToggleRow(sample)"
-                >
+              <template v-for="(sample, position) in targetSamples" :key="sample.key">
+                <div class="vc-audio" :class="{ 'is-trim': editor === sample.key }">
                   <div class="vc-audio-main">
-                    <span class="vc-audio-icon"><FileAudio :size="16" :stroke-width="1.8" /></span>
+                    <button
+                      type="button"
+                      class="vc-audio-play"
+                      :class="{ on: playingSample(sample) }"
+                      :disabled="!sample.audio_url"
+                      :title="playingSample(sample) ? '暂停' : '试听原声'"
+                      :aria-label="playingSample(sample) ? '暂停' : '试听原声'"
+                      @click="playSample(sample)"
+                    >
+                      <Pause v-if="playingSample(sample)" :size="13" :stroke-width="1.8" fill="currentColor" />
+                      <Play v-else :size="13" :stroke-width="1.8" fill="currentColor" />
+                    </button>
                     <div class="vc-audio-text">
                       <div class="vc-audio-title" :title="sample.file">{{ sampleTitle(sample) }}</div>
                       <div class="vc-audio-meta">
@@ -242,180 +274,169 @@
                     {{ rowDuration(sample) }}
                   </span>
 
-                  <span class="vc-audio-acts" @click.stop @keydown.stop>
-                    <template v-if="itemFor(sample.file)">
-                      <span
-                        class="vc-status"
-                        :class="`is-${statusOf(sample).key}`"
-                        :title="statusOf(sample).hint || ''"
-                      >
-                        {{ statusOf(sample).label }}
-                      </span>
-                      <span v-if="canCompare(sample)" class="vc-ab">
-                        <button
-                          type="button"
-                          :class="{ on: state.playing === `${itemFor(sample.file).index}:origin` }"
-                          @click="play(itemFor(sample.file).index, 'origin')"
-                        >
-                          原声
-                        </button>
-                        <button
-                          type="button"
-                          :class="{ on: state.playing === `${itemFor(sample.file).index}:result` }"
-                          :disabled="itemFor(sample.file).state === 'failed'"
-                          @click="play(itemFor(sample.file).index, 'result')"
-                        >
-                          处理
-                        </button>
-                      </span>
-                      <button
-                        v-else
-                        type="button"
-                        class="vc-icon-btn"
-                        :class="{ on: playingSample(sample) }"
-                        :disabled="!sample.audio_url"
-                        :title="playingSample(sample) ? '暂停' : '试听原声'"
-                        @click="playSample(sample)"
-                      >
-                        <Pause v-if="playingSample(sample)" :size="14" :stroke-width="1.8" fill="currentColor" />
-                        <Play v-else :size="14" :stroke-width="1.8" fill="currentColor" />
-                      </button>
-                    </template>
-                    <template v-else>
+                  <span class="vc-audio-acts">
+                    <span
+                      v-if="statusOf(sample).label"
+                      class="vc-status"
+                      :class="`is-${statusOf(sample).key}`"
+                      :title="statusOf(sample).hint || ''"
+                    >
+                      {{ statusOf(sample).label }}
+                    </span>
+                    <span v-if="canCompare(sample)" class="vc-ab">
                       <button
                         type="button"
-                        class="vc-icon-btn"
-                        :class="{ on: playingSample(sample) }"
-                        :disabled="!sample.audio_url"
-                        :title="playingSample(sample) ? '暂停' : '试听'"
-                        @click="playSample(sample)"
+                        :class="{ on: state.playing === `${itemFor(sample.key).index}:origin` }"
+                        @click="play(itemFor(sample.key).index, 'origin')"
                       >
-                        <Pause v-if="playingSample(sample)" :size="14" :stroke-width="1.8" fill="currentColor" />
-                        <Play v-else :size="14" :stroke-width="1.8" fill="currentColor" />
+                        原声
                       </button>
                       <button
                         type="button"
-                        class="vc-icon-btn"
-                        :class="{ on: editor === sample.file }"
-                        :disabled="lockedEdit"
-                        :title="editor === sample.file ? '收起裁剪' : '裁剪'"
-                        @click="toggleEditor(sample.file)"
+                        :class="{ on: state.playing === `${itemFor(sample.key).index}:result` }"
+                        :disabled="itemFor(sample.key).state === 'failed'"
+                        @click="play(itemFor(sample.key).index, 'result')"
                       >
-                        <Scissors :size="14" :stroke-width="1.8" />
+                        处理
                       </button>
-                      <span class="vc-status" :class="`is-${statusOf(sample).key}`">
-                        {{ statusOf(sample).label }}
-                      </span>
-                    </template>
-                  </span>
-                </div>
-
-                <div
-                  v-if="editor === sample.file && editingSample"
-                  class="vc-trim"
-                  @keydown="onTrimKey(sample, $event)"
-                >
-                  <div class="vc-trim-head">
-                    <span class="vc-trim-title">
+                    </span>
+                    <button
+                      type="button"
+                      class="vc-icon-btn"
+                      :disabled="lockedSelect || targetSamples.length <= 1"
+                      title="只处理这一条"
+                      aria-label="只处理这一条"
+                      @click="onOnlyRow(sample.key)"
+                    >
+                      <Focus :size="14" :stroke-width="1.8" />
+                    </button>
+                    <button
+                      v-if="!itemFor(sample.key)"
+                      type="button"
+                      class="vc-icon-btn"
+                      :class="{ on: editor === sample.key }"
+                      :disabled="lockedEdit"
+                      :title="editor === sample.key ? '收起裁剪' : '裁剪'"
+                      aria-label="裁剪"
+                      @click="toggleEditor(sample.key)"
+                    >
                       <Scissors :size="14" :stroke-width="1.8" />
-                      裁剪 · {{ sampleTitle(sample) }}
-                    </span>
-                    <span class="vc-trim-meta">{{ trimStats(sample) }}</span>
-                  </div>
-                  <Waveform
-                    :url="sample.audio_url"
-                    :duration="sample.duration"
-                    :segments="segmentsOf(sample)"
-                    :selection="selectionOf(sample.file) || undefined"
-                    :revision="state.waveRevision"
-                    editable
-                    @select="onSelect(sample, $event)"
-                  />
-                  <div class="vc-trim-tools">
-                    <button
-                      type="button"
-                      class="sh-btn is-soft"
-                      :disabled="!hasSelection(sample)"
-                      title="删除选中的这一段音频（Delete）"
-                      @click="deleteSelection(sample)"
-                    >
-                      <Trash2 :size="14" :stroke-width="1.8" />
-                      删除选区
                     </button>
                     <button
                       type="button"
-                      class="sh-btn is-ghost"
-                      :disabled="!hasSelection(sample)"
-                      title="只留下选中的这一段"
-                      @click="keepSelection(sample)"
+                      class="vc-icon-btn vc-audio-remove"
+                      :disabled="lockedSelect"
+                      :title="isFile ? '清除这个文件' : '移出处理序列'"
+                      :aria-label="isFile ? '清除这个文件' : '移出处理序列'"
+                      @click="onRemoveRow(sample.key)"
                     >
-                      仅保留选区
+                      <X :size="14" :stroke-width="1.8" />
                     </button>
-                    <button
-                      type="button"
-                      class="sh-btn is-ghost"
-                      :disabled="!isTrimmed(sample)"
-                      @click="resetTrim(sample.file)"
-                    >
-                      恢复原样
-                    </button>
-                    <span class="vc-trim-undo">
-                      <button
-                        type="button"
-                        class="vc-icon-btn"
-                        :disabled="!canUndo(sample.file)"
-                        title="撤销（Ctrl+Z）"
-                        aria-label="撤销裁剪"
-                        @click="undoTrim(sample.file)"
-                      >
-                        <Undo2 :size="14" :stroke-width="1.8" />
-                      </button>
-                      <button
-                        type="button"
-                        class="vc-icon-btn"
-                        :disabled="!canRedo(sample.file)"
-                        title="前进（Ctrl+Shift+Z）"
-                        aria-label="前进裁剪"
-                        @click="redoTrim(sample.file)"
-                      >
-                        <Redo2 :size="14" :stroke-width="1.8" />
-                      </button>
-                    </span>
-                  </div>
-                  <div class="vc-trim-foot">
-                    <button
-                      type="button"
-                      class="sh-btn is-soft"
-                      :disabled="!sample.audio_url"
-                      @click="onPreview(sample)"
-                    >
-                      <Pause v-if="isPreviewing(sample)" :size="14" :stroke-width="1.8" fill="currentColor" />
-                      <Play v-else :size="14" :stroke-width="1.8" fill="currentColor" />
-                      {{ isPreviewing(sample) ? '暂停结果' : '试听结果' }}
-                    </button>
-                    <button
-                      type="button"
-                      class="sh-btn is-ghost"
-                      :disabled="!hasSelection(sample)"
-                      @click="onPreviewSelection(sample)"
-                    >
-                      <Pause
-                        v-if="isPreviewing(sample, 'selection')"
-                        :size="14"
-                        :stroke-width="1.8"
-                        fill="currentColor"
-                      />
-                      <Play v-else :size="14" :stroke-width="1.8" fill="currentColor" />
-                      {{ isPreviewing(sample, 'selection') ? '暂停选区' : '试听选区' }}
-                    </button>
+                  </span>
+
+                  <div
+                    v-if="editor === sample.key && editingSample"
+                    class="vc-trim"
+                    @keydown="onTrimKey(sample, $event)"
+                  >
+                    <div class="vc-trim-bar">
+                      <span class="vc-trim-stats">{{ trimStats(sample) }}</span>
+                      <span class="vc-trim-undo">
+                        <button
+                          type="button"
+                          class="vc-icon-btn"
+                          :disabled="!canUndo(sample.key)"
+                          title="撤销（Ctrl+Z）"
+                          aria-label="撤销裁剪"
+                          @click="undoTrim(sample.key)"
+                        >
+                          <Undo2 :size="14" :stroke-width="1.8" />
+                        </button>
+                        <button
+                          type="button"
+                          class="vc-icon-btn"
+                          :disabled="!canRedo(sample.key)"
+                          title="前进（Ctrl+Shift+Z）"
+                          aria-label="前进裁剪"
+                          @click="redoTrim(sample.key)"
+                        >
+                          <Redo2 :size="14" :stroke-width="1.8" />
+                        </button>
+                      </span>
+                    </div>
+                    <Waveform
+                      :url="sample.audio_url"
+                      :duration="sample.duration"
+                      :segments="segmentsOf(sample)"
+                      :selection="selectionOf(sample.key) || undefined"
+                      :revision="state.waveRevision"
+                      editable
+                      @select="onSelect(sample, $event)"
+                    />
                     <span class="vc-trim-hint">{{ trimHint(sample) }}</span>
-                    <button type="button" class="sh-btn is-ghost" @click="closeEditor">收起</button>
+                    <div class="vc-trim-bar">
+                      <button
+                        type="button"
+                        class="sh-btn is-soft"
+                        :disabled="!hasSelection(sample)"
+                        title="删除选中的这一段音频（Delete）"
+                        @click="deleteSelection(sample)"
+                      >
+                        <Trash2 :size="14" :stroke-width="1.8" />
+                        删除选区
+                      </button>
+                      <button
+                        type="button"
+                        class="sh-btn is-ghost"
+                        :disabled="!hasSelection(sample)"
+                        title="只留下选中的这一段"
+                        @click="keepSelection(sample)"
+                      >
+                        仅保留选区
+                      </button>
+                      <button
+                        type="button"
+                        class="sh-btn is-ghost"
+                        :disabled="!isTrimmed(sample)"
+                        @click="resetTrim(sample.key)"
+                      >
+                        恢复原样
+                      </button>
+                      <span class="vc-trim-spacer"></span>
+                      <button
+                        type="button"
+                        class="sh-btn is-soft"
+                        :disabled="!sample.audio_url"
+                        @click="onPreview(sample)"
+                      >
+                        <Pause v-if="isPreviewing(sample)" :size="14" :stroke-width="1.8" fill="currentColor" />
+                        <Play v-else :size="14" :stroke-width="1.8" fill="currentColor" />
+                        {{ isPreviewing(sample) ? '暂停结果' : '试听结果' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="sh-btn is-ghost"
+                        :disabled="!hasSelection(sample)"
+                        @click="onPreviewSelection(sample)"
+                      >
+                        <Pause
+                          v-if="isPreviewing(sample, 'selection')"
+                          :size="14"
+                          :stroke-width="1.8"
+                          fill="currentColor"
+                        />
+                        <Play v-else :size="14" :stroke-width="1.8" fill="currentColor" />
+                        {{ isPreviewing(sample, 'selection') ? '暂停选区' : '试听选区' }}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </template>
 
-              <div v-if="state.targetLoading" class="vc-hint vc-samples-empty">读取样例…</div>
-              <div v-else-if="!targetSamples.length" class="vc-hint vc-samples-empty">没有可处理的音频。</div>
+              <div v-if="state.loadingVoice" class="vc-hint vc-samples-empty">读取样例…</div>
+              <div v-else-if="!targetSamples.length" class="vc-hint vc-samples-empty">
+                没有可处理的音频。
+              </div>
             </div>
 
             <div v-if="!isLocal" class="vc-warn-line">
@@ -426,65 +447,67 @@
       </div>
 
       <footer class="vc-dock">
-        <div class="vc-dock-in">
-          <div class="vc-dock-sum">
-            <span class="vc-dock-title">{{ dockTitle }}</span>
-            <span class="vc-dock-sub">{{ dockSub }}</span>
-            <div v-if="running" class="vc-progress">
-              <i :style="{ width: `${percent}%` }"></i>
+        <div class="vc-dock-card">
+          <div class="vc-dock-in">
+            <div class="vc-dock-sum">
+              <span class="vc-dock-title">{{ dockTitle }}</span>
+              <span class="vc-dock-sub">{{ dockSub }}</span>
+              <div v-if="running" class="vc-progress">
+                <i :style="{ width: `${percent}%` }"></i>
+              </div>
             </div>
-          </div>
-          <div class="vc-dock-acts">
-            <template v-if="running">
-              <button type="button" class="sh-btn is-ghost" @click="onCancel">取消</button>
-              <button type="button" class="sh-btn is-primary" disabled>处理中…</button>
-            </template>
-            <template v-else-if="dockMode === 'apply'">
-              <button type="button" class="sh-btn is-ghost" :disabled="busy !== ''" @click="onResetRun">
-                返回编辑
-              </button>
-              <button type="button" class="sh-btn is-primary" :disabled="!applicableCount || busy !== ''" @click="onApply">
-                替换已选 {{ applicableCount }} 条
-              </button>
-            </template>
-            <template v-else-if="dockMode === 'download'">
-              <button type="button" class="sh-btn is-ghost" :disabled="busy !== ''" @click="onResetRun">
-                重新处理
-              </button>
+            <div class="vc-dock-acts">
+              <template v-if="running">
+                <button type="button" class="sh-btn is-ghost" @click="onCancel">取消</button>
+                <button type="button" class="sh-btn is-primary" disabled>处理中…</button>
+              </template>
+              <template v-else-if="dockMode === 'apply'">
+                <button type="button" class="sh-btn is-ghost" :disabled="busy !== ''" @click="onResetRun">
+                  返回编辑
+                </button>
+                <button type="button" class="sh-btn is-primary" :disabled="!applicableCount || busy !== ''" @click="onApply">
+                  替换 {{ applicableCount }} 条
+                </button>
+              </template>
+              <template v-else-if="dockMode === 'download'">
+                <button type="button" class="sh-btn is-ghost" :disabled="busy !== ''" @click="onResetRun">
+                  重新处理
+                </button>
+                <button
+                  type="button"
+                  class="sh-btn is-primary"
+                  :title="downloadName()"
+                  :disabled="busy !== ''"
+                  @click="onDownload"
+                >
+                  下载处理结果
+                </button>
+              </template>
               <button
+                v-else-if="dockMode === 'applied'"
                 type="button"
                 class="sh-btn is-primary"
-                :title="downloadName()"
                 :disabled="busy !== ''"
-                @click="onDownload"
+                @click="onResetRun"
               >
-                下载处理结果
+                继续编辑
               </button>
-            </template>
-            <button
-              v-else-if="dockMode === 'applied'"
-              type="button"
-              class="sh-btn is-primary"
-              :disabled="busy !== ''"
-              @click="onResetRun"
-            >
-              继续编辑
-            </button>
-            <button
-              v-else-if="dockMode === 'retry'"
-              type="button"
-              class="sh-btn is-primary"
-              :disabled="busy !== ''"
-              @click="onResetRun"
-            >
-              重新处理
-            </button>
-            <span v-else class="vc-dock-hint">
-              在「处理链」生成结果后，在这里{{ isFile ? '下载' : '确认替换' }}。
-            </span>
+              <button
+                v-else-if="dockMode === 'retry'"
+                type="button"
+                class="sh-btn is-primary"
+                :disabled="busy !== ''"
+                @click="onResetRun"
+              >
+                重新处理
+              </button>
+              <span v-else class="vc-dock-hint">
+                在「处理链」生成结果后，在这里{{ isFile ? '下载' : '确认替换' }}。
+              </span>
+            </div>
           </div>
+          <div v-if="appliedNote" class="vc-dock-note" :class="{ 'is-warn': appliedWarn }">{{ appliedNote }}</div>
         </div>
-        <div v-if="appliedNote" class="vc-dock-note" :class="{ 'is-warn': appliedWarn }">{{ appliedNote }}</div>
       </footer>
     </template>
 
@@ -514,6 +537,7 @@ import {
   AudioLines,
   Check,
   FileAudio,
+  Focus,
   LoaderCircle,
   Pause,
   Play,
@@ -522,18 +546,21 @@ import {
   Trash2,
   Undo2,
   Upload,
+  X,
 } from 'lucide-vue-next'
-import { labelOf, say, store, vocab } from '../../store'
+import { actions, labelOf, say, store, vocab } from '../../store'
 import { useSettingsStore } from '../../stores/settings'
 import { avatarFill } from '../../composables/avatarColor'
 import Waveform from './Waveform.vue'
 import {
+  activateWindow,
+  allRows,
   applySelected,
   cancel,
   canRedo,
   canUndo,
-  changeSample,
   clearTarget,
+  closeWindow,
   deleteSelection,
   downloadName,
   downloadResult,
@@ -549,20 +576,22 @@ import {
   keepSelection,
   keptSeconds,
   loadTarget,
+  onlyThis,
   pickOf,
   play,
   playSample,
   previewSelection,
   previewTrim,
+  queueRows,
   refresh,
+  rowKey,
   redoTrim,
+  removeFromQueue,
   reset as resetWorkspace,
   resetRun,
   resetTrim,
-  scopeLabel,
+  restore,
   segmentsOf,
-  selectAll,
-  selectedSamples,
   selectionOf,
   setSelection,
   start,
@@ -572,11 +601,10 @@ import {
   targetSub,
   targetVoice,
   toggleNormalize,
-  toggleSelected,
   toggleStep,
   undoTrim,
   uploadSource,
-  visibleSamples,
+  windowViews,
 } from './store'
 
 const editor = ref('')
@@ -593,8 +621,10 @@ const isLocal = computed(() => isLocalVoice())
 const avatarStyle = computed(() => ({
   background: avatarFill(voice.value?.shown_name || '?', settings.appearance.look),
 }))
-const targetSamples = computed(() => visibleSamples())
-const selectedRows = computed(() => selectedSamples())
+// 行表是当前窗口（这张音色卡）的样例；整个序列按音色卡分窗口。
+const targetSamples = computed(() => queueRows())
+const selectedRows = computed(() => allRows())
+const windows = computed(() => windowViews())
 const selectedCount = computed(() => selectedRows.value.length)
 const steps = computed(() => state.data?.steps || [])
 const core = computed(
@@ -607,13 +637,8 @@ const busy = computed(() => state.busy || '')
 const lockedEdit = computed(() => running.value || Boolean(job.value) || busy.value !== '')
 const lockedSelect = computed(() => running.value || busy.value === 'apply')
 const editingSample = computed(
-  () => targetSamples.value.find((/** @type {any} */ row) => row.file === editor.value) || null
+  () => targetSamples.value.find((/** @type {any} */ row) => row.key === editor.value) || null
 )
-const hasSamples = computed(() => {
-  const detail = state.target
-  if (detail?.id === store.pick.voiceId) return (detail.samples || []).length > 0
-  return (voice.value?.sample_count || 0) > 0
-})
 const selectedSeconds = computed(() =>
   selectedRows.value.reduce(
     (/** @type {number} */ sum, /** @type {any} */ row) => sum + keptSeconds(row),
@@ -625,11 +650,16 @@ const percent = computed(() => {
   if (!current?.total) return 0
   return Math.round((current.finished / current.total) * 100)
 })
+const queuedKeys = computed(
+  () => new Set(targetSamples.value.map((/** @type {any} */ row) => row.key))
+)
 const applicableCount = computed(
   () =>
     (job.value?.items || []).filter(
       (/** @type {any} */ row) =>
-        state.selected[row.file] && row.state === 'done' && row.replaceable
+        queuedKeys.value.has(rowKey(row.voice_id, row.file)) &&
+        row.state === 'done' &&
+        row.replaceable
     ).length
 )
 /** 电脑文件的结果是否已经可下载。 */
@@ -652,9 +682,7 @@ const canStart = computed(
     busy.value === ''
 )
 const chainSummary = computed(
-  () =>
-    activeSteps.value.join(' · ') ||
-    (trimEdits.value ? '仅裁剪' : '未选择步骤')
+  () => activeSteps.value.join(' · ') || (trimEdits.value ? '仅裁剪' : '')
 )
 const startLabel = computed(() => {
   if (busy.value === 'run') return '提交中…'
@@ -664,7 +692,7 @@ const startLabel = computed(() => {
 const startHint = computed(() => {
   if (!voice.value) return '先从左侧选一个音色，或放入一个文件'
   if (!isLocal.value) return '平台音色的样例不在本机'
-  if (!selectedCount.value) return '先选中至少一条音频'
+  if (!selectedCount.value) return '处理序列里还没有音频'
   if (job.value) return '结果已经生成：先在下方应用，或返回编辑'
   if (!activeSteps.value.length && !trimEdits.value) return '选择处理步骤，或先在波形上裁剪'
   if (busy.value) return '正在忙，稍后再试'
@@ -676,12 +704,6 @@ const headLabel = computed(() => {
   if (job.value?.state === 'done') return '已处理'
   if (job.value?.state === 'cancelled') return '已取消'
   return ''
-})
-const toolbarNote = computed(() => {
-  if (busy.value === 'apply') return '正在写入音色库…'
-  if (running.value) return '处理中，先别切换目标。'
-  if (job.value) return isFile.value ? '结果已出：可试听或下载。' : '结果已出：点行可改替换范围。'
-  return '点一行选中；点剪刀展开裁剪。'
 })
 const dockMode = computed(() => {
   if (running.value) return 'running'
@@ -713,10 +735,10 @@ const dockTitle = computed(() => {
     return `处理完成 ${job.value.finished} / ${job.value.total}${failed}`
   }
   if (job.value?.state === 'cancelled') return '已取消，未写入音色库'
-  return `已选 ${selectedCount.value} 条${selectedCount.value ? ` · 约 ${selectedSeconds.value.toFixed(1)} s` : ''}`
+  return `处理序列 ${selectedCount.value} 条${selectedCount.value ? ` · 约 ${selectedSeconds.value.toFixed(1)} s` : ''}`
 })
 const dockSub = computed(() => {
-  if (!voice.value) return '点卡片处理全部样例；也可以把音频拖进来，或从电脑选一个。'
+  if (!voice.value) return '点卡片选中音色，卡右「添加」把样例加入处理序列；也可以把音频拖进来，或从电脑选一个。'
   if (running.value) {
     const current = state.job?.current
     return job.value
@@ -799,17 +821,89 @@ function onToggleNormalize() {
   toggleNormalize()
 }
 
-/** 点行本身就是选中：不再摆方框。 */
-/** @param {any} sample */
-function onToggleRow(sample) {
+/** 切换窗口：收起正在编辑的裁剪，避免它落在别的卡上。 */
+/** @param {string} voiceId */
+function openWindow(voiceId) {
+  if (voiceId === state.activeVoiceId) return
+  closeEditor()
+  stopPreview()
+  activateWindow(voiceId)
+}
+
+/** 页签上的 X：把这张卡从序列里移除（连同它的裁剪记录）。 */
+/** @param {string} voiceId */
+function onCloseWindow(voiceId) {
   if (lockedSelect.value) return
-  toggleSelected(sample.file)
+  if (voiceId === state.activeVoiceId) {
+    closeEditor()
+    stopPreview()
+  }
+  closeWindow(voiceId)
+}
+
+/** 行尾 X：从处理序列移除；电脑文件没有序列，等于清除目标。 */
+/** @param {string} key */
+function onRemoveRow(key) {
+  if (lockedSelect.value) return
+  if (isFile.value) {
+    onClearTarget()
+    return
+  }
+  if (editor.value === key) closeEditor()
+  removeFromQueue(key)
+}
+
+/** 行尾「只处理这一条」：序列收成这一行；正在编辑别的行时先收起。 */
+/** @param {string} key */
+function onOnlyRow(key) {
+  if (lockedSelect.value) return
+  if (editor.value && editor.value !== key) closeEditor()
+  onlyThis(key)
+}
+
+/** 播放条正在放的正是这条音色的样例：头像上显示暂停。 */
+const voicePlaying = computed(() => {
+  const current = store.player.queue[store.player.index]
+  return Boolean(
+    store.player.playing &&
+      voice.value?.id &&
+      current?.voice?.id === voice.value.id
+  )
+})
+
+/** 行所属的音色对象：播放条上的「收藏 / 指定」需要它。 */
+/** @param {any} row */
+function voiceOf(row) {
+  return store.allVoices.find((/** @type {any} */ item) => item.id === row.voice_id) || null
+}
+
+/** 目标卡头像：按惯例就是这条音色的播放键，排它自己的样例队列（从主样例开始）。 */
+function playVoiceQueue() {
+  const current = voice.value
+  if (!current?.main_audio_url) return
+  stopPreview()
+  actions.playVoiceCard(current)
+}
+
+/** 页头播放键：按页签与行序试听整个序列（原声），放完自动接下一段。 */
+function playQueue() {
+  const rows = selectedRows.value.filter((/** @type {any} */ row) => row.audio_url)
+  if (!rows.length) return
+  stopPreview()
+  actions.playAll(
+    rows.map((/** @type {any} */ row, /** @type {number} */ index) => ({
+      url: row.audio_url,
+      label: sampleTitle(row),
+      sub: `${row.voice_name || '样例'} · 第 ${index + 1} 条`,
+      voice: state.fileTarget ? null : voiceOf(row),
+    }))
+  )
 }
 
 /** 波形框选只改选区；删除与保留选区由下面的按钮提交。 */
 /** @param {any} sample @param {{ start: number, end: number }} range */
 function onSelect(sample, range) {
-  setSelection(sample.file, range)
+  setSelection(sample.key, range)
 }
 
 /** @param {any} sample */
@@ -829,13 +923,13 @@ function onTrimKey(sample, event) {
   const key = event.key.toLowerCase()
   if (meta && key === 'z') {
     event.preventDefault()
-    if (event.shiftKey) redoTrim(sample.file)
-    else undoTrim(sample.file)
+    if (event.shiftKey) redoTrim(sample.key)
+    else undoTrim(sample.key)
     return
   }
   if (meta && key === 'y') {
     event.preventDefault()
-    redoTrim(sample.file)
+    redoTrim(sample.key)
     return
   }
   if ((event.key === 'Delete' || event.key === 'Backspace') && hasSelection(sample)) {
@@ -973,7 +1067,7 @@ function formatOf(sample) {
 
 /** @param {any} sample */
 function rowDuration(sample) {
-  const item = itemFor(sample.file)
+  const item = itemFor(sample.key)
   if (item?.origin_seconds) {
     const before = Number(item.origin_seconds).toFixed(1)
     const after = item.result_seconds ? Number(item.result_seconds).toFixed(1) : ''
@@ -997,7 +1091,7 @@ function trimStats(sample) {
 /** 裁剪面板底部的提示：有选区时报选区，没有就说怎么选。 */
 /** @param {any} sample */
 function trimHint(sample) {
-  const range = selectionOf(sample.file)
+  const range = selectionOf(sample.key)
   if (!range) return '在波形上拖动框选要删除的区间；方向键 ±10 ms，Shift ±100 ms。'
   const length = Math.max(0, range.end - range.start)
   return `选区 ${range.start.toFixed(2)}–${range.end.toFixed(2)} s · ${length.toFixed(2)} s`
@@ -1005,7 +1099,7 @@ function trimHint(sample) {
 
 /** @param {any} sample */
 function canCompare(sample) {
-  const item = itemFor(sample.file)
+  const item = itemFor(sample.key)
   return item?.state === 'done' || item?.state === 'applied'
 }
 
@@ -1016,11 +1110,12 @@ function playingSample(sample) {
 
 /** @param {any} sample @param {string} [mode] */
 function isPreviewing(sample, mode = 'result') {
-  return state.preview === sample.file && state.previewMode === mode && state.previewing
+  return state.preview === sample.key && state.previewMode === mode && state.previewing
 }
 
+// 只认左栏动作的计数：页签切换会改 pick 的音色，但那是打开已有窗口，不重新加载。
 watch(
-  () => [store.pick.voiceId, store.pick.file],
+  () => store.pick.rev,
   () => {
     editor.value = ''
     stopPreview()
@@ -1045,7 +1140,7 @@ watch(
 
 onMounted(() => {
   void refresh()
-  void loadTarget()
+  void restore()
 })
 
 onBeforeUnmount(() => {
@@ -1072,14 +1167,27 @@ onBeforeUnmount(() => {
   padding: 0 10px;
   font-size: 11.5px;
 }
+.vc-head-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* 页头、正文、底栏共用同一条内容列：各自收到 --sh-page-max 并居中，
+   否则宽屏上只有正文收窄，标题与底栏留在面板两端。 */
+.panel-head {
+  width: 100%;
+  max-width: var(--sh-page-max);
+  margin-inline: auto;
+}
 .vc-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   width: 100%;
   max-width: var(--sh-page-max);
-  margin: 0 auto;
-  padding: 6px 22px 26px;
+  margin-inline: auto;
+  padding: 6px var(--sh-gutter) 26px;
   display: flex;
   flex-direction: column;
   gap: var(--sh-gap-3);
@@ -1182,13 +1290,18 @@ onBeforeUnmount(() => {
   color: var(--sh-text-2);
 }
 .vc-chain-sum {
-  margin-left: auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 10.5px;
   color: var(--sh-text-4);
+}
+.vc-chain-acts {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .vc-chain-run {
   flex: none;
@@ -1346,6 +1459,75 @@ onBeforeUnmount(() => {
   background: var(--sh-panel);
   box-shadow: var(--sh-shadow-1), var(--sh-inset-hi);
 }
+/* 页签：每张音色卡一个窗口；只在一张以上时出现。 */
+.vc-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+.vc-tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--sh-line-soft);
+  border-radius: var(--sh-r-xs);
+  background: var(--sh-chip);
+  color: var(--sh-text-3);
+  cursor: pointer;
+}
+.vc-tab:hover {
+  border-color: var(--sh-line);
+  background: var(--sh-hover);
+}
+.vc-tab.on {
+  border-color: var(--sh-accent-ring);
+  background: var(--sh-accent-soft);
+  color: var(--sh-text);
+}
+.vc-tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.vc-tab-count {
+  flex: none;
+  font-size: 10px;
+  color: var(--sh-text-4);
+  font-variant-numeric: tabular-nums;
+}
+.vc-tab.on .vc-tab-count {
+  color: var(--sh-accent);
+}
+.vc-tab-x {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--sh-text-4);
+  cursor: pointer;
+}
+.vc-tab-x:hover {
+  color: var(--sh-danger);
+  background: var(--sh-danger-soft);
+}
+.vc-tab-x:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 .vc-target-head {
   display: flex;
   align-items: center;
@@ -1363,6 +1545,40 @@ onBeforeUnmount(() => {
   font-size: 19px;
   font-weight: 700;
   box-shadow: var(--sh-inset-hi), 0 8px 18px -14px var(--sh-accent);
+}
+/* 头像即播放键：与主页 / 左栏同一个手势——悬停盖一层遮罩，中央一颗播放键。 */
+.vc-avatar-play {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+.vc-avatar-play-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  color: #fff;
+  background: var(--sh-scrim);
+  opacity: 0;
+  transition: opacity var(--sh-t-fast) var(--sh-ease);
+}
+.vc-avatar-play:hover .vc-avatar-play-hint,
+.vc-avatar-play:focus-visible .vc-avatar-play-hint,
+.vc-avatar-play.is-playing .vc-avatar-play-hint {
+  opacity: 1;
+}
+.vc-avatar-play.is-playing .vc-avatar-play-hint {
+  background: var(--sh-scrim-on);
+}
+.vc-avatar-play:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.vc-avatar-play:disabled .vc-avatar-play-hint {
+  display: none;
 }
 .vc-target-ident {
   flex: 1;
@@ -1406,47 +1622,18 @@ onBeforeUnmount(() => {
 .vc-target-acts {
   flex: none;
   display: flex;
-  gap: 5px;
-}
-.vc-toolbar {
-  display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 28px;
-  padding-top: 9px;
-  border-top: 1px solid var(--sh-line-soft);
-  flex-wrap: wrap;
+  gap: 6px;
 }
-.vc-sel-count {
-  font-size: 11.5px;
-  color: var(--sh-text-2);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.vc-sel-count b {
-  color: var(--sh-accent);
-  font-weight: 700;
-}
-.vc-sep {
-  color: var(--sh-text-4);
-}
-.vc-toolbar-note {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10.5px;
-  color: var(--sh-text-4);
-}
-.vc-toolbar-acts {
-  margin-left: auto;
-  display: flex;
-  gap: 3px;
-}
-.vc-toolbar-acts .sh-btn {
+.vc-mini-btn {
   height: 26px;
-  padding: 0 8px;
+  padding: 0 9px;
   font-size: 11px;
+}
+.vc-target-close:hover {
+  color: var(--sh-danger);
+  background: var(--sh-danger-soft);
+  border-color: var(--sh-line);
 }
 .vc-audios {
   display: flex;
@@ -1464,38 +1651,18 @@ onBeforeUnmount(() => {
   padding: 7px 9px;
   border: 1px solid transparent;
   border-radius: var(--sh-r-md);
-  cursor: pointer;
   transition: background var(--sh-t-fast) var(--sh-ease),
     border-color var(--sh-t-fast) var(--sh-ease);
-}
-.vc-audio::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: transparent;
 }
 .vc-audio:hover {
   background: var(--sh-hover);
 }
-/* 选中：整行铺一层强调色，左沿一条实色；不摆方框，行本身就是那颗勾。 */
-.vc-audio.on {
-  background: linear-gradient(90deg, var(--sh-accent-soft), var(--sh-accent-soft) 42%, transparent 92%);
+/* 展开裁剪：这一行自己变成裁剪面板，标题行、波形与工具同属一张卡。 */
+.vc-audio.is-trim,
+.vc-audio.is-trim:hover {
   border-color: var(--sh-accent-ring);
-}
-.vc-audio.on::before {
-  background: var(--sh-accent);
-}
-.vc-audio.on .vc-audio-icon {
-  color: var(--sh-accent);
-  background: var(--sh-accent-soft-2);
-  border-color: var(--sh-accent-ring);
-}
-.vc-audio.locked {
-  cursor: default;
+  background: linear-gradient(180deg, var(--sh-accent-soft), var(--sh-panel) 58%);
+  box-shadow: var(--sh-inset-hi);
 }
 .vc-audio-main {
   display: flex;
@@ -1503,16 +1670,28 @@ onBeforeUnmount(() => {
   gap: 9px;
   min-width: 0;
 }
-.vc-audio-icon {
+.vc-audio-play {
   flex: none;
   width: 30px;
   height: 30px;
   display: grid;
   place-items: center;
+  padding: 0;
   border: 1px solid var(--sh-line-soft);
   border-radius: 9px;
-  color: var(--sh-text-4);
+  color: var(--sh-text-3);
   background: var(--sh-chip);
+  cursor: pointer;
+}
+.vc-audio-play:hover,
+.vc-audio-play.on {
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft-2);
+  border-color: var(--sh-accent-ring);
+}
+.vc-audio-play:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .vc-audio-text {
   min-width: 0;
@@ -1591,6 +1770,11 @@ onBeforeUnmount(() => {
 .vc-icon-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+.vc-audio-remove:hover {
+  color: var(--sh-danger);
+  background: var(--sh-danger-soft);
+  border-color: var(--sh-line);
 }
 .vc-status {
   flex: none;
@@ -1675,90 +1859,76 @@ onBeforeUnmount(() => {
   background: var(--sh-warn-soft);
 }
 
-/* ---------------- 裁剪面板 ---------------- */
+/* ---------------- 裁剪面板（展开在样例行内） ---------------- */
 .vc-trim {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 1px 6px 7px 48px;
-  padding: 11px 13px 12px;
-  border: 1px solid var(--sh-accent-ring);
-  border-radius: var(--sh-r-md);
-  background: linear-gradient(180deg, var(--sh-accent-soft), var(--sh-panel) 72%);
-  box-shadow: var(--sh-inset-hi);
-}
-.vc-trim-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
   min-width: 0;
+  padding: 3px 2px;
+  cursor: default;
 }
-.vc-trim-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--sh-text-2);
-}
-.vc-trim-meta {
-  margin-left: auto;
-  flex: none;
-  font-size: 10.5px;
-  color: var(--sh-text-4);
-  font-variant-numeric: tabular-nums;
-}
-.vc-trim-tools {
+.vc-trim-bar {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
 }
-.vc-trim-tools .sh-btn {
+.vc-trim-bar .sh-btn {
   height: 28px;
   padding: 0 10px;
   font-size: 11px;
+}
+.vc-trim-stats {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--sh-text-3);
+  font-variant-numeric: tabular-nums;
 }
 .vc-trim-undo {
   margin-left: auto;
   display: inline-flex;
   gap: 4px;
 }
-.vc-trim-foot {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.vc-trim-foot .sh-btn {
-  height: 28px;
-  padding: 0 10px;
-  font-size: 11px;
-}
 .vc-trim-hint {
-  margin-left: auto;
   font-size: 10px;
+  line-height: 1.5;
   color: var(--sh-text-4);
+}
+.vc-trim-spacer {
+  flex: 1;
 }
 
 /* ---------------- 底栏 ---------------- */
+/* 底栏与正文同一条内容列：外面只留同一档 gutter，里面是一张与页面卡片同语言的浮卡。 */
 .vc-dock {
   flex: none;
-  border-top: 1px solid var(--sh-line);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--sh-page-max);
+  margin-inline: auto;
+  padding: 0 var(--sh-gutter) 12px;
+}
+.vc-dock-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 12px 10px;
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-radius-inner);
   background: var(--sh-panel);
-  box-shadow: 0 -10px 26px -26px var(--sh-text-4);
-  padding: 9px 22px 11px;
+  box-shadow: var(--sh-shadow-1), var(--sh-inset-hi);
 }
 .vc-dock-in {
-  max-width: var(--sh-page-max);
-  margin: 0 auto;
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
 }
 .vc-dock-sum {
   flex: 1;
@@ -1798,8 +1968,6 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .vc-dock-note {
-  max-width: var(--sh-page-max);
-  margin: 5px auto 0;
   font-size: 10.5px;
   color: var(--sh-ok);
 }
@@ -1870,25 +2038,13 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 1000px) {
   .vc-body {
-    padding: 6px 14px 20px;
-  }
-  .vc-dock {
-    padding: 9px 14px 11px;
+    padding-block: 6px 20px;
   }
   .vc-step-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .vc-audio {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .vc-trim {
-    margin-left: 6px;
-  }
   .vc-target-head {
     flex-wrap: wrap;
-  }
-  .vc-toolbar-note {
-    white-space: normal;
   }
 }
 </style>

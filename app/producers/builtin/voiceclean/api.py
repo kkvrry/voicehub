@@ -36,11 +36,20 @@ class TrimIn(BaseModel):
     segments: list[SegmentIn] = Field(default_factory=list)
 
 
+class VoiceScopeIn(BaseModel):
+    """一条音色在这一轮里要处理哪些样例。"""
+
+    voice_id: str = ""
+    file: str = ""
+    files: list[str] = Field(default_factory=list)
+    trims: dict[str, TrimIn] = Field(default_factory=dict)
+
+
 class ScopeIn(BaseModel):
-    """处理目标：一条音色（可再限定 ``files`` / ``file``）或一份上传的电脑文件。
+    """处理目标：一条音色（可再限定 ``files`` / ``file``）、一组音色，或一份上传的电脑文件。
 
     ``kind='file'`` 时只认 ``token``：文件由 ``POST /source`` 上传，处理结果下载，
-    不写回音色库。
+    不写回音色库。``voices`` 是跨音色的处理序列，按数组顺序落到任务条目上。
     """
 
     kind: str = "voice"
@@ -49,6 +58,7 @@ class ScopeIn(BaseModel):
     file: str = ""
     files: list[str] = Field(default_factory=list)
     trims: dict[str, TrimIn] = Field(default_factory=dict)
+    voices: list[VoiceScopeIn] = Field(default_factory=list)
 
 
 class StepIn(BaseModel):
