@@ -24,18 +24,7 @@
       >
         官方文档 ↗
       </a>
-      <!-- 启停是一个开关，不是一个菜单项：它有两态、随时可逆，而且停用之后这一页
-           就该换走——藏在「⋯」里既难找，也说不出"这是可逆的"。 -->
-      <span class="engine-switch">
-        <span class="engine-switch-text">启用</span>
-        <ToggleSwitch
-          :model-value="Boolean(engine.enabled)"
-          :label="switchLabel"
-          :disabled="toggling"
-          @update:model-value="onEnabledChange"
-        />
-      </span>
-    </header>
+      </header>
 
     <!-- 只差密钥时不摆这句话：「未就绪」徽标已经说过，面板里再写一遍是噪声。
          缺模型 / 缺依赖这类原因仍然要摆（那不是一眼能看出来的）。 -->
@@ -396,35 +385,9 @@ import NoteText from './NoteText.vue'
 import ActionButton from './ui/ActionButton.vue'
 import PanelCard from './ui/PanelCard.vue'
 import SchemaFields from './ui/SchemaFields.vue'
-import ToggleSwitch from './ui/ToggleSwitch.vue'
 import { capabilityTone, languageTone, toneOf } from './ui/tones'
 
 const engine = computed(() => actions.engineOf(store.engineKey))
-
-// ---- 启停：面板里的这个开关只有"关掉"一路（开着的才看得到这一页）----
-const toggling = ref(false)
-const switchLabel = computed(
-  () => `${engine.value?.enabled ? '停用' : '启用'}「${engine.value?.label || ''}」`
-)
-
-/**
- * @param {any} value
- */
-async function onEnabledChange(value) {
-  if (value === Boolean(engine.value?.enabled)) return
-  if (value) return // 这一页只对已启用的引擎画；"开"没有可做的事
-  const target = engine.value
-  if (!target) return
-  toggling.value = true
-  try {
-    // 停用后的落点（换到下一台）在 store 里定：清单里关开关也走同一条路。
-    await actions.disableEngine(target.key)
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error))
-  } finally {
-    toggling.value = false
-  }
-}
 
 /** 空态三句：有适配清单但一台没添加 / 一台适配都没有 / 当前这台已不在清单里。 */
 const canAdd = computed(() => !store.engines.length && store.engineCatalog.length > 0)
@@ -1012,18 +975,6 @@ watch(
   color: var(--sh-text-3);
 }
 
-/* 抬头右端的启停开关：文字是给"这个开关管什么"的一句话，开关本体仍由控件自绘。
-   与「官方文档」同高，两者都是这一页的操作，不再有第三颗「⋯」。 */
-.engine-switch {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 7px;
-}
-.engine-switch-text {
-  font-size: 12px;
-  color: var(--sh-text-3);
-}
 
 /* 克隆表单：两列字段，长文本独占一行 */
 .clone-grid {

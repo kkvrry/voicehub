@@ -57,12 +57,26 @@
           <span>正文</span>
         </div>
         <div v-if="!shown.length" class="empty-line">当前条件下没有日志。</div>
-        <div v-for="l in shown" :key="l.seq || l.at + l.message" class="ln" :class="l.level">
+        <div
+          v-for="l in shown"
+          :key="l.seq || l.at + l.message"
+          class="ln"
+          :class="l.level"
+          @contextmenu="openLineMenu(l, $event)"
+        >
           <!-- 只显示到秒；完整时间在 title 里，要贴给别人用「导出」那一份。 -->
           <span class="at" :title="l.at">{{ logClock(l.at) }}</span>
           <span class="lv">{{ levelText(l.level) }}</span>
           <span class="src" :title="l.source || 'unknown'">{{ l.source || 'unknown' }}</span>
-          <span class="msg">{{ l.message }}</span>
+          <span class="msg">
+            <template v-if="needleText">
+              <template v-for="(part, index) in highlightParts(l.message)" :key="index">
+                <mark v-if="part.hit" class="log-hit">{{ part.text }}</mark>
+                <template v-else>{{ part.text }}</template>
+              </template>
+            </template>
+            <template v-else>{{ l.message }}</template>
+          </span>
         </div>
       </div>
     </PanelCard>
@@ -76,6 +90,7 @@ import { store, actions } from '../store'
 import ActionButton from './ui/ActionButton.vue'
 import ChipToggle from './ui/ChipToggle.vue'
 import PanelCard from './ui/PanelCard.vue'
+import { openObjectMenu } from '../composables/contextMenu'
 
 /** debug 默认关：它是诊断细节，开着会把真正要看的行冲掉。 */
 const LEVELS = [
@@ -130,11 +145,13 @@ const lines = computed(() => store.logs.lines || [])
 /** 来源候选按收到的行动态去重，零配置——去重表由 log.js 增量维护，
  *  这里只排序（候选就几个，比每条日志重算一遍整表便宜）。 */
 const sources = computed(() => [...store.logSources].sort())
+const needleText = computed(() => needle.value.trim())
+const needleLower = computed(() => needleText.value.toLowerCase())
 
 /** 过滤在内存里做，不防抖：一千行以内一帧滤完，加延时只是让输入变钝。 */
 const shown = computed(() => {
   const on = new Set(levels.value.filter((l) => l.on).map((l) => l.key))
-  const want = needle.value.trim().toLowerCase()
+  const want = needleLower.value
   return lines.value.filter((line) => {
     if (!on.has(line.level || 'info')) return false
     if (source.value && (line.source || 'unknown') !== source.value) return false
@@ -142,6 +159,49 @@ const shown = computed(() => {
     return true
   })
 })
+
+/**
+ * 把正文按搜索词切成命中段与普通段；没有搜索词时整段原样返回。
+ * @param {any} message
+ * @returns {{ text: string, hit: boolean }[]}
+ */
+function highlightParts(message) {
+  const value = String(message || '')
+  const need = needleLower.value
+  if (!need) return [{ text: value, hit: false }]
+  const parts = []
+  let from = 0
+  while (from < value.length) {
+    const at = value.toLowerCase().indexOf(need, from)
+    if (at < 0) break
+    if (at > from) parts.push({ text: value.slice(from, at), hit: false })
+    const end = at + needleText.value.length
+    parts.push({ text: value.slice(at, end), hit: true })
+    from = end
+  }
+  if (from < value.length) parts.push({ text: value.slice(from), hit: false })
+  return parts
+}
+
+/** @param {any} line @param {MouseEvent} event */
+function openLineMenu(line, event) {
+  openObjectMenu(
+    'log.line',
+    {
+      text: `${line.at} [${(line.level || '').toUpperCase()}] ${line.source || 'unknown'} ${line.message}`,
+      source: line.source || '',
+      level: line.level || '',
+      onlySource: () => {
+        source.value = line.source || 'unknown'
+      },
+      onlyLevel: () => {
+        const keep = line.level || 'info'
+        levels.value = levels.value.map((item) => ({ ...item, on: item.key === keep }))
+      },
+    },
+    { event }
+  )
+}
 
 
 

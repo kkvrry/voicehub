@@ -22,6 +22,7 @@
         :aria-selected="cue.id === state.selectedCue"
         @click="select(cue)"
         @keydown.enter.prevent="select(cue)"
+        @contextmenu="onRowMenu(cue, $event)"
       >
         <span class="c-i">{{ pad(cue.ordinal) }}</span>
         <span class="c-tc">{{ tc(cue.start_ms) }}<em>→</em>{{ tc(cue.end_ms) }}</span>
@@ -61,24 +62,11 @@
             class="seg-more"
             title="更多操作"
             aria-label="更多操作"
-            @click.stop="toggleMenu(cue.id)"
+            aria-haspopup="menu"
+            @click.stop="openMore(cue, $event)"
           >
             <MoreHorizontal :size="14" :stroke-width="1.8" />
           </button>
-          <div v-if="menu === cue.id" class="seg-menu" @click.stop>
-            <button type="button" @click="playCue(cue)">
-              <Play :size="12" :stroke-width="1.8" />播放该段
-            </button>
-            <button type="button" @click="splitHere(cue)">
-              <Scissors :size="12" :stroke-width="1.8" />在播放头拆分
-            </button>
-            <button type="button" @click="mergeNext(cue)">
-              <Merge :size="12" :stroke-width="1.8" />与下一段合并
-            </button>
-            <button type="button" class="danger" @click="removeThis(cue)">
-              <Trash2 :size="12" :stroke-width="1.8" />删除该段
-            </button>
-          </div>
         </span>
       </div>
       <div :style="{ height: `${padBottom}px` }"></div>
@@ -93,7 +81,7 @@
 // 段落表：一行一段，编辑即提交。行高固定 + 只渲染可视窗口——
 // 两千段的项目常驻两千个输入框会直接卡住输入。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Merge, MoreHorizontal, Play, Scissors, Trash2 } from 'lucide-vue-next'
+import { MoreHorizontal } from 'lucide-vue-next'
 import {
   cues,
   mergeCue,
@@ -106,6 +94,12 @@ import {
   state,
 } from '../store'
 import * as api from '../api'
+import {
+  canTakeOver,
+  closeContextMenu,
+  menuState,
+  openObjectMenu,
+} from '../../../composables/contextMenu'
 
 const STATE_LABEL = { empty: '未生成', ready: '已生成', stale: '已过期', failed: '失败' }
 const ROW_H = 46
@@ -114,7 +108,6 @@ const OVERSCAN = 6
 const scrollEl = ref(null)
 const scrollTop = ref(0)
 const viewHeight = ref(420)
-const menu = ref('')
 
 const start = computed(() => Math.max(0, Math.floor(scrollTop.value / ROW_H) - OVERSCAN))
 const count = computed(() => Math.ceil(viewHeight.value / ROW_H) + OVERSCAN * 2)
@@ -138,12 +131,10 @@ onMounted(() => {
   measure()
   observer = new ResizeObserver(measure)
   if (scrollEl.value) observer.observe(scrollEl.value)
-  window.addEventListener('click', closeMenu)
 })
 
 onBeforeUnmount(() => {
   observer?.disconnect()
-  window.removeEventListener('click', closeMenu)
 })
 
 watch(
@@ -196,23 +187,47 @@ function onRole(cue, roleId) {
   if (roleId && roleId !== cue.role_id) void patchCue(cue, { role_id: roleId })
 }
 
-function toggleMenu(id) {
-  menu.value = menu.value === id ? '' : id
+/** @param {any} cue */
+function cueContext(cue) {
+  return {
+    hasAudio: Boolean(cue.audio),
+    play: () => playCue(cue),
+    split: () => splitHere(cue),
+    merge: () => mergeNext(cue),
+    remove: () => removeThis(cue),
+  }
 }
 
-function closeMenu() {
-  menu.value = ''
+/** 行尾「⋯」：贴按钮展开；再点同一颗键收起。 */
+/** @param {any} cue @param {MouseEvent} event */
+function openMore(cue, event) {
+  const trigger = event?.currentTarget
+  if (menuState.open && menuState.trigger === trigger) {
+    closeContextMenu({ restoreFocus: true })
+    return
+  }
+  openObjectMenu('dubbing.cue', cueContext(cue), {
+    anchor: trigger instanceof HTMLElement ? trigger : null,
+  })
 }
 
+/** 右键落在哪一句就选中哪一句：菜单里的播放头拆分要的是这一句。 */
+/** @param {any} cue @param {MouseEvent} event */
+function onRowMenu(cue, event) {
+  if (!canTakeOver(event)) return
+  select(cue)
+  openObjectMenu('dubbing.cue', cueContext(cue), { event })
+}
+
+/** @param {any} cue */
 function playCue(cue) {
-  menu.value = ''
   if (!cue.audio) return
   const audio = new Audio(api.mediaUrl(state.currentId, 'cue', cue.id))
   void audio.play()
 }
 
+/** @param {any} cue */
 async function splitHere(cue) {
-  menu.value = ''
   const at = Math.round(state.playTime * 1000)
   if (at <= cue.start_ms || at >= cue.end_ms) {
     state.error = '播放头不在这一段内：先点段落把播放头移过来。'
@@ -221,13 +236,13 @@ async function splitHere(cue) {
   await splitCue(cue, at)
 }
 
+/** @param {any} cue */
 async function mergeNext(cue) {
-  menu.value = ''
   await mergeCue(cue)
 }
 
+/** @param {any} cue */
 async function removeThis(cue) {
-  menu.value = ''
   await removeCue(cue)
 }
 </script>
@@ -398,7 +413,6 @@ async function removeThis(cue) {
 .st-failed { color: var(--sh-danger); }
 
 .c-act {
-  position: relative;
   text-align: right;
 }
 
@@ -420,35 +434,6 @@ async function removeThis(cue) {
 }
 
 .seg-more:hover { background: var(--sh-chip); color: var(--sh-accent); }
-
-.seg-menu {
-  position: absolute;
-  right: 0;
-  top: 26px;
-  z-index: 6;
-  min-width: 152px;
-  padding: 4px;
-  border: 1px solid var(--sh-line);
-  border-radius: var(--sh-r-xs);
-  background: var(--sh-panel);
-  box-shadow: var(--sh-shadow-2);
-}
-
-.seg-menu button {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  height: 28px;
-  padding: 0 8px;
-  border-radius: 6px;
-  font-size: 11.5px;
-  color: var(--sh-text-2);
-  text-align: left;
-}
-
-.seg-menu button:hover { background: var(--sh-hover); color: var(--sh-text); }
-.seg-menu button.danger:hover { background: var(--sh-danger-soft); color: var(--sh-danger); }
 
 .seg-empty {
   padding: 18px 14px;

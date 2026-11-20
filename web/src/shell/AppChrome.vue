@@ -119,6 +119,7 @@
     </div>
 
     <slot name="append" />
+    <ContextMenuHost />
   </div>
 </template>
 
@@ -126,6 +127,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { AlertTriangle, Moon, Search, Sun, X } from 'lucide-vue-next'
 import AppNav from './AppNav.vue'
+import ContextMenuHost from '../components/ui/ContextMenu.vue'
 import PlayerBar from '../components/PlayerBar.vue'
 import { actions, store as appStore } from '../store'
 import { useSettingsStore } from '../stores/settings'

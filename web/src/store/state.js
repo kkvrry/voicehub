@@ -44,6 +44,7 @@ export const store = reactive({
     name: '',
     stopping: false,
   },
+  avatarPick: /** @type {any} */ (null), // 正在挑头像的那条音色（卡片右键与详情共用）
   // 连接时补逐字稿那一轮的进度（toast 里显示，可停止）。后端在启动 / 保存设置时
   // 自己起线程，前端靠轮询跟上；`stopping` 是按下停止后、当前这条还没收尾的一段。
   asrJob: {

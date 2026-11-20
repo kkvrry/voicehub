@@ -14,6 +14,7 @@
     @click="togglePlay"
     @keydown.enter.prevent="togglePlay"
     @keydown.space.prevent="togglePlay"
+    @contextmenu="openMenu"
   >
     <!-- 左：两行文字。两行都从同一条左边界起，间距收紧，整块在条内垂直居中。 -->
     <div class="sample-body">
@@ -95,33 +96,12 @@
         :disabled="working"
         title="更多操作"
         aria-label="更多操作"
-        :aria-expanded="menuOpen"
-        @click.stop="menuOpen = !menuOpen"
+        aria-haspopup="menu"
+        :aria-expanded="menuIsOpen"
+        @click.stop="openMenuFromButton"
       >
         <MoreHorizontal :size="16" />
       </button>
-      <Popover :open="menuOpen" :anchor="moreEl" :width="124" label="更多操作" @close="menuOpen = false">
-        <!-- 两项一个长相：都是两个字、都是普通字色。移除确实动磁盘，但危险那句话
-             在确认框里说，不在菜单上染色——菜单上两条不同色，看着像两类动作。 -->
-        <button
-          v-if="asrReady"
-          type="button"
-          class="sample-menu-item"
-          :disabled="working"
-          title="用语音识别听出这段音频念的话"
-          @click="recognize"
-        >
-          {{ working ? '识别中…' : '识别' }}
-        </button>
-        <button
-          type="button"
-          class="sample-menu-item"
-          title="从这条音色里移除这一段（文件进回收站，可还原）"
-          @click="remove"
-        >
-          移除
-        </button>
-      </Popover>
     </div>
   </div>
 </template>
@@ -133,10 +113,14 @@ import { Check, MoreHorizontal, Play, Square } from 'lucide-vue-next'
 import { api } from '../api'
 import { store, actions, labelOf, say, vocab } from '../store'
 import InlineText from './ui/InlineText.vue'
-import Popover from './ui/Popover.vue'
 import TagChips from './ui/TagChips.vue'
 import WaveBars from './ui/WaveBars.vue'
 import { emotionTone } from './ui/tones'
+import {
+  closeContextMenu,
+  menuState,
+  openObjectMenu,
+} from '../composables/contextMenu'
 
 const props = defineProps({
   voice: { type: Object, required: true },
@@ -148,8 +132,8 @@ const text = ref(props.sample.text)
 const emotion = ref(props.sample.emotion)
 const tags = ref([...(props.sample.tags || [])])
 const working = ref(false)
-const menuOpen = ref(false)
 const moreEl = ref(/** @type {any} */ (null))
+const menuIsOpen = computed(() => menuState.open && menuState.trigger === moreEl.value)
 
 /** 识别引擎是否就绪——没就绪就不摆那个入口。
  *  用 `ready` 而不是 `current`：引擎配错地址时后者仍非空，点了只能报错。 */
@@ -187,7 +171,6 @@ const useTitle = computed(() => {
 /** 听出这段音频念的话，填进「说话内容」。已写过字时先问一句（可能是手打的），
  *  空着就直接填——那种时候"识别一下"与"填上"是同一件事。 */
 async function recognize() {
-  menuOpen.value = false
   working.value = true
   try {
     const result = await api.transcribe(props.voice.id, props.sample.file)
@@ -318,10 +301,44 @@ function useReference() {
   actions.closeDetail()
 }
 
+/** 这一条的菜单上下文：右键与行尾「⋯」都从这里取，两边永远同一份。 */
+function menuContext() {
+  const synth = store.view === 'synth'
+  const picking = choosing.value || props.multiple
+  const current = choosing.value && chosen.value
+  return {
+    playing: playing.value,
+    hasAudio: Boolean(audioUrl.value),
+    isMain: Boolean(props.sample.is_main),
+    fileName: props.sample.file,
+    useLabel: !picking ? '' : current ? '使用中' : synth ? '用作参考音频' : '设为处理目标',
+    useDisabled: current,
+    canRecognize: asrReady.value && !working.value,
+    recognizing: working.value,
+    play: togglePlay,
+    setMain,
+    use: useReference,
+    recognize,
+    remove,
+  }
+}
+
+/** @param {MouseEvent} event */
+function openMenu(event) {
+  openObjectMenu('sample.row', menuContext(), { event })
+}
+
+function openMenuFromButton() {
+  if (menuIsOpen.value) {
+    closeContextMenu({ restoreFocus: true })
+    return
+  }
+  openObjectMenu('sample.row', menuContext(), { anchor: moreEl.value })
+}
+
 /** 移除这一段：文件进回收站（可还原），所以点之前把那句话摆出来——
  *  删的是磁盘上的东西，不是一个能一键撤销的表单字段。 */
 async function remove() {
-  menuOpen.value = false
   const where = props.sample.is_main ? '\n\n它现在是主样例，移除后会自动落到另一条。' : ''
   const ok = window.confirm(
     `从「${props.voice.shown_name}」移除这段样例？\n\n${props.sample.file}${where}\n\n文件会移到回收站（可还原）。`

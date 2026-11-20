@@ -249,8 +249,13 @@ const titleEl = ref(/** @type {any} */ (null))
 const titleEditing = ref(false)
 /** 「生成样例」那个窗口开没开（声明在下面 watch 之前：它是 immediate 的，会先跑一趟）。 */
 const auditionOpen = ref(false)
-/** 正在挑头像的那条音色（关掉选图弹层就置空）。 */
-const avatarVoice = ref(/** @type {any} */ (null))
+/** 正在挑头像的那条音色（关掉选图弹层就置空；卡片右键也能把它叫起来）。 */
+const avatarVoice = computed({
+  get: () => store.avatarPick,
+  set: (value) => {
+    store.avatarPick = value
+  },
+})
 
 /** 角色卡的两组固定标签：语调（怎么念）、音色（声音质地）。候选来自后端词表，
  *  选中的与自填词一样落进 `tags`——筛选、AI 匹配、卡片上的颜色都不必另认一套。 */

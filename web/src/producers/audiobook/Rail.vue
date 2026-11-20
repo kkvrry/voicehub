@@ -68,6 +68,7 @@
         :key="chapter.id"
         class="chapter-row"
         :class="{ 'is-active': chapter.id === chapterId, 'is-absent': !available(chapter) }"
+        @contextmenu="onChapterMenu(chapter, $event)"
       >
         <button
           type="button"
@@ -108,6 +109,8 @@
 import { computed, ref } from 'vue'
 import { BookOpen, Check, ChevronDown, FolderCog, Trash2 } from 'lucide-vue-next'
 import Popover from '../../components/ui/Popover.vue'
+import { actions, store as appStore } from '../../store'
+import { canTakeOver, openObjectMenu } from '../../composables/contextMenu'
 import { chapterVisible } from './visible'
 import { confirmAction } from './confirm'
 import {
@@ -242,6 +245,36 @@ async function removeChapter(chapter) {
   })
   if (!answer) return
   void deleteChapter(chapter.id)
+}
+
+/** @param {any} chapter */
+function chapterAudioUrlOf(chapter) {
+  if (!detail.value || !chapter?.audio) return ''
+  return `/api/v1/producers/${appStore.producer.key}/projects/${detail.value.id}/chapters/${chapter.id}/audio`
+}
+
+/** 菜单里的「播放本章」不必先把这一章切到中间：直接放它的成品音频。 */
+/** @param {any} chapter */
+function playChapterAudio(chapter) {
+  const url = chapterAudioUrlOf(chapter)
+  if (!url) return
+  actions.play({ url, label: chapter.title, sub: detail.value?.name || '' })
+}
+
+/** @param {any} chapter @param {MouseEvent} event */
+function onChapterMenu(chapter, event) {
+  if (!canTakeOver(event)) return
+  openObjectMenu(
+    'audiobook.chapter',
+    {
+      title: chapter.title,
+      hasAudio: Boolean(chapter.audio),
+      play: () => playChapterAudio(chapter),
+      rename: () => renamePrompt(chapter),
+      remove: () => removeChapter(chapter),
+    },
+    { event }
+  )
 }
 </script>
 

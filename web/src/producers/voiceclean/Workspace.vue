@@ -171,6 +171,7 @@
                 :tabindex="win.active ? 0 : -1"
                 @click="openWindow(win.voiceId)"
                 @keydown.enter.prevent="openWindow(win.voiceId)"
+                @contextmenu="onTabMenu(win, $event)"
               >
                 <span class="vc-tab-name">{{ win.name }}</span>
                 <span class="vc-tab-count">{{ win.count }}</span>
@@ -241,7 +242,12 @@
 
             <div class="vc-audios">
               <template v-for="(sample, position) in targetSamples" :key="sample.key">
-                <div class="vc-audio" :class="{ 'is-trim': editor === sample.key }">
+                <div
+                  class="vc-audio"
+                  :class="{ 'is-trim': editor === sample.key }"
+                  @click="onAudioClick(sample, $event)"
+                  @contextmenu="onSampleMenu(sample, $event)"
+                >
                   <div class="vc-audio-main">
                     <button
                       type="button"
@@ -270,9 +276,7 @@
                     </div>
                   </div>
 
-                  <span class="vc-audio-dur" :title="isTrimmed(sample) ? `原长 ${sample.duration.toFixed(1)} s` : ''">
-                    {{ rowDuration(sample) }}
-                  </span>
+                  <span class="vc-audio-dur">{{ rowDuration(sample) }}</span>
 
                   <span class="vc-audio-acts">
                     <span
@@ -303,24 +307,12 @@
                     <button
                       type="button"
                       class="vc-icon-btn"
-                      :disabled="lockedSelect || targetSamples.length <= 1"
-                      title="只处理这一条"
-                      aria-label="只处理这一条"
+                      :disabled="lockedSelect || state.windows.length <= 1"
+                      title="只处理这张卡"
+                      aria-label="只处理这张卡"
                       @click="onOnlyRow(sample.key)"
                     >
                       <Focus :size="14" :stroke-width="1.8" />
-                    </button>
-                    <button
-                      v-if="!itemFor(sample.key)"
-                      type="button"
-                      class="vc-icon-btn"
-                      :class="{ on: editor === sample.key }"
-                      :disabled="lockedEdit"
-                      :title="editor === sample.key ? '收起裁剪' : '裁剪'"
-                      aria-label="裁剪"
-                      @click="toggleEditor(sample.key)"
-                    >
-                      <Scissors :size="14" :stroke-width="1.8" />
                     </button>
                     <button
                       type="button"
@@ -542,7 +534,6 @@ import {
   Pause,
   Play,
   Redo2,
-  Scissors,
   Trash2,
   Undo2,
   Upload,
@@ -551,6 +542,7 @@ import {
 import { actions, labelOf, say, store, vocab } from '../../store'
 import { useSettingsStore } from '../../stores/settings'
 import { avatarFill } from '../../composables/avatarColor'
+import { canTakeOver, openObjectMenu } from '../../composables/contextMenu'
 import Waveform from './Waveform.vue'
 import {
   activateWindow,
@@ -853,12 +845,79 @@ function onRemoveRow(key) {
   removeFromQueue(key)
 }
 
-/** 行尾「只处理这一条」：序列收成这一行；正在编辑别的行时先收起。 */
+/** 行尾「只处理这张卡」：序列收成这一行所在的音色卡，卡内样例不动。 */
 /** @param {string} key */
 function onOnlyRow(key) {
   if (lockedSelect.value) return
   if (editor.value && editor.value !== key) closeEditor()
   onlyThis(key)
+}
+
+/** @param {string} voiceId */
+function voiceCardOf(voiceId) {
+  return state.cards[voiceId] || store.allVoices.find((/** @type {any} */ item) => item.id === voiceId) || null
+}
+
+/** 页签右键：关闭或整卡试听都不必先切到这张卡。 */
+/** @param {any} win @param {MouseEvent} event */
+function onTabMenu(win, event) {
+  if (!canTakeOver(event)) return
+  const card = voiceCardOf(win.voiceId)
+  openObjectMenu(
+    'voiceclean.tab',
+    {
+      name: win.name,
+      hasAudio: Boolean(card?.main_audio_url),
+      locked: lockedSelect.value,
+      play: () => {
+        if (!card?.main_audio_url) return
+        stopPreview()
+        actions.playVoiceCard(card)
+      },
+      close: () => onCloseWindow(win.voiceId),
+    },
+    { event }
+  )
+}
+
+/** 点音频条主体展开 / 收起裁剪；行上的按钮、A/B、时长与裁剪面板各管各的。 */
+/** @param {any} sample @param {MouseEvent} event */
+function onAudioClick(sample, event) {
+  const target = event.target
+  if (!(target instanceof Element)) return
+  if (target.closest('button, .vc-ab, .vc-status, .vc-audio-dur, .vc-trim')) return
+  if (itemFor(sample.key)) return
+  toggleEditor(sample.key)
+}
+
+/** 样例行右键：试听、A/B、裁剪、移出都落在这一条上。 */
+/** @param {any} sample @param {MouseEvent} event */
+function onSampleMenu(sample, event) {
+  if (!canTakeOver(event)) return
+  const item = itemFor(sample.key)
+  const index = item?.index ?? 0
+  openObjectMenu(
+    'voiceclean.row',
+    {
+      playing: playingSample(sample),
+      hasAudio: Boolean(sample.audio_url),
+      canCompare: canCompare(sample),
+      canOnly: state.windows.length > 1 && !lockedSelect.value,
+      trimDisabled: Boolean(item) || lockedEdit.value,
+      trimReason: item ? '结果已生成，先应用或重置' : '正在处理中',
+      isTrim: editor.value === sample.key,
+      locked: lockedSelect.value,
+      removeLabel: isFile.value ? '清除这个文件' : '移出处理序列',
+      fileName: sample.file,
+      play: () => playSample(sample),
+      playOrigin: () => play(index, 'origin'),
+      playResult: () => play(index, 'result'),
+      only: () => onOnlyRow(sample.key),
+      trim: () => toggleEditor(sample.key),
+      remove: () => onRemoveRow(sample.key),
+    },
+    { event }
+  )
 }
 
 /** 播放条正在放的正是这条音色的样例：头像上显示暂停。 */
@@ -1065,15 +1124,23 @@ function formatOf(sample) {
   return (match?.[1] || '音频').toUpperCase()
 }
 
+/** 行尾时长：只有裁过的行摆「原长 → 结果」的对比，两位小数才看得出裁剪量。
+ *  没裁的行只给一个数：样例元数据是容器时长（MP3/AAC 的编码垫片比解码后的
+ *  PCM 长 0.05 s 左右），拿它当「前」会让没裁的行也显得少了 0.05 s。 */
 /** @param {any} sample */
 function rowDuration(sample) {
+  const full = Number(sample.duration) || 0
   const item = itemFor(sample.key)
-  if (item?.origin_seconds) {
-    const before = Number(item.origin_seconds).toFixed(1)
-    const after = item.result_seconds ? Number(item.result_seconds).toFixed(1) : ''
-    return after ? `${before} → ${after} s` : `${before} s`
+  const result = Number(item?.result_seconds) || 0
+  if (result) {
+    if (!item?.trimmed) return `${result.toFixed(1)} s`
+    if (full) return `${full.toFixed(2)} → ${result.toFixed(2)} s`
+    return `${result.toFixed(1)} s`
   }
   const kept = keptSeconds(sample)
+  if (isTrimmed(sample) && full && Math.abs(full - kept) > 0.005) {
+    return `${full.toFixed(2)} → ${kept.toFixed(2)} s`
+  }
   return kept ? `${kept.toFixed(1)} s` : '—'
 }
 
@@ -1669,6 +1736,11 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 9px;
   min-width: 0;
+  cursor: pointer;
+}
+/* 结果已生成时裁剪锁住：主体不再摆出可点的样子。 */
+.vc-audio:has(.vc-status) .vc-audio-main {
+  cursor: default;
 }
 .vc-audio-play {
   flex: none;

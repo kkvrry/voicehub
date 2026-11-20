@@ -156,6 +156,7 @@
                 class="chapter-line"
                 :class="{ 'is-dialogue': row.kind === 'dialogue' }"
                 :data-row-id="row.id"
+                @contextmenu="onRowMenu(row, $event)"
               >
                 <span class="chapter-line-ord">{{ row.ordinal + 1 }}</span>
                 <span class="chapter-line-speaker">{{ row.speaker || '旁白' }}</span>
@@ -330,6 +331,7 @@
                   <tr
                     v-for="row in visibleRows"
                     :key="row.id"
+                    :data-row-id="row.id"
                     :class="{
                       'is-dialogue': row.kind === 'dialogue',
                       'is-failed': row.status === 'failed',
@@ -338,6 +340,7 @@
                       'is-caret': caretRow?.id === row.id,
                     }"
                     @click="focusRow(row, $event)"
+                    @contextmenu="onRowMenu(row, $event)"
                   >
                     <td class="col-ord">
                       <button
@@ -389,6 +392,7 @@
                         <textarea
                           v-if="expandedRow === row.id"
                           class="row-input row-text-input row-text-area"
+                          data-app-menu
                           :value="textOf(row)"
                           :disabled="running"
                           @input="draftText(row, $event)"
@@ -401,6 +405,7 @@
                         <input
                           v-else
                           class="row-input row-text-input"
+                          data-app-menu
                           :value="textOf(row)"
                           :title="textOf(row)"
                           :disabled="running"
@@ -504,8 +509,8 @@
                         </button>
                         <RowMenu
                           :disabled="busy || isGenerating(row)"
-                          @regenerate="generate(row)"
-                          @remove="removeRow(row)"
+                          type="audiobook.row"
+                          :context="rowMenuContext(row)"
                         />
                       </div>
                     </td>
@@ -645,6 +650,7 @@ import {
   state,
 } from './store'
 import { overlayTarget } from '../../composables/overlayTarget'
+import { canTakeOver, openObjectMenu } from '../../composables/contextMenu'
 
 const plugin = computed(() => store.producers.find(/** @param {any} item */ (item) => item.key === store.producer.key))
 /** 外观偏好：密度决定行高，行高的量法见 `measure()`。 */
@@ -1326,10 +1332,25 @@ async function insertMark(value) {
     text = `[[${mark.name}:${seconds}]]`
   }
   const source = row.text || ''
-  const at = caret.value.rowId === row.id ? caret.value.at : source.length
+  const caretHere = caret.value.rowId === row.id
+  const at = caretHere ? caret.value.at : source.length
   const next = source.slice(0, at) + text + source.slice(at)
+  const position = at + text.length
   markName.value = ''
-  void editRow(row.id, { text: next })
+  if (caretHere) {
+    // 连着插两条时，第二条落在第一条后面，而不是又回到原位置。
+    caret.value = { rowId: row.id, at: position }
+  }
+  await editRow(row.id, { text: next })
+  if (!caretHere) return
+  // 输入框在值更新后会把旧的光标偏移报回来：落库后把 DOM 光标放回新标签之后。
+  await nextTick()
+  const input = rowsWrap.value?.querySelector(`tr[data-row-id="${row.id}"] .row-input`)
+  if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+    input.focus({ preventScroll: true })
+    input.setSelectionRange(position, position)
+    caret.value = { rowId: row.id, at: position }
+  }
 }
 
 async function applyBatch() {
@@ -1571,6 +1592,96 @@ async function removeSelected() {
   const ids = [...selected.value]
   clearSelection()
   void deleteRows(ids)
+}
+
+/** 这一行落在哪台引擎上：按章音色优先，其次按说话人；与插入标记同一判据。 */
+/** @param {any} row */
+function engineOfRow(row) {
+  const mapping =
+    (chapterScope.value && detail.value?.chapter_voices?.[row.chapter_id]) ||
+    detail.value?.voices?.[row.speaker || '旁白']
+  return String(mapping?.engine || '')
+}
+
+/** 引擎自己登记的标签：只列发得出去的，不再算通用交集。 */
+/** @param {any} row */
+function marksOfRow(row) {
+  const engine = engineOfRow(row)
+  if (!engine) return { marks: [], reason: '这一行还没有分配音色' }
+  const names = state.marks?.engine_marks?.[engine] || []
+  const defs = new Map()
+  for (const mark of state.marks?.common || []) defs.set(mark.name, mark)
+  for (const group of state.marks?.engines || []) {
+    for (const mark of group.marks || []) {
+      if (!defs.has(mark.name)) defs.set(mark.name, mark)
+    }
+  }
+  const marks = names
+    .map((/** @type {string} */ name) => defs.get(name))
+    .filter(Boolean)
+  return { marks, reason: marks.length ? '' : '这台引擎没有声明语气词或已停用' }
+}
+
+/** 行菜单的上下文：右键与行尾「⋯」共用一份，批量项跟着眼前的选中走。 */
+/** @param {any} row */
+function rowMenuContext(row) {
+  const inSelection = selected.value.includes(row.id)
+  const count = inSelection ? selected.value.length : 0
+  const mergeBySelection =
+    inSelection && selected.value.length >= 2 && selectionContiguous.value
+  const mergeByCaret = caret.value.rowId === row.id && Boolean(caretNext.value)
+  const caretHere = caret.value.rowId === row.id
+  const markInfo = caretHere ? marksOfRow(row) : { marks: [], reason: '' }
+  return {
+    status: row.status,
+    busy: busy.value,
+    generating: isGenerating(row),
+    hasAudio: Boolean(row.audio),
+    canSplit:
+      caretHere &&
+      caret.value.at > 0 &&
+      caret.value.at < (textOf(row) || '').length,
+    hasCaret: caretHere,
+    marks: markInfo.marks,
+    marksReason: markInfo.reason,
+    insertMark: (/** @type {string} */ name) => insertMark(name),
+    mergeLabel: mergeBySelection
+      ? `合并所选 ${selected.value.length} 行`
+      : mergeByCaret
+        ? '与下一行合并'
+        : '',
+    selectionCount: count,
+    text: textOf(row),
+    speaker: roleOf(row),
+    play: () => playRow(row),
+    generate: () => generate(row),
+    params: () => openParams(row),
+    split: splitSelected,
+    merge: mergeSelected,
+    remove: () => {
+      if (count > 1) void removeSelected()
+      else void removeRow(row)
+    },
+  }
+}
+
+/** 右键不改已选中的行；点在选外先收成这一行，菜单范围与眼前的选中一致。 */
+/** @param {any} row @param {MouseEvent} event */
+function onRowMenu(row, event) {
+  if (!canTakeOver(event)) return
+  const target = event.target
+  const field =
+    target instanceof Element ? target.closest('.row-input') : null
+  // 在行文本里右键：菜单里的语气词就插在这里，而不是整行末尾。
+  if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
+    caret.value = { rowId: row.id, at: field.selectionStart ?? 0 }
+  } else if (!selected.value.includes(row.id)) {
+    if (selected.value.length) clearSelection()
+    if (caret.value.rowId !== row.id) {
+      caret.value = { rowId: row.id, at: String(textOf(row) || '').length }
+    }
+  }
+  openObjectMenu('audiobook.row', rowMenuContext(row), { event })
 }
 
 /** 自动合并：短于上限的旁白行并入下一行；对白行不参与。范围与上限在同一弹窗里给。 */

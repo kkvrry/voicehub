@@ -2149,6 +2149,16 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
 .logview-list .msg { white-space: pre-wrap; word-break: break-word; color: var(--sh-text-2); }
 .logview-list .ln.warning .msg { color: var(--sh-warn); }
 .logview-list .ln.error .msg { color: var(--sh-danger); }
+/* 搜索命中：标记黄实底 + 深字，扫一列日志时一眼能落点；换行处每段各自成块。 */
+.logview-list .log-hit {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--sh-hit);
+  color: var(--sh-hit-text);
+  font-weight: 600;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
 
 /* ---------------- 分类标签 ----------------
  * 性别 / 语言 / 年龄 / 情绪 / 自由标签都用这一套。

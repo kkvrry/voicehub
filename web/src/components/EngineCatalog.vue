@@ -29,6 +29,7 @@
               :key="row.key"
               class="catalog-row"
               :class="{ 'is-on': row.enabled }"
+              @contextmenu="openRowMenu(row, $event)"
             >
               <img v-if="row.icon_url" class="catalog-icon" :src="row.icon_url" alt="" />
               <span v-else class="catalog-icon is-placeholder" aria-hidden="true">◻</span>
@@ -73,6 +74,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { actions, say, store } from '../store'
 import { overlayTarget } from '../composables/overlayTarget'
+import { openObjectMenu } from '../composables/contextMenu'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 
 /** 这一层常驻：挂的是**壳登记的那个元素**，不是挂载时 query 出来的一个——
@@ -114,6 +116,23 @@ function showNote(row) {
  */
 function onEnabled(row, value) {
   void setEnabled(row, value)
+}
+
+/** 行右键：只给开关这一件事，和行上的 ToggleSwitch 同一个动作。 */
+/**
+ * @param {any} row
+ * @param {MouseEvent} event
+ */
+function openRowMenu(row, event) {
+  openObjectMenu(
+    'engine.row',
+    {
+      enabled: Boolean(row.enabled),
+      busy: busyKey.value === row.key,
+      toggle: () => setEnabled(row, !row.enabled),
+    },
+    { event }
+  )
 }
 
 /**

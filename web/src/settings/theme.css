@@ -53,6 +53,10 @@
   --sh-danger: #d9574b;
   --sh-danger-soft: rgba(217, 87, 75, 0.12);
 
+  /* 搜索命中：标记黄底加深字，亮暗主题同一套值；与强调色分开，命中不与来源列混色。 */
+  --sh-hit: #ffd23e;
+  --sh-hit-text: #3d2c00;
+
   /* ---- 形状与深度 ---- */
 
   /* ---- 画布与面板：旧页面的 --bg / --panel 从这里取，不再各写一份色值 ---- */
@@ -3273,31 +3277,6 @@ select.sh-field {
 }
 .sample-more:disabled {
   opacity: 0.5;
-  cursor: default;
-}
-/* 这几项住在 `body` 上的弹层里（`Popover` teleport 出去，不在 `.app-shell` 内），
-   所以只能取全局那套令牌：`--sh-*` 在 `.app-shell` 之外是空的，
-   写 `var(--sh-text-2)` 会一路落到继承值——从前这一列菜单其实没有自己的颜色。 */
-/* 菜单里两项一个长相：都是两个字、都是正文色（不是弱化色，也不是危险色）。
-   移除确实动磁盘，但那句话在确认框里说——菜单上染色会让两条看着像两类动作。 */
-.sample-menu-item {
-  display: block;
-  width: 100%;
-  padding: 7px 8px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--text);
-  font-family: inherit;
-  font-size: 12.5px;
-  text-align: left;
-  cursor: pointer;
-}
-.sample-menu-item:hover {
-  background: var(--hover);
-}
-.sample-menu-item:disabled {
-  opacity: 0.55;
   cursor: default;
 }
 :root[data-theme='dark'] .sample,

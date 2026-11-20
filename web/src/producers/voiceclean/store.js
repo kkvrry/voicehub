@@ -500,21 +500,19 @@ export function removeFromQueue(key) {
   }
 }
 
-/** 只保留这一条：处理序列收成这一行。 */
+/** 只保留这张卡：处理序列收成这一行所在的音色卡，卡内样例不动。 */
 /** @param {string} key */
 export function onlyThis(key) {
   if (!key || isRunning()) return
   for (const win of state.windows) {
-    const file = win.files.find((row) => keyOf(win.voiceId, row) === key)
-    if (!file) continue
+    if (!win.files.some((row) => keyOf(win.voiceId, row) === key)) continue
     for (const other of state.windows) {
       if (other.voiceId === win.voiceId) continue
       clearVoiceState(other.voiceId)
     }
-    state.windows = [{ voiceId: win.voiceId, files: [file] }]
+    state.windows = [{ voiceId: win.voiceId, files: [...win.files] }]
     state.activeVoiceId = win.voiceId
     store.pick.voiceId = win.voiceId
-    if (store.pick.file && store.pick.file !== file) store.pick.file = ''
     return
   }
 }

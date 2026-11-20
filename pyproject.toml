@@ -1,6 +1,6 @@
 [project]
 name = "voicehub"
-version = "0.1.0"
+version = "0.1.1"
 description = "音色驱动的有声书工作台：音色库管理、有声书生产与多引擎合成中转"
 # 许可证写进元数据，装完 `pip show` 与打包产物都能看到；正文在 LICENSE。
 # 用 SPDX 标识（PEP 639）而非老的 `{ text = ... }`，setuptools>=77 才认，本项目已满足。

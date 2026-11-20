@@ -20,6 +20,7 @@
         :class="{ 'is-active': isActiveTts(row.key) }"
         :title="engineTitle(row)"
         @click="pickEngine(row.key)"
+        @contextmenu="openEngineMenu(row, $event)"
       >
         <img v-if="row.icon_url" class="plugin-icon" :src="row.icon_url" alt="" />
         <span v-else class="plugin-icon is-placeholder" aria-hidden="true">◻</span>
@@ -94,7 +95,8 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { SlidersHorizontal } from 'lucide-vue-next'
-import { actions, store } from '../store'
+import { actions, say, store } from '../store'
+import { openObjectMenu } from '../composables/contextMenu'
 
 type Row = {
   key: string
@@ -134,6 +136,24 @@ function engineTitle(row: Row) {
 function pickEngine(key: string) {
   if (isActiveTts(key)) return
   void actions.openEngine(key)
+}
+
+/** 这一列只摆已启用的引擎：右键能做的只有停用。 */
+function openEngineMenu(row: Row, event: MouseEvent) {
+  openObjectMenu(
+    'engine.row',
+    {
+      enabled: true,
+      toggle: async () => {
+        try {
+          await actions.disableEngine(row.key)
+        } catch (error) {
+          say(String(error instanceof Error ? error.message : String(error)))
+        }
+      },
+    },
+    { event }
+  )
 }
 
 function pickLlm(key: string) {
