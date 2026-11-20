@@ -205,10 +205,11 @@ class LoudnessStage:
                 _write_json(cache_path, cache)
         measured_at = time.perf_counter()
         voices = self.svc.store.voice_map(project_id)
+        chapter_voices = self.svc.chapter_voice_rows(project_id)
         items = []
         for row in rows:
             speaker = row["speaker"] or NARRATOR
-            voice = voices.get(speaker, {})
+            voice = self.svc.mapping_for(row, voices, chapter_voices) or {}
             group = [voice.get("engine"), voice.get("voice_id"), voice.get("sample_file")]
             if not voice.get("voice_id"):
                 group = [speaker]

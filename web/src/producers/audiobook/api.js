@@ -299,6 +299,16 @@ export const setVoices = (key, id, body) =>
   request(`${base(key)}/projects/${id}/voices/batch`, { method: 'PUT', body })
 
 /**
+ * 按章分配旁白音色：还没识别出角色时，分配表一行为一章。
+ *
+ * @param {string} key
+ * @param {string} id
+ * @param {any} body
+ */
+export const setChapterVoices = (key, id, body) =>
+  request(`${base(key)}/projects/${id}/chapter-voices`, { method: 'PUT', body })
+
+/**
  * @param {string} key
  */
 export const assistStatus = (key) => request(`${base(key)}/assist/status`)

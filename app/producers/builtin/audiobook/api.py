@@ -424,6 +424,108 @@ def build_router(service: AudiobookService) -> APIRouter:
             "skipped": skipped,
         }
 
+    @router.put("/projects/{project_id}/chapter-voices", summary="按章分配旁白音色")
+    async def set_chapter_voices(
+        project_id: str, body: dict[str, Any], request: Request
+    ) -> dict[str, Any]:
+        """没识别出角色时，分配表按章列行：一颗音色只落在指定章。
+
+        第一次只为某一章指定时，其余章由存储层沿用这颗音色；之后改一章只改这一章。
+        应用前与角色分配走同一条复核：音色还在库里、确实能落到这台引擎上。
+        """
+        if service.running_job(project_id):
+            raise ProducerError("任务运行中，等它结束或取消后再换音色。")
+        items = body.get("assignments")
+        if not isinstance(items, list) or not items:
+            raise ProducerError("没有要应用的章节。")
+        if len(items) > 500:
+            raise ProducerError("一次最多应用 500 章。")
+        chapters = {
+            str(item["id"]): item for item in service.store.chapters(project_id)
+        }
+        info = voice_assign_task.engine_caps()
+        rows: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                skipped.append({"chapter_id": "", "reason": "格式不对。"})
+                continue
+            chapter_id = str(item.get("chapter_id") or "").strip()
+            engine = str(item.get("engine") or "").strip()
+            voice_id = str(item.get("voice_id") or "").strip()
+            mode = str(item.get("mode") or "").strip()
+            design_prompt = str(item.get("design_prompt") or "").strip()
+            sample_mode = str(item.get("sample_mode") or "emotion").strip()
+            sample_file = str(item.get("sample_file") or "").strip()
+            chapter = chapters.get(chapter_id)
+            if chapter is None:
+                skipped.append({"chapter_id": chapter_id, "reason": "章节不在这本书里。"})
+                continue
+            if not engine:
+                skipped.append({"chapter_id": chapter_id, "reason": "缺少引擎。"})
+                continue
+            if sample_mode not in {"emotion", "fixed"}:
+                skipped.append({"chapter_id": chapter_id, "reason": "样例策略不合法。"})
+                continue
+            if sample_mode == "fixed" and not sample_file:
+                skipped.append({"chapter_id": chapter_id, "reason": "固定样例缺少文件。"})
+                continue
+            if mode == "design":
+                if not design_prompt:
+                    skipped.append({"chapter_id": chapter_id, "reason": "音色设计缺少描述。"})
+                    continue
+                try:
+                    meta = await engines_uc.clone_voice(
+                        request.app.state.library,
+                        engine,
+                        CloneRequest(
+                            name=f"{chapter['title']} 设计", design_prompt=design_prompt
+                        ),
+                    )
+                except Exception as exc:  # noqa: BLE001 - 单章失败不拖垮整批
+                    skipped.append(
+                        {"chapter_id": chapter_id, "reason": f"音色设计失败：{exc}"}
+                    )
+                    continue
+                voice_id = platform_voice_id(engine, meta.id)
+            elif not voice_id:
+                skipped.append({"chapter_id": chapter_id, "reason": "缺少音色。"})
+                continue
+            try:
+                voice = voice_assign_task.resolve_voice(
+                    request.app.state.library, voice_id, engine, info=info
+                )
+            except (LibraryError, assist_uc.AssistError) as exc:
+                skipped.append({"chapter_id": chapter_id, "reason": str(exc)})
+                continue
+            pinned = mode != "design" and sample_mode == "fixed"
+            rows.append(
+                {
+                    "chapter_id": chapter_id,
+                    "engine": engine,
+                    "voice_id": voice.id,
+                    "voice_name": voice.shown_name,
+                    "sample_mode": "fixed" if pinned else "emotion",
+                    "sample_file": sample_file if pinned else "",
+                }
+            )
+        if not rows:
+            raise ProducerError("没有可应用的分配：章节可能已不存在，或音色已不在库中。")
+        changed = service.store.set_chapter_voices(project_id, rows)
+        service.store.invalidate_chapters(project_id, changed)
+        CHANNEL.info(
+            f"按章音色已应用：{len(rows)} 章，{len(changed)} 章变化",
+            source="audiobook",
+            project=project_id,
+        )
+        return {
+            "object": "chapter_voice_assign",
+            "detail": service.detail(project_id),
+            "applied": len(rows),
+            "changed": len(changed),
+            "skipped": skipped,
+        }
+
     @router.post("/projects/{project_id}/speakers/merge", summary="合并角色")
     def merge_speakers(project_id: str, body: dict[str, Any]) -> dict[str, Any]:
         names = [str(item).strip() for item in body.get("names") or [] if str(item).strip()]

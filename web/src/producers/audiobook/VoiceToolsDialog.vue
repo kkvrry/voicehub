@@ -21,6 +21,7 @@
             v-show="tab === 'assign'"
             :open="open"
             :roles="assignRoles"
+            :chapter-scope="chapterScope"
             @applied="onApplied"
             @close="close"
           />
@@ -50,6 +51,8 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   assignRoles: { type: Array, default: () => [] },
   mergeRoles: { type: Array, default: () => [] },
+  /** 未识别出角色：分配表按章列行，表头写「章节」。 */
+  chapterScope: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close', 'applied', 'merge'])
 

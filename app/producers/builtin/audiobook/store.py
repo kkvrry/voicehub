@@ -106,6 +106,18 @@ CREATE TABLE IF NOT EXISTS voices (
     reason TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (project_id, speaker)
 );
+-- 按章指定的旁白音色：还没识别出角色时，分配表按章列行。
+-- 只存旁白这一层；具名角色仍走 voices。
+CREATE TABLE IF NOT EXISTS chapter_voices (
+    project_id TEXT NOT NULL,
+    chapter_id TEXT NOT NULL,
+    engine TEXT NOT NULL DEFAULT '',
+    voice_id TEXT NOT NULL DEFAULT '',
+    voice_name TEXT NOT NULL DEFAULT '',
+    sample_mode TEXT NOT NULL DEFAULT 'emotion',
+    sample_file TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (project_id, chapter_id)
+);
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
@@ -146,6 +158,19 @@ def _now() -> str:
 
 def _new_id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+def _voice_tuple(value: dict[str, Any] | None) -> tuple[str, ...] | None:
+    """一条音色映射的比较键；没指定（或没有音色 id）就是空。"""
+    if not value or not value.get("voice_id"):
+        return None
+    return (
+        str(value.get("engine") or ""),
+        str(value.get("voice_id") or ""),
+        str(value.get("voice_name") or ""),
+        str(value.get("sample_mode") or "emotion"),
+        str(value.get("sample_file") or ""),
+    )
 
 
 def _params_json(params: dict[str, Any]) -> str:
@@ -509,6 +534,7 @@ class AudiobookStore:
                 conn.execute("DELETE FROM rows WHERE chapter_id = ?", (chapter_id,))
             conn.execute("DELETE FROM chapters WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM voices WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM chapter_voices WHERE project_id = ?", (project_id,))
             conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
 
     # ---- 章节 -------------------------------------------------------------
@@ -852,6 +878,8 @@ class AudiobookStore:
             for chapter_id in old:
                 conn.execute("DELETE FROM rows WHERE chapter_id = ?", (chapter_id,))
             conn.execute("DELETE FROM chapters WHERE project_id = ?", (project_id,))
+            # 章号换了，按章音色跟着旧章一起作废；新章由用户在分配表里重挑。
+            conn.execute("DELETE FROM chapter_voices WHERE project_id = ?", (project_id,))
             now = _now()
             conn.executemany(
                 "INSERT INTO chapters(id, project_id, ordinal, title, text, updated_at)"
@@ -868,6 +896,7 @@ class AudiobookStore:
     def delete_chapter(self, chapter_id: str) -> None:
         with self._conn() as conn:
             conn.execute("DELETE FROM rows WHERE chapter_id = ?", (chapter_id,))
+            conn.execute("DELETE FROM chapter_voices WHERE chapter_id = ?", (chapter_id,))
             conn.execute("DELETE FROM chapters WHERE id = ?", (chapter_id,))
 
     def renumber_chapters(self, project_id: str) -> None:
@@ -1512,6 +1541,191 @@ class AudiobookStore:
             }
             for row in rows
         }
+
+    def chapter_voice_map(
+        self, project_id: str, conn: sqlite3.Connection | None = None
+    ) -> dict[str, dict[str, str]]:
+        """按章指定的旁白音色：章 id → 映射（没有单独指定过的章不在里面）。"""
+        rows = self._query(
+            "SELECT chapter_id, engine, voice_id, voice_name, sample_mode, sample_file"
+            " FROM chapter_voices WHERE project_id = ?",
+            (project_id,),
+            conn,
+        )
+        return {
+            str(row["chapter_id"]): {
+                "engine": row["engine"],
+                "voice_id": row["voice_id"],
+                "voice_name": row["voice_name"],
+                "sample_mode": row["sample_mode"] or "emotion",
+                "sample_file": row["sample_file"] or "",
+            }
+            for row in rows
+        }
+
+    def has_named_speakers(self, project_id: str) -> bool:
+        """这本书有没有识别出具名角色；没有时分配表按章列行。"""
+        return bool(
+            self._query(
+                "SELECT 1 AS found FROM rows r JOIN chapters c ON c.id = r.chapter_id"
+                " WHERE c.project_id = ?"
+                " AND COALESCE(r.speaker, '') NOT IN ('', '旁白', '对话', '未知')"
+                " LIMIT 1",
+                (project_id,),
+            )
+        )
+
+    def set_chapter_voices(
+        self, project_id: str, assignments: list[dict[str, Any]]
+    ) -> list[str]:
+        """按章写旁白音色，返回真正变化的章 id。
+
+        第一次只为某一章指定时，其余各章沿用这颗音色——用户只挑一次就够；
+        书里已有章级音色后再改一章，只改这一章，其余章保持当前的生效音色，
+        改一章不会悄悄把别的章一起换掉。
+        """
+        if not assignments:
+            return []
+        with self._conn() as conn:
+            chapters = [
+                str(row["id"])
+                for row in conn.execute(
+                    "SELECT id FROM chapters WHERE project_id = ? ORDER BY ordinal",
+                    (project_id,),
+                ).fetchall()
+            ]
+            known = set(chapters)
+            existing = {
+                str(row["chapter_id"]): {
+                    "engine": row["engine"],
+                    "voice_id": row["voice_id"],
+                    "voice_name": row["voice_name"],
+                    "sample_mode": row["sample_mode"] or "emotion",
+                    "sample_file": row["sample_file"] or "",
+                }
+                for row in conn.execute(
+                    "SELECT * FROM chapter_voices WHERE project_id = ?", (project_id,)
+                ).fetchall()
+            }
+            incoming: dict[str, dict[str, str] | None] = {}
+            for item in assignments:
+                chapter_id = str(item.get("chapter_id") or "").strip()
+                if chapter_id not in known:
+                    continue
+                voice_id = str(item.get("voice_id") or "")
+                if not voice_id:
+                    incoming[chapter_id] = None
+                    continue
+                incoming[chapter_id] = {
+                    "engine": str(item.get("engine") or ""),
+                    "voice_id": voice_id,
+                    "voice_name": str(item.get("voice_name") or ""),
+                    "sample_mode": str(item.get("sample_mode") or "emotion"),
+                    "sample_file": str(item.get("sample_file") or ""),
+                }
+            default = next(
+                (existing[cid] for cid in chapters if existing.get(cid, {}).get("voice_id")),
+                None,
+            )
+            first = next((incoming[cid] for cid in chapters if incoming.get(cid)), None)
+            changed: list[str] = []
+            for chapter_id in chapters:
+                before = existing.get(chapter_id)
+                if chapter_id in incoming:
+                    after = incoming[chapter_id]
+                elif before and before.get("voice_id"):
+                    after = before
+                elif default is not None:
+                    after = default
+                else:
+                    after = first
+                if _voice_tuple(before) != _voice_tuple(after):
+                    changed.append(chapter_id)
+                if after is None:
+                    conn.execute(
+                        "DELETE FROM chapter_voices WHERE project_id = ? AND chapter_id = ?",
+                        (project_id, chapter_id),
+                    )
+                    continue
+                conn.execute(
+                    "INSERT INTO chapter_voices(project_id, chapter_id, engine, voice_id,"
+                    " voice_name, sample_mode, sample_file) VALUES(?,?,?,?,?,?,?)"
+                    " ON CONFLICT(project_id, chapter_id) DO UPDATE SET"
+                    " engine = excluded.engine, voice_id = excluded.voice_id,"
+                    " voice_name = excluded.voice_name, sample_mode = excluded.sample_mode,"
+                    " sample_file = excluded.sample_file",
+                    (
+                        project_id,
+                        chapter_id,
+                        after["engine"],
+                        after["voice_id"],
+                        after["voice_name"],
+                        after["sample_mode"],
+                        after["sample_file"],
+                    ),
+                )
+            return changed
+
+    def chapter_voice_assignments(self) -> list[dict[str, str]]:
+        """全项目的章级音色映射：扫描自愈一次取回。"""
+        rows = self._query(
+            "SELECT project_id, chapter_id, engine, voice_id, voice_name FROM chapter_voices"
+        )
+        return [dict(row) for row in rows]
+
+    def rebind_chapter_voice_ids(
+        self, items: list[tuple[str, str, str, str]]
+    ) -> int:
+        """按 (项目, 章) 改写章级音色的 id 与显示名；只给扫描自愈用。"""
+        if not items:
+            return 0
+        with self._conn() as conn:
+            conn.executemany(
+                "UPDATE chapter_voices SET voice_id = ?, voice_name = ?"
+                " WHERE project_id = ? AND chapter_id = ?",
+                [
+                    (voice_id, voice_name, project_id, chapter_id)
+                    for project_id, chapter_id, voice_id, voice_name in items
+                ],
+            )
+        return len(items)
+
+    def invalidate_chapters(self, project_id: str, chapter_ids: list[str]) -> None:
+        """换章级音色：只作废这些章里的行与章成品，别的章不动。
+
+        没有具名角色时章级音色管整章；有具名角色时只影响占位说话人的行。
+        音频留着不删：换回原音色时指纹又能对上，行自动恢复成「已生成」。
+        """
+        ids = [str(item) for item in chapter_ids if str(item).strip()]
+        if not ids:
+            return
+        # 没有具名角色时，章级音色对整章的行都生效；有具名角色时只动占位旁白行。
+        named = self.has_named_speakers(project_id)
+        with self._conn() as conn:
+            for start in range(0, len(ids), 500):
+                chunk = ids[start : start + 500]
+                marks = ",".join("?" for _ in chunk)
+                conn.execute(
+                    "UPDATE rows SET error = '',"
+                    " status = CASE"
+                    "   WHEN audio <> '' THEN 'stale'"
+                    "   WHEN status IN ('audio', 'failed') THEN 'analyzed'"
+                    "   ELSE status END"
+                    f" WHERE chapter_id IN ({marks})"
+                    + (
+                        ""
+                        if not named
+                        else " AND COALESCE(speaker, '') IN ('', '旁白', '对话', '未知')"
+                    ),
+                    chunk,
+                )
+                conn.execute(
+                    "UPDATE chapters SET audio = '',"
+                    " stage = CASE WHEN stage IN ('merged', 'audio') THEN 'analysis'"
+                    "   ELSE stage END,"
+                    f" updated_at = ? WHERE project_id = ? AND id IN ({marks})",
+                    (_now(), project_id, *chunk),
+                )
 
     def voice_assignments(self) -> list[dict[str, str]]:
         """全项目的角色→音色映射：扫描自愈一次取回，不逐个音色回查。"""

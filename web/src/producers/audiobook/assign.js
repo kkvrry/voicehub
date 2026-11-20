@@ -5,6 +5,20 @@
 // 各自只画自己的样子。判据分成两份，迟早一边允许的引擎另一边不认。
 import { store } from '../../store'
 
+/** 拆句与分析留下的占位说话人：它们不是书里的角色。 */
+export const PLACEHOLDER_SPEAKERS = new Set(['对话', '未知'])
+
+/**
+ * 这本书识别出的具名角色：只剩占位说话人时，分配表按章列行。
+ *
+ * @param {any} detail
+ */
+export function namedSpeakersOf(detail) {
+  return (detail?.speakers || []).filter(
+    /** @param {any} item */ (item) => !PLACEHOLDER_SPEAKERS.has(item.speaker)
+  )
+}
+
 /**
  * 角色表：旁白固定第一行，其余按出现次数。
  * **只列正文里的说话人**——`voices` 里的孤儿映射（行早没了 / 重拆后换了名字）

@@ -65,7 +65,25 @@ def rebind_stale_voices(store: Any, library: Any) -> dict[str, Any]:
             ambiguous += 1
         else:
             missing += 1
-    if not rebinds:
+    # 章级旁白音色同样按名字自愈；旧指纹不在这里重算，下一次生成会换成新 id。
+    chapter_rebinds: dict[tuple[str, str], Any] = {}
+    for row in getattr(store, "chapter_voice_assignments", list)():
+        voice_id = str(row.get("voice_id") or "")
+        if not voice_id or ":" in voice_id or voice_id in by_id:
+            continue
+        name = str(row.get("voice_name") or "").strip()
+        candidates = [
+            voice
+            for voice in local_by_name.get(name, [])
+            if str(row.get("engine") or "") in allowed_engines(voice, caps)
+        ]
+        if len(candidates) == 1:
+            chapter_rebinds[(str(row["project_id"]), str(row["chapter_id"]))] = candidates[0]
+        elif candidates:
+            ambiguous += 1
+        else:
+            missing += 1
+    if not rebinds and not chapter_rebinds:
         _log(0, 0, ambiguous, missing)
         return {"rebound": 0, "keys": 0, "ambiguous": ambiguous, "missing": missing}
 
@@ -128,6 +146,12 @@ def rebind_stale_voices(store: Any, library: Any) -> dict[str, Any]:
                 )
 
     changed = store.rebind_voice_ids(updates)
+    chapter_updates = [
+        (project_id, chapter_id, str(voice.id), str(voice.shown_name))
+        for (project_id, chapter_id), voice in chapter_rebinds.items()
+    ]
+    if chapter_updates:
+        changed += store.rebind_chapter_voice_ids(chapter_updates)
     if keys:
         store.set_row_audio_keys(keys)
     _log(changed, len(keys), ambiguous, missing)

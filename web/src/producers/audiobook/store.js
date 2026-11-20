@@ -6,6 +6,7 @@
 import { reactive, watch } from 'vue'
 import { actions, say, store } from '../../store'
 import * as api from './api'
+import { namedSpeakersOf } from './assign'
 
 export const state = reactive({
   loaded: false,
@@ -60,6 +61,16 @@ watch(
     if (activeMerge && !activeMerge.current()) activeMerge.stop()
   },
   { flush: 'sync' }
+)
+
+// 「指定音色」的入口文案跟着分配表的读法走：有角色就是角色，没有就是章节。
+watch(
+  () => state.detail,
+  (detail) => {
+    if (!detail) return
+    store.assignTarget = namedSpeakersOf(detail).length ? '角色' : '某一章'
+  },
+  { immediate: true }
 )
 
 const ACTIVE = new Set(['running', 'cancelling'])
@@ -528,6 +539,52 @@ export async function assignVoices(assignments, overwrite = false) {
     fail(error)
     return null
   }
+}
+
+/**
+ * 按章应用旁白音色（未识别出角色时的分配表）。
+ *
+ * @param {any} assignments
+ */
+export async function assignChapterVoices(assignments) {
+  const detail = state.detail
+  if (!detail) return null
+  try {
+    const payload = await api.setChapterVoices(key(), detail.id, { assignments })
+    state.detail = payload.detail
+    void loadMarks()
+    const skipped = payload.skipped?.length || 0
+    // 第一次指定会把其余章一起沿用，提示按真正变化的章数说。
+    const changed = payload.changed || payload.applied
+    say(
+      skipped ? `已更新 ${changed} 章音色，跳过 ${skipped} 章` : `已更新 ${changed} 章音色`,
+      { kind: skipped ? 'warn' : 'success' }
+    )
+    return payload
+  } catch (error) {
+    fail(error)
+    return null
+  }
+}
+
+/**
+ * 给一章指定音色：与分配表里的「章节」同一套规则。
+ *
+ * @param {string} chapterId
+ * @param {any} voice
+ * @param {any} options
+ */
+export async function assignChapterVoice(chapterId, voice, options = {}) {
+  return assignChapterVoices([
+    {
+      chapter_id: chapterId,
+      engine: voice?.source || '',
+      voice_id: voice?.id || '',
+      voice_name: voice?.shown_name || voice?.name || '',
+      sample_mode: options.sample_mode || 'emotion',
+      sample_file: options.sample_file || '',
+    },
+  ])
 }
 
 /**

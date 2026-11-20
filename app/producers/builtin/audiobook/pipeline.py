@@ -114,6 +114,7 @@ class AudiobookService:
         from app.usecase import engines as engines_uc
 
         voices = self.store.voice_map(project_id)
+        chapter_voices = self.chapter_voice_rows(project_id)
         words = set(emotion_words())
         revision = pronunciation.revision()
         identities: dict[str, str] = {}
@@ -123,7 +124,7 @@ class AudiobookService:
         good: list[str] = []
         chapters: set[str] = set()
         for row in rows:
-            mapping = voices.get(row["speaker"] or NARRATOR)
+            mapping = self.mapping_for(row, voices, chapter_voices)
             if not mapping or not mapping.get("voice_id"):
                 continue
             engine_key = str(mapping["engine"])
@@ -164,6 +165,33 @@ class AudiobookService:
         self.store.set_chapters_stage(ready, "audio")
         return sorted(chapters)
 
+    def chapter_voice_rows(self, project_id: str) -> dict[str, dict[str, str]]:
+        """按章指定的旁白音色；这本书已有具名角色时不用它（分配表那时按角色走）。
+
+        这样一张分配表只有一种读法：有角色就按角色，没有就按章；不会出现
+        「改的是角色，发的是别的章」这种看不见的覆盖。
+        """
+        if self.store.has_named_speakers(project_id):
+            return {}
+        return self.store.chapter_voice_map(project_id)
+
+    def mapping_for(
+        self,
+        row: dict[str, Any],
+        voices: dict[str, dict[str, str]],
+        chapter_voices: dict[str, dict[str, str]],
+    ) -> dict[str, str] | None:
+        """这一行实际使用的音色：章级音色生效时按章，否则按说话人。
+
+        章级音色只在书里没有具名角色时生效（``chapter_voice_rows`` 已把关），
+        所以此时整章的行都归这一颗，包括拆句留下的「对话」占位行。
+        """
+        if chapter_voices:
+            override = chapter_voices.get(str(row.get("chapter_id") or ""))
+            if override and override.get("voice_id"):
+                return override
+        return voices.get(row["speaker"] or NARRATOR)
+
     def detail(self, project_id: str) -> dict[str, Any]:
         # 先结算过期音频：改回去的行在这里就恢复成「已生成」，统计不会虚报待生成。
         self._settle_stale(project_id)
@@ -180,6 +208,7 @@ class AudiobookService:
             chapter_roles = self.store.chapter_speakers(project_id, conn)
             speakers = self.store.speakers(project_id, conn)
             voices = self.store.voice_map(project_id, conn)
+            chapter_voices = self.store.chapter_voice_map(project_id, conn)
             job = self.store.latest_job(project_id, conn)
         for chapter in chapters:
             chapter["broken"] = broken.get(str(chapter["id"]), 0)
@@ -205,6 +234,7 @@ class AudiobookService:
             ],
             "speakers": speakers,
             "voices": voices,
+            "chapter_voices": chapter_voices,
             "split_options": self._split_options_payload(project),
             # 最近一次任务：刷新页面后据此继续显示进度。
             "job": job,

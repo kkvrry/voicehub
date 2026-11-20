@@ -368,9 +368,11 @@ class MergeStage:
         没有任何行分配引擎时连装都不装。
         """
         voices = self.store.voice_map(project_id)
+        chapter_voices = self.svc.chapter_voice_rows(project_id)
         keys: list[str] = []
         for row in rows:
-            engine = str((voices.get(str(row.get("speaker") or "")) or {}).get("engine") or "")
+            mapping = self.svc.mapping_for(row, voices, chapter_voices) or {}
+            engine = str(mapping.get("engine") or "")
             if engine and engine not in keys:
                 keys.append(engine)
         if not keys:

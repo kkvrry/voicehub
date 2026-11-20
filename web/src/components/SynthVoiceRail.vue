@@ -214,13 +214,13 @@
             <span class="rail-samples">{{ voice.sample_count || 0 }} 条样例</span>
           </span>
         </span>
-        <!-- 创作页：这一列是"给角色挑音色"，收藏让位给指定。
+        <!-- 创作页：这一列是"给角色或章节挑音色"，收藏让位给指定。
              生成页：选中由卡片红边表示；右端这颗管"挑哪一段"，点卡片本身则直接用主样例。 -->
         <button
           v-if="assignable"
           type="button"
           class="rail-assign"
-          title="指定给某个角色"
+          :title="`指定给${store.assignTarget || '角色'}`"
           @click.stop="assign(voice)"
         >
           指定

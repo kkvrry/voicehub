@@ -545,6 +545,7 @@
       :open="voiceToolsOpen"
       :assign-roles="assignableRoles"
       :merge-roles="mergeableRoles"
+      :chapter-scope="chapterScope"
       @close="voiceToolsOpen = false"
       @merge="onMergeSpeakers"
     />
@@ -616,7 +617,7 @@ import SpeakerField from './SpeakerField.vue'
 import VoiceToolsDialog from './VoiceToolsDialog.vue'
 import { confirmAction } from './confirm'
 import { useSettingsStore } from '../../stores/settings'
-import { rolesOf } from './assign'
+import { namedSpeakersOf, rolesOf } from './assign'
 import { chapterVisible, filterRows, isBroken, UNASSIGNED_SPEAKER } from './visible'
 import {
   autoMergeAllRows,
@@ -1292,7 +1293,10 @@ async function insertMark(value) {
     say('先把光标放到一行文本里。')
     return
   }
-  const engine = detail.value?.voices?.[row.speaker || '旁白']?.engine || ''
+  const mapping =
+    (chapterScope.value && detail.value?.chapter_voices?.[row.chapter_id]) ||
+    detail.value?.voices?.[row.speaker || '旁白']
+  const engine = mapping?.engine || ''
   const supported = engine ? (state.marks?.engine_marks?.[engine] || []).includes(mark.name) : null
   if (supported === false) {
     const answer = await confirmAction({
@@ -1664,27 +1668,64 @@ const chapterAudioUrl = computed(() => {
 })
 
 const voiceOf = computed(() => detail.value?.voices || {})
+const chapterVoiceOf = computed(() => detail.value?.chapter_voices || {})
 
-/** 还没指定音色的角色；旁白也算一行——它在分配表里，只是不交给 AI。 */
-const unassignedRoles = computed(() =>
-  roles.value.filter(/** @param {any} item */ (item) => !voiceOf.value[item.name]?.voice_id)
-)
+/** 没有识别出角色时，分配表按章列行：旁白没有角色可挑，读者只关心每章是谁念。 */
+const chapterScope = computed(() => {
+  const value = detail.value
+  return Boolean(value && !namedSpeakersOf(value).length && (value.chapters || []).length)
+})
 
-/** 分配弹窗的完整角色表：已指定音色的也在里面，用来调整。
- *  旁白同样是一行——它是全书最主要的那颗音色，只是不参与 AI 匹配。 */
-const assignableRoles = computed(() =>
-  roles.value.map(/** @param {any} item */ (item) => ({
+/** 未单独指定过的章沿用的那颗音色：按章序取第一个已有音色的章。 */
+const chapterDefaultVoice = computed(() => {
+  for (const item of detail.value?.chapters || []) {
+    const voice = chapterVoiceOf.value[item.id]
+    if (voice?.voice_id) return voice
+  }
+  return null
+})
+
+/** 还没指定音色的角色（或章）；旁白也算一行——它在分配表里，只是不交给 AI。 */
+const unassignedRoles = computed(() => {
+  if (chapterScope.value) {
+    return assignableRoles.value.filter(/** @param {any} item */ (item) => !item.current?.voice_id)
+  }
+  return roles.value.filter(/** @param {any} item */ (item) => !voiceOf.value[item.name]?.voice_id)
+})
+
+/** 分配弹窗的完整表：已指定音色的也在里面，用来调整。
+ *  有角色时旁白同样是一行——它是全书最主要的那颗音色，只是不参与 AI 匹配；
+ *  没有角色时一行一章，未单独指定的章显示沿用的那颗音色。 */
+const assignableRoles = computed(() => {
+  if (chapterScope.value) {
+    return (detail.value?.chapters || []).map(
+      /** @param {any} item */ (item) => ({
+        key: item.id,
+        chapter_id: item.id,
+        name: item.title,
+        rows: Number(item.rows) || 0,
+        current: chapterVoiceOf.value[item.id] || chapterDefaultVoice.value || null,
+      })
+    )
+  }
+  return roles.value.map(/** @param {any} item */ (item) => ({
+    key: item.name,
     name: item.name,
     rows: item.rows,
     current: voiceOf.value[item.name] || null,
   }))
-)
+})
 
-/** 音色管理按钮的悬停说明：还差几个角色没指定，一眼看得出来。
+/** 音色管理按钮的悬停说明：还差几个角色 / 章没指定，一眼看得出来。
  *  对话模型没配好只影响弹窗里的 AI 匹配，不影响手动指定，所以不在这里拦。 */
 const assistTitle = computed(() => {
   if (running.value) return '任务运行中，等它结束再调整音色'
   const open = unassignedRoles.value.length
+  if (chapterScope.value) {
+    return open
+      ? `音色管理（${open} 章还没指定音色）· 可逐章指定`
+      : `音色管理（${assignableRoles.value.length} 章已指定音色）· 可逐章调整`
+  }
   return open
     ? `音色管理（${open} 个角色还没指定音色）· 打开后可手动改或让 AI 匹配`
     : `音色管理（${assignableRoles.value.length} 个角色已指定）· 可手动改或让 AI 重新匹配`

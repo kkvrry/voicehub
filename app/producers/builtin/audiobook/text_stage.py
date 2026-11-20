@@ -370,7 +370,14 @@ class TextStage:
 
         row, _ = self._row_of(project_id, row_id)
         speaker = row["speaker"] or NARRATOR
-        mapping = self.svc.store.voice_map(project_id).get(speaker) or {}
+        mapping = (
+            self.svc.mapping_for(
+                row,
+                self.svc.store.voice_map(project_id),
+                self.svc.chapter_voice_rows(project_id),
+            )
+            or {}
+        )
         engine_key = str(mapping.get("engine") or "")
         # 按**插件**取，不按已启用：这一行已经绑在这台引擎上，这里回答的是"它能调
         # 什么"，不是"现在能不能跑"。停用后仍要看得见它的参数面——换成已启用清单，

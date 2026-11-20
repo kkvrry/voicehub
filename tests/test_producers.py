@@ -606,6 +606,93 @@ def test_batch_assigns_the_narrator(client, seed_platform_voice, monkeypatch) ->
     assert data["detail"]["voices"]["旁白"]["voice_id"] == voice.id
 
 
+def test_chapter_voices_apply_to_the_whole_book(
+    client, seed_platform_voice, monkeypatch
+) -> None:
+    """没识别出角色时按章分配：只为第一章指定，其余章沿用这颗音色。"""
+    from app.producers.builtin.audiobook.assist import voice_assign as voice_assign_task
+
+    monkeypatch.setattr(
+        voice_assign_task,
+        "engine_caps",
+        lambda: {"minimax": {"ready": True, "reference": True, "design": True}},
+    )
+    voice = seed_platform_voice()
+    created = client.post(
+        "/api/v1/producers/audiobook/projects",
+        json={"name": "样书", "text": "第一章 甲\n他推门。\n\n第二章 乙\n天黑以后。\n"},
+    ).json()
+    base = f"/api/v1/producers/audiobook/projects/{created['id']}"
+    client.post(f"{base}/split", json={"pattern_key": "general"})
+    detail = client.post(f"{base}/steps/sentences", json={}).json()
+    assert detail["speakers"] == []
+    first, second = detail["chapters"]
+
+    data = client.put(
+        f"{base}/chapter-voices",
+        json={
+            "assignments": [
+                {
+                    "chapter_id": first["id"],
+                    "engine": "minimax",
+                    "voice_id": voice.id,
+                    "mode": "preset",
+                }
+            ]
+        },
+    ).json()
+
+    table = data["detail"]["chapter_voices"]
+    assert table[first["id"]]["voice_id"] == voice.id
+    # 只为一章指定，其余章沿用同一颗音色。
+    assert table[second["id"]]["voice_id"] == voice.id
+
+
+def test_chapter_voice_keeps_other_chapters_until_roles_exist(tmp_path) -> None:
+    """改一章只改这一章；书里出现具名角色后，分配表回到按角色。"""
+    from app.producers.builtin.audiobook.pipeline import AudiobookService
+
+    service = AudiobookService(tmp_path)
+    project = service.create("样书", "第一章 甲\n他推门。\n\n第二章 乙\n天黑以后。\n")
+    project_id = project["id"]
+    service.split_project(project_id, "general")
+    service.split_sentences(project_id)
+    first, second = service.store.chapters(project_id)
+    first_rows = service.store.rows(first["id"])
+    second_rows = service.store.rows(second["id"])
+    for row in first_rows + second_rows:
+        service.store.set_row_audio(row["id"], "rows/a.wav", "k")
+
+    service.store.set_chapter_voices(
+        project_id,
+        [{"chapter_id": first["id"], "engine": "e", "voice_id": "v1", "voice_name": "甲"}],
+    )
+    changed = service.store.set_chapter_voices(
+        project_id,
+        [{"chapter_id": second["id"], "engine": "e", "voice_id": "v2", "voice_name": "乙"}],
+    )
+    service.store.invalidate_chapters(project_id, changed)
+
+    table = service.store.chapter_voice_map(project_id)
+    assert table[first["id"]]["voice_id"] == "v1"
+    assert table[second["id"]]["voice_id"] == "v2"
+    # 只作废改过的那一章，另一章的旧音频仍算数。
+    assert all(service.store.row(row["id"])["status"] == "audio" for row in first_rows)
+    assert all(service.store.row(row["id"])["status"] == "stale" for row in second_rows)
+
+    mapping = service.mapping_for(
+        second_rows[0],
+        service.store.voice_map(project_id),
+        service.chapter_voice_rows(project_id),
+    )
+    assert mapping["voice_id"] == "v2"
+
+    # 出现具名角色：按章音色不再生效，分配表改回按角色。
+    service.store.set_row_annotation(first_rows[0]["id"], "少年", "")
+    assert service.chapter_voice_rows(project_id) == {}
+    assert "少年" in {item["speaker"] for item in service.store.speakers(project_id)}
+
+
 def test_row_params_are_per_row_and_validated(client) -> None:
     """行参数：只落在这一行上，空串当没设，越界与未知键一律 400。"""
     created = client.post(
@@ -746,7 +833,9 @@ def test_engine_names_skip_rows_without_engine(tmp_path, monkeypatch) -> None:
     }
     stage = MergeStage.__new__(MergeStage)
     stage.svc = SimpleNamespace(
-        store=SimpleNamespace(voice_map=lambda project_id: voices)
+        store=SimpleNamespace(voice_map=lambda project_id: voices),
+        chapter_voice_rows=lambda project_id: {},
+        mapping_for=lambda row, table, chapter_table: table.get(row.get("speaker") or "旁白"),
     )
     monkeypatch.setattr(
         registry, "list_engines", lambda: {"known": SimpleNamespace(label="已知引擎")}

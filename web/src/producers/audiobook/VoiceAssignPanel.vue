@@ -7,7 +7,7 @@
         <div class="plan-bar-main">
           <span class="auto-section-label">分配表</span>
           <span class="auto-note">
-            {{ roleList.length }} 个角色 · {{ assignedCount }} 个已有音色
+            {{ countText }}
             <template v-if="defaultText"> · {{ defaultText }}</template>
           </span>
         </div>
@@ -16,6 +16,7 @@
             还原
           </button>
           <button
+            v-if="!chapterScope"
             type="button"
             class="sh-btn is-sm is-ghost"
             title="只补还没选音色的角色；要重挑某一行就点那一行的星星"
@@ -38,7 +39,7 @@
         <table class="plan-table">
           <thead>
             <tr>
-              <th class="col-role">角色</th>
+              <th class="col-role">{{ chapterScope ? '章节' : '角色' }}</th>
               <th class="col-engine">引擎</th>
               <th class="col-mode">生成方式</th>
               <th class="col-voice">音色</th>
@@ -46,50 +47,58 @@
             </tr>
           </thead>
           <tbody>
-            <template v-for="role in roleList" :key="role.name">
-              <tr :class="{ 'is-changed': isChanged(role.name) }">
+            <template v-for="role in roleList" :key="roleKey(role)">
+              <tr :class="{ 'is-changed': isChanged(roleKey(role)) }">
                 <td class="col-role">
                   <div class="role-main">
                     <span class="role-name" :title="role.name">{{ role.name }}</span>
-                    <span v-if="isChanged(role.name)" class="sh-chip is-accent">待应用</span>
+                    <span v-if="isChanged(roleKey(role))" class="sh-chip is-accent">待应用</span>
                   </div>
                   <div class="role-meta">
                     <span>{{ role.rows }} 行</span>
                     <span
-                      v-if="reasonOf(role.name) !== '—'"
+                      v-if="reasonOf(roleKey(role)) !== '—'"
                       class="role-reason"
-                      :title="reasonOf(role.name)"
+                      :title="reasonOf(roleKey(role))"
                     >
-                      · {{ reasonOf(role.name) }}
+                      · {{ reasonOf(roleKey(role)) }}
                     </span>
                   </div>
                   <!-- AI 匹配时按它挑的音色：性别、年龄、音色词，留在角色栏里
                        方便对照这颗音色为什么合适；手动指定后也继续显示。 -->
-                  <div v-if="profileOf(role.name)" class="role-profile" :title="profileOf(role.name)">
-                    {{ profileOf(role.name) }}
+                  <div
+                    v-if="!chapterScope && profileOf(roleKey(role))"
+                    class="role-profile"
+                    :title="profileOf(roleKey(role))"
+                  >
+                    {{ profileOf(roleKey(role)) }}
                   </div>
-                  <div v-if="noteOf(role.name)" class="role-note" :title="noteOf(role.name)">
-                    {{ noteOf(role.name) }}
+                  <div
+                    v-if="!chapterScope && noteOf(roleKey(role))"
+                    class="role-note"
+                    :title="noteOf(roleKey(role))"
+                  >
+                    {{ noteOf(roleKey(role)) }}
                   </div>
                 </td>
                 <td class="col-engine">
                   <EngineSelect
-                    :value="planOf(role.name).engine"
+                    :value="planOf(roleKey(role)).engine"
                     :options="engineOptions"
                     :disabled="busy"
                     :wheel="false"
                     :label="`${role.name} 的引擎`"
-                    @change="setEngine(role.name, $event)"
+                    @change="setEngine(roleKey(role), $event)"
                   />
                 </td>
                 <td class="col-mode">
                   <EngineSelect
-                    :value="planOf(role.name).mode"
-                    :options="modeOptionsFor(role.name)"
+                    :value="planOf(roleKey(role)).mode"
+                    :options="modeOptionsFor(roleKey(role))"
                     :disabled="busy || !options.engines.length"
                     :wheel="false"
                     :label="`${role.name} 的生成方式`"
-                    @change="setMode(role.name, $event)"
+                    @change="setMode(roleKey(role), $event)"
                   />
                 </td>
                 <td class="col-voice">
@@ -97,32 +106,35 @@
                        与左边的「生成方式」同行对应，不再另开一行。
                        框里没写字也能点星星——描述由 AI 现写，用户只需改。 -->
                   <div
-                    v-if="planOf(role.name).mode === 'design'"
+                    v-if="planOf(roleKey(role)).mode === 'design'"
                     class="voice-field"
                     :class="{ 'is-disabled': busy }"
                   >
                     <input
-                      v-model="planOf(role.name).design_prompt"
+                      v-model="planOf(roleKey(role)).design_prompt"
                       type="text"
                       class="voice-design"
                       :disabled="busy"
                       placeholder="描述声线、年龄感与说话方式，或点星星让 AI 写"
                       :aria-label="`${role.name} 的音色描述`"
-                      :title="planOf(role.name).design_prompt"
-                      @input="touch(role.name)"
+                      :title="planOf(roleKey(role)).design_prompt"
+                      @input="touch(roleKey(role))"
                     />
-                    <div v-if="!isNarrator(role.name)" class="voice-field-acts">
+                    <div
+                      v-if="!chapterScope && !isNarrator(roleKey(role))"
+                      class="voice-field-acts"
+                    >
                       <button
                         type="button"
                         class="field-act"
-                        :class="{ 'is-busy': matching === role.name }"
+                        :class="{ 'is-busy': matching === roleKey(role) }"
                         :disabled="busy"
                         title="AI 匹配"
                         :aria-label="`让 AI 写 ${role.name} 的音色描述`"
-                        @click="matchOne(role.name)"
+                        @click="matchOne(roleKey(role))"
                       >
                         <Loader2
-                          v-if="matching === role.name"
+                          v-if="matching === roleKey(role)"
                           class="spin"
                           :size="13"
                           :stroke-width="2"
@@ -133,36 +145,36 @@
                   </div>
                   <VoiceCombo
                     v-else
-                    :value="planOf(role.name).voice_id"
-                    :options="voiceOptionsFor(role.name)"
-                    :disabled="busy || !planOf(role.name).engine"
+                    :value="planOf(roleKey(role)).voice_id"
+                    :options="voiceOptionsFor(roleKey(role))"
+                    :disabled="busy || !planOf(roleKey(role)).engine"
                     :label="`${role.name} 的音色`"
                     placeholder="输入音色名或标签"
-                    @change="setVoice(role.name, $event)"
+                    @change="setVoice(roleKey(role), $event)"
                   >
                     <template #suffix>
                       <button
                         type="button"
                         class="field-act"
-                        :disabled="!playable(role.name)"
-                        :title="planOf(role.name).sample_file ? '试听这一行选中的样例' : '试听这条音色（主样例）'"
+                        :disabled="!playable(roleKey(role))"
+                        :title="planOf(roleKey(role)).sample_file ? '试听这一行选中的样例' : '试听这条音色（主样例）'"
                         aria-label="试听音色"
-                        @click="play(role.name)"
+                        @click="play(roleKey(role))"
                       >
                         <Play :size="11" :stroke-width="2.2" fill="currentColor" />
                       </button>
                       <button
-                        v-if="!isNarrator(role.name)"
+                        v-if="!chapterScope && !isNarrator(roleKey(role))"
                         type="button"
                         class="field-act"
-                        :class="{ 'is-busy': matching === role.name }"
+                        :class="{ 'is-busy': matching === roleKey(role) }"
                         :disabled="busy"
                         title="AI 匹配"
                         :aria-label="`让 AI 匹配 ${role.name} 的音色`"
-                        @click="matchOne(role.name)"
+                        @click="matchOne(roleKey(role))"
                       >
                         <Loader2
-                          v-if="matching === role.name"
+                          v-if="matching === roleKey(role)"
                           class="spin"
                           :size="13"
                           :stroke-width="2"
@@ -173,16 +185,16 @@
                   </VoiceCombo>
                 </td>
                 <td class="col-sample">
-                  <span v-if="planOf(role.name).mode === 'design'" class="sample-none">—</span>
+                  <span v-if="planOf(roleKey(role)).mode === 'design'" class="sample-none">—</span>
                   <EngineSelect
                     v-else
-                    :value="planOf(role.name).sample_file"
-                    :options="sampleOptionsFor(role.name)"
-                    :disabled="busy || !planOf(role.name).voice_id"
+                    :value="planOf(roleKey(role)).sample_file"
+                    :options="sampleOptionsFor(roleKey(role))"
+                    :disabled="busy || !planOf(roleKey(role)).voice_id"
                     :wheel="false"
                     :label="`${role.name} 用哪条样例`"
-                    @open="ensureSamples(role.name)"
-                    @change="setSample(role.name, $event)"
+                    @open="ensureSamples(roleKey(role))"
+                    @change="setSample(roleKey(role), $event)"
                   />
                 </td>
               </tr>
@@ -190,7 +202,9 @@
           </tbody>
         </table>
       </div>
-      <p v-else class="auto-empty">还没有可分配的角色，先完成对白分析。</p>
+      <p v-else class="auto-empty">
+        {{ chapterScope ? '还没有可分配的章节。' : '还没有可分配的角色，先完成对白分析。' }}
+      </p>
 
       <ul v-if="warnings.length" class="auto-warnings">
         <li v-for="(warning, index) in warnings" :key="index">{{ warning }}</li>
@@ -220,19 +234,28 @@ import { computed, reactive, ref, watch } from 'vue'
 import { Loader2, Play, Sparkles, TriangleAlert } from 'lucide-vue-next'
 import { actions, say, store } from '../../store'
 import { api } from '../../api'
-import { assignVoices, runAssist } from './store'
+import { assignChapterVoices, assignVoices, runAssist } from './store'
 import EngineSelect from './EngineSelect.vue'
 import VoiceCombo from './VoiceCombo.vue'
 import { voiceOptions } from './api'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  /** 分配表的角色（含旁白）；``current`` 是当前分配，可能为空。 */
+  /** 分配表的行；有角色时一行一个角色（含旁白），没识别出角色时一行一章。 */
   roles: { type: Array, default: () => [] },
+  /** 按章分配：表头写「章节」，一行一章，不参与 AI 匹配。 */
+  chapterScope: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close', 'applied'])
 
 const roleList = computed(() => /** @type {any[]} */ (props.roles))
+
+/**
+ * 行的身份：角色用名字，章用章 id（章名可以重）。
+ *
+ * @param {any} role
+ */
+const roleKey = (role) => role.key || role.name
 
 
 /** @type {Record<string, string>} */
@@ -260,7 +283,12 @@ const plan = ref(/** @type {Record<string, any>} */ ({}))
 
 const busy = computed(() => Boolean(matching.value) || applying.value)
 const assignedCount = computed(
-  () => roleList.value.filter((role) => currentOf(role.name)?.voice_id).length
+  () => roleList.value.filter((role) => currentOf(roleKey(role))?.voice_id).length
+)
+const countText = computed(() =>
+  props.chapterScope
+    ? `${roleList.value.length} 章 · ${assignedCount.value} 章已有音色`
+    : `${roleList.value.length} 个角色 · ${assignedCount.value} 个已有音色`
 )
 const defaultText = computed(() => {
   if (!options.default_label) return ''
@@ -276,10 +304,14 @@ const engineOptions = computed(() =>
 /** 顶部「AI 匹配」只补还没音色的行：已有音色的、手动挑过的都不动。
  *  要重挑某一行就点那一行的星星；旁白不是书里的角色，两边都不参与。 */
 const aiRows = computed(() =>
-  roleList.value.filter((role) => !isNarrator(role.name) && !isResolved(role.name))
+  roleList.value.filter(
+    (role) => !isNarrator(roleKey(role)) && !isResolved(roleKey(role))
+  )
 )
 const changedRows = computed(() =>
-  roleList.value.filter((role) => isResolved(role.name) && isChanged(role.name))
+  roleList.value.filter(
+    (role) => isResolved(roleKey(role)) && isChanged(roleKey(role))
+  )
 )
 const footState = computed(() => {
   if (matching.value === 'all') return 'AI 正在匹配……'
@@ -308,7 +340,7 @@ watch(
 )
 
 watch(
-  () => roleList.value.map((role) => role.name).join('|'),
+  () => roleList.value.map((role) => roleKey(role)).join('|'),
   () => {
     if (props.open && untouched()) resetPlan()
   }
@@ -343,7 +375,7 @@ function planOf(name) {
  * @param {any} name
  */
 function currentOf(name) {
-  return roleList.value.find((role) => role.name === name)?.current || null
+  return roleList.value.find((role) => roleKey(role) === name)?.current || null
 }
 
 function untouched() {
@@ -395,12 +427,12 @@ function resetPlan() {
       // 库里存着上次 AI 写下的角色描述（画像 note）：打开就摆回角色栏。
       const savedReason = String(current?.reason || '').trim()
       return [
-        role.name,
+        roleKey(role),
         {
           engine,
           mode,
           voice_id: mode === 'design' ? '' : current?.voice_id || '',
-          design_prompt: mode === 'design' ? designPromptOf(role.name) : '',
+          design_prompt: mode === 'design' ? designPromptOf(roleKey(role)) : '',
           // 复刻「当前分配」：原来钉住某条样例的，这里也填回去。
           sample_file:
             mode !== 'design' && current?.sample_mode === 'fixed'
@@ -758,7 +790,7 @@ async function matchOne(name) {
 
 async function matchAll() {
   if (busy.value) return
-  const names = aiRows.value.map((role) => role.name)
+  const names = aiRows.value.map((role) => roleKey(role))
   if (!names.length) {
     say('每个角色都已有音色；要重挑某一行，点那一行的星星。', { kind: 'warn' })
     return
@@ -879,7 +911,20 @@ async function play(name) {
 
 async function apply() {
   const rows = changedRows.value.map((role) => {
-    const choice = planOf(role.name)
+    const choice = planOf(roleKey(role))
+    if (props.chapterScope) {
+      const design = choice.mode === 'design'
+      return {
+        chapter_id: role.chapter_id,
+        engine: choice.engine,
+        voice_id: design ? '' : choice.voice_id,
+        mode: choice.mode,
+        design_prompt: design ? choice.design_prompt.trim() : '',
+        // 钉住某条样例就是 fixed；否则沿用按情绪匹配。
+        sample_mode: !design && choice.sample_file ? 'fixed' : 'emotion',
+        sample_file: design ? '' : choice.sample_file || '',
+      }
+    }
     // 角色描述优先存画像 note：它写给用户看，重开弹框也靠它认识这个角色。
     const reason = choice.note || choice.reason || ''
     if (choice.mode === 'design') {
@@ -907,7 +952,9 @@ async function apply() {
   applying.value = true
   error.value = ''
   try {
-    const payload = await assignVoices(rows, true)
+    const payload = props.chapterScope
+      ? await assignChapterVoices(rows)
+      : await assignVoices(rows, true)
     if (payload) {
       emit('applied', payload)
       emit('close')

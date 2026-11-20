@@ -75,7 +75,7 @@
 
     <span class="pb-right">
       <!-- 正在放的是一条音色的样例时，这几件事在任何页面都能做：
-           听到合适的声音就地收藏、就地指定给角色，或打开它的卡。 -->
+           听到合适的声音就地收藏、就地指定给角色或章节，或打开它的卡。 -->
       <span v-if="voice" class="pb-actions">
         <button
           type="button"
@@ -90,8 +90,8 @@
         <button
           type="button"
           class="pb-btn is-act"
-          title="指定给角色"
-          aria-label="指定给角色"
+          :title="`指定给${store.assignTarget || '角色'}`"
+          :aria-label="`指定给${store.assignTarget || '角色'}`"
           @click="assignVoice"
         >
           <UserRoundPlus :size="16" :stroke-width="1.8" />

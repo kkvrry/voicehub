@@ -257,6 +257,7 @@ class AudioStage:
         from app.usecase import engines as engines_uc
 
         voices = self.svc.store.voice_map(project_id)
+        chapter_voices = self.svc.chapter_voice_rows(project_id)
         chapters = self.svc.store.chapters(project_id)
         engines = engines_uc.active_engines()
         # 这一行的情绪发不发：过用户词表的生效值（默认两组 + 自定义、去隐藏）。
@@ -294,10 +295,12 @@ class AudioStage:
             overwritten = self._overwritten_rows(chapter_rows)
             for row in chapter_rows:
                 speaker = row["speaker"] or NARRATOR
-                mapping = voices.get(speaker)
+                mapping = self.svc.mapping_for(row, voices, chapter_voices)
                 if not mapping or not mapping.get("voice_id"):
                     # 缺音色只挡住这几行：整本书等着配一个配角，不如先把能做的做完。
-                    unassigned[speaker] = unassigned.get(speaker, 0) + 1
+                    # 按章分配时缺的是「这一章」，提示里就写章名，不写旁白。
+                    label = str(chapter.get("title") or speaker) if chapter_voices else speaker
+                    unassigned[label] = unassigned.get(label, 0) + 1
                     continue
                 engine_key = str(mapping["engine"])
                 if engine_key not in engines:
@@ -640,9 +643,13 @@ class AudioStage:
         if not row or not chapter:
             raise ProducerError("这一行不属于该项目。")
         speaker = row["speaker"] or NARRATOR
-        mapping = self.svc.store.voice_map(project_id).get(speaker)
+        chapter_voices = self.svc.chapter_voice_rows(project_id)
+        mapping = self.svc.mapping_for(
+            row, self.svc.store.voice_map(project_id), chapter_voices
+        )
         if not mapping or not mapping.get("voice_id"):
-            raise ProducerError(f"「{speaker}」尚未分配音色。")
+            label = str(chapter.get("title") or speaker) if chapter_voices else speaker
+            raise ProducerError(f"「{label}」尚未分配音色。")
         words = set(emotion_words())
         from app.usecase import engines as engines_uc
 
