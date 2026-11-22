@@ -2316,6 +2316,12 @@ select.sh-field {
 .app-shell[data-mode='app'] .app-panel .panel-body {
   padding: 14px var(--sh-gutter) 28px;
 }
+.app-shell[data-mode='app'] .app-panel .panel-foot {
+  padding: 12px var(--sh-gutter);
+}
+.app-shell[data-mode='app'] .app-panel .hint[data-tone='warn'] {
+  margin: 8px var(--sh-gutter) 0;
+}
 
 /* 按钮：旧页面的 `.btn` 与设置页的 `.sh-btn.is-ghost` 是同一颗按钮。
    高度、内边距、字重、悬停反馈都照这一份来——否则同一页里两颗"次要按钮"

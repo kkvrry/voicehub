@@ -1706,6 +1706,18 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
   display: flex; align-items: center; justify-content: flex-end; gap: 10px;
   padding: 12px 22px; border-top: 1px solid var(--border);
 }
+/* 插件面板（引擎 / 识别 / 对话）三段同一条内容列：显式预留滚动条槽位——正文的
+   滚动条不再只把正文挤窄一截，右上角「官方文档」与右下角「恢复默认 / 保存」
+   才对得上设置表单的右边界。overflow:hidden 让抬头与底栏也算滚动容器、
+   槽位声明才生效；两者内容不溢出，剪裁无副作用。 */
+:is(.engine-panel, .asr-panel, .llm-panel) .panel-head,
+:is(.engine-panel, .asr-panel, .llm-panel) .panel-foot {
+  overflow: hidden;
+  scrollbar-gutter: stable;
+}
+:is(.engine-panel, .asr-panel, .llm-panel) .panel-body {
+  scrollbar-gutter: stable;
+}
 .app-panel .panel-foot .muted { margin-right: auto; }
 
 /* 设置页两栏各自的**内容宽度**：一行路径铺满 1200px 时两端离得太远、反而不好核对，
