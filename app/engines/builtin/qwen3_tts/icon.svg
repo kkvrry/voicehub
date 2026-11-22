@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Qwen3-TTS">
+  <!-- VoiceHub 自绘的标识：一段参考波形被圈住（"照这把嗓子念"）；
+       不是官方 logo 的复制品。要换成官方图标，直接替换本文件即可。
+       配色取深紫罗兰，与 CosyVoice3（靛蓝）/ OmniVoice（绿）/ MiniMax（亮紫）都不撞。 -->
+  <rect width="32" height="32" rx="8" fill="#4c1d95"/>
+  <g fill="none" stroke="#c4b5fd" stroke-width="1.5" opacity=".7">
+    <circle cx="16" cy="16" r="10"/>
+  </g>
+  <g fill="#ffffff">
+    <rect x="9.6" y="14.2" width="2" height="3.6" rx="1"/>
+    <rect x="13.2" y="11.4" width="2" height="9.2" rx="1"/>
+    <rect x="16.8" y="13.2" width="2" height="5.6" rx="1"/>
+    <rect x="20.4" y="9.8" width="2" height="12.4" rx="1"/>
+  </g>
+</svg>

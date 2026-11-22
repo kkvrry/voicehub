@@ -98,6 +98,7 @@ EXPECTED: dict[str, tuple[tuple[str, ...], bool | None, tuple[str, ...]]] = {
     "gpt_sovits": (("zh", "yue", "en", "ja", "ko"), True, ("粤语",)),
     "indextts2": (("zh", "en", "ja", "es", "ar"), True, ()),
     "mimo": (("zh", "en"), None, ()),
+    "qwen3_tts": (("zh", "en", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"), None, ()),
     "omnivoice": (
         ("zh", "yue", "en", "ja", "ko", "es", "fr", "de", "ru", "pt", "it", "ar",
          "nl", "tr", "uk", "id", "vi"),

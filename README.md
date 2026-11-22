@@ -127,6 +127,7 @@ VoiceHub 是一个本地优先的有声书生产工作台。它以**音色**为�
 | dots.tts | 本机 | 音色库供给 |
 | VoxCPM2 | 本机 | 参考音频克隆 + 一句话描述音色 |
 | CosyVoice3 | 本机 | 参考音频克隆 + 跨语种 + 指令控制 |
+| Qwen3-TTS | 本机 | 参考音频克隆（需逐字稿），10 种语言 |
 | OmniVoice | 本机 | 参考音频克隆（需逐字稿），600+ 语言 |
 | Qwen3-ASR | 本机 / 局域网 | 语音识别（连接外部服务） |
 | SenseVoice-Small | 本机 / 局域网 | 语音识别（连接 audio.cpp 实例） |
@@ -157,7 +158,7 @@ VoiceHub 是一个本地优先的有声书生产工作台。它以**音色**为�
 3. 左栏「引擎」里选一台，填 API Key 或本机推理地址。
 4. 生成页挑一条音色试听；「创作」里导入书稿即可开始。
 
-> 本机引擎（GPT-SoVITS / BreezeTTS 2 / IndexTTS2 / dots.tts / VoxCPM2 / CosyVoice3 / OmniVoice）需自行启动推理服务：
+> 本机引擎（GPT-SoVITS / BreezeTTS 2 / IndexTTS2 / dots.tts / VoxCPM2 / CosyVoice3 / Qwen3-TTS / OmniVoice）需自行启动推理服务：
 > VoiceHub 只写请求侧，不下载权重、不部署服务。例外是侧栏的「audio.cpp」运行时插件，
 > 它可在用户触发下下载、启动、卸载自管的二进制与模型，文件只落在自己的数据目录。
 
