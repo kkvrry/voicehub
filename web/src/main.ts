@@ -9,6 +9,7 @@ import './settings/theme.css'
 import './settings/look-classic.css'
 import './settings/look-paper.css'
 import './settings/look-celadon.css'
+import './settings/look-stage.css'
 
 // 先恢复筛选/主题再挂应用：挂载那一刻就会按条件拉列表，也避免主题闪一下。
 initTheme()

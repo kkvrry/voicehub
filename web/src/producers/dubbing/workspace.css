@@ -45,20 +45,6 @@
   color: var(--sh-text-4);
 }
 
-.dub-mini {
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  color: var(--sh-text-4);
-}
-
-.dub-mini:hover {
-  background: var(--sh-chip);
-  color: var(--sh-accent);
-}
-
 /* 拖动分隔条时整页都是"正在调高度"的手型，指针滑出那条缝也不会变回箭头。 */
 body.is-row-resizing {
   cursor: row-resize;

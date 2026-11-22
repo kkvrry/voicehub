@@ -11,6 +11,7 @@ from app.infra import ffmpeg
 from app.infra.sidecar import read_sidecar
 from app.producers.base import ProducerError
 from app.producers.builtin.audiocpp import tasks as audiocpp_tasks
+from app.producers.builtin.voiceclean import models as voiceclean_models
 from app.producers.builtin.voiceclean.service import VoiceCleanService, _Item, _Job
 from app.producers.builtin.voiceclean.settings import VoiceCleanSettings
 
@@ -267,6 +268,8 @@ class TestFileTarget:
         assert clean.download_name("t1", 0) == "input（处理）.wav"
         with pytest.raises(ProducerError, match="电脑文件"):
             clean.apply("t1", [0])
+        with pytest.raises(ProducerError, match="电脑文件"):
+            clean.save("t1", [0])
 
 
 class TestReplace:
@@ -364,6 +367,92 @@ class TestApply:
         assert "处理" in side.samples[sample.file]["params"]
 
 
+class TestSave:
+    """入库：结果另存一条新样例，原样例与它的记录都不动。"""
+
+    def _job(self, clean, scanned, *, replaceable: bool = False, seconds: float = 0.75):
+        from conftest import make_wav
+
+        voice = _voice(scanned, "胡桃")
+        detail = scanned.get_voice(voice.id)
+        sample = detail.samples[0]
+        folder = clean._root / "jobs" / "t2"
+        work = folder / "0000"
+        work.mkdir(parents=True, exist_ok=True)
+        make_wav(work / "origin.wav", seconds=0.5)
+        make_wav(work / "result.wav", seconds=seconds)
+        item = _Item(
+            index=0,
+            voice_id=voice.id,
+            voice=voice.name,
+            file=sample.file,
+            source=str(Path(detail.folder) / sample.file),
+            origin_seconds=0.5,
+            result_seconds=seconds,
+            state="done",
+            replaceable=replaceable,
+            error="" if replaceable else "时长偏差 250 ms",
+        )
+        job = _Job(
+            id="t2",
+            folder=folder,
+            scope={},
+            steps=[
+                {
+                    "key": "denoise",
+                    "label": "语音降噪",
+                    "model": "sidon_f32",
+                    "model_label": "Sidon",
+                    "prep": [48000, 1],
+                    "options": {},
+                }
+            ],
+            items=[item],
+        )
+        clean._job = job
+        return job, voice, sample
+
+    def test_save_adds_a_new_sample_and_keeps_the_original(self, clean, scanned):
+        _job, voice, sample = self._job(clean, scanned)
+        detail = scanned.get_voice(voice.id)
+        folder = Path(detail.folder)
+        original = (folder / sample.file).read_bytes()
+        out = clean.save("t2", [0])
+        assert out["saved"] == 1
+        assert out["failures"] == []
+        assert out["job"]["state"] == "saved"
+        assert out["job"]["items"][0]["state"] == "saved"
+        saved_file = out["files"][0]["file"]
+        assert "（处理）" in saved_file and saved_file.endswith(".wav")
+        assert (folder / saved_file).is_file()
+        # 原样例还在，大小、时长都没被替换动过。
+        assert (folder / sample.file).read_bytes() == original
+        updated = scanned.get_voice(voice.id)
+        assert saved_file in {row.file for row in updated.samples}
+        assert sample.file in {row.file for row in updated.samples}
+        side = read_sidecar(folder)
+        assert side.samples[saved_file]["params"]["来源"] == "音色处理"
+        assert side.samples[saved_file]["params"]["处理"]
+        with pytest.raises(ProducerError, match="已经入库"):
+            clean.apply("t2", [0])
+
+    def test_save_accepts_duration_mismatch(self, clean, scanned):
+        """替换受 50 ms 限制，入库是新样例，不受这条限制。"""
+        _job, voice, sample = self._job(clean, scanned, replaceable=False)
+        out = clean.save("t2", [0])
+        assert out["saved"] == 1
+        assert out["files"][0]["file"].endswith(".wav")
+        assert sample.file in {row.file for row in scanned.get_voice(voice.id).samples}
+
+    def test_repeat_save_does_not_overwrite_earlier_result(self, clean, scanned):
+        self._job(clean, scanned)
+        first = clean.save("t2", [0])["files"][0]["file"]
+        self._job(clean, scanned)
+        second = clean.save("t2", [0])["files"][0]["file"]
+        assert first != second
+        assert second.endswith("-2.wav")
+
+
 class TestDeclaration:
     def test_rail_mode_is_pick(self):
         from app.producers.registry import discover
@@ -381,15 +470,26 @@ class TestClient:
         monkeypatch.setattr(
             "app.producers.builtin.voiceclean.service._runtime_models", list
         )
+        # 开发机上可能真有 audio.cpp 实例与已下载权重：这个用例断言的是
+        # "没有任何实例时"的页面，得把运行实例也一起摘掉。
+        monkeypatch.setattr(
+            "app.producers.builtin.voiceclean.service._audio_runtime", lambda: None
+        )
         payload = client.get("/api/v1/producers/voiceclean/state").json()
-        assert [step["key"] for step in payload["steps"]] == ["separate", "denoise"]
+        assert [step["key"] for step in payload["steps"]] == [
+            "separate",
+            "denoise",
+            "bandwidth",
+        ]
         assert payload["core"]["key"] == "normalize"
+        assert payload["core"]["order"] == 4
         assert payload["core"]["default"] is False
         assert payload["core"]["label"] == "统一声道与峰值"
         assert payload["core"]["note"]
-        # 没有运行中的实例：步骤卡只留一句说明，页面本身仍然可用（规整不依赖服务）。
-        assert all(step["models"] == [] for step in payload["steps"])
-        assert all(step["reason"] for step in payload["steps"])
+        # 没有运行中的实例：候选模型仍然列出，只是都标成未下载；页面仍可只裁剪。
+        assert all(step["models"] for step in payload["steps"])
+        assert all(not row["downloaded"] for step in payload["steps"] for row in step["models"])
+        assert all(step["reason"] == "" for step in payload["steps"])
 
     def test_source_upload_and_playback(self, client, tmp_path: Path):
         from conftest import make_wav
@@ -435,6 +535,14 @@ class TestClient:
                 {"voice_id": voice.id},
                 [{"key": "normalize", "enabled": False}],
             )
+
+    def test_job_save_route_is_mounted(self, client):
+        response = client.post(
+            "/api/v1/producers/voiceclean/job/save",
+            json={"job_id": "missing", "indexes": [0]},
+        )
+        assert response.status_code == 400
+        assert "任务已过期" in response.json()["error"]["message"]
 
     def test_audio_picks_vocal_stem(self):
         vocal = base64.b64encode(b"RIFF" + b"\0" * 300).decode()
@@ -566,13 +674,129 @@ class _StubModel:
         self.server.server_close()
 
 
+class _FakeRuntime:
+    """音色处理用到的 audio.cpp 最小接口：记录加载/安装调用。"""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.rows: list[dict] = []
+        self.installed: set[str] = set()
+        self.calls: list[tuple] = []
+
+    def running_models(self):
+        return list(self.rows)
+
+    def installed_packages(self):
+        return set(self.installed)
+
+    def download_jobs(self):
+        return {}
+
+    def ensure_family_instance(self, family: str, label: str = ""):
+        self.calls.append(("family", family))
+
+    def install_model(self, package: str):
+        self.calls.append(("install", package))
+
+    def ensure_management(self):
+        self.calls.append(("manage",))
+        return object()
+
+    def load_model(self, package: str):
+        self.calls.append(("load", package))
+        self.rows.append(
+            {
+                "id": package,
+                "family": package,
+                "task": "s2s",
+                "package": package,
+                "url": "http://127.0.0.1:18103",
+            }
+        )
+
+    def load_builtin(self, utility: str, path: Path):
+        self.calls.append(("builtin", utility, str(path)))
+        self.rows.append(
+            {
+                "id": f"builtin-{utility}",
+                "family": "builtin_audio_utils",
+                "task": "s2s",
+                "utility": utility,
+                "path": str(path),
+                "url": "http://127.0.0.1:18104",
+            }
+        )
+
+
 class TestModels:
     def _service(self, tmp_path: Path, rows):
         return VoiceCleanService(
             tmp_path / "vc", lambda: VoiceCleanSettings(), running_models=lambda: rows
         )
 
-    def test_steps_only_offer_running_models(self, tmp_path: Path):
+    def _wait_job(self, service: VoiceCleanService, key: str):
+        for _ in range(100):
+            job = service._model_jobs.get(key)
+            if job and job["state"] not in {"queued", "downloading", "loading"}:
+                return job
+            time.sleep(0.05)
+        return service._model_jobs.get(key)
+
+    def test_builtin_download_then_auto_load(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        runtime = _FakeRuntime(tmp_path)
+        service = VoiceCleanService(
+            tmp_path / "vc",
+            lambda: VoiceCleanSettings(),
+            runtime_reader=lambda: runtime,
+        )
+        target = voiceclean_models.builtin_path(service._builtin_root, "deepfilternet2")
+
+        def fake_fetch(_candidate):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"weights")
+
+        monkeypatch.setattr(service, "_fetch_builtin", fake_fetch)
+        service.prepare_model("denoise", "deepfilternet2")
+        job = self._wait_job(service, "builtin:deepfilternet2")
+        assert job and job["state"] == "done"
+        assert ("builtin", "deepfilternet2", str(target.parent)) in runtime.calls
+        steps = {row["key"]: row for row in service.state()["steps"]}
+        candidate = next(
+            row for row in steps["denoise"]["models"] if row["id"] == "deepfilternet2"
+        )
+        assert candidate["downloaded"] is True
+        assert candidate["ready"] is True
+
+    def test_downloaded_builtin_loads_on_prepare(self, tmp_path: Path):
+        runtime = _FakeRuntime(tmp_path)
+        service = VoiceCleanService(
+            tmp_path / "vc",
+            lambda: VoiceCleanSettings(),
+            runtime_reader=lambda: runtime,
+        )
+        target = voiceclean_models.builtin_path(service._builtin_root, "zipenhancer")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("wb") as handle:
+            handle.truncate(8236256)
+        service.prepare_model("denoise", "zipenhancer")
+        job = self._wait_job(service, "builtin:zipenhancer")
+        assert job and job["state"] == "done"
+        assert ("builtin", "zipenhancer", str(target.parent)) in runtime.calls
+
+    def test_downloaded_package_loads_on_prepare(self, tmp_path: Path):
+        runtime = _FakeRuntime(tmp_path)
+        runtime.installed = {"sidon_f32"}
+        service = VoiceCleanService(
+            tmp_path / "vc",
+            lambda: VoiceCleanSettings(),
+            runtime_reader=lambda: runtime,
+        )
+        service.prepare_model("denoise", "sidon_f32")
+        job = self._wait_job(service, "pkg:sidon_f32")
+        assert job and job["state"] == "done"
+        assert ("load", "sidon_f32") in runtime.calls
+
+    def test_steps_list_all_registered_candidates(self, tmp_path: Path):
         service = self._service(
             tmp_path,
             [
@@ -581,29 +805,144 @@ class TestModels:
             ],
         )
         steps = {row["key"]: row for row in service.state()["steps"]}
-        assert [row["id"] for row in steps["denoise"]["models"]] == ["sidon_f32"]
-        assert steps["denoise"]["models"][0]["prep"] == [48000, 1]
-        # TTS 模型不属于任何一步；分离步骤没有可选项，但有说明。
-        assert steps["separate"]["models"] == []
-        assert steps["separate"]["reason"]
+        denoise = {row["id"]: row for row in steps["denoise"]["models"]}
+        assert denoise["sidon_f32"]["downloaded"] is True
+        assert denoise["sidon_f32"]["ready"] is True
+        assert denoise["sidon_f32"]["prep"] == [48000, 1]
+        # 未下载的官方包也列出来，卡片才能给出下载入口。
+        assert any(not row["downloaded"] for row in steps["denoise"]["models"])
+        # TTS 模型不属于任何一步。
+        assert all(
+            row["id"] != "cosyvoice3"
+            for step in steps.values()
+            for row in step["models"]
+        )
+        # 分离步骤也有候选，不再因为实例没加载就整张卡空着。
+        assert steps["separate"]["models"]
+        assert steps["separate"]["reason"] == ""
+
+    def test_builtin_denoisers_share_denoise_flashsr_gets_bandwidth(self, tmp_path: Path):
+        """内置工具没有 packages，按 id / path 认；降噪与带宽扩展分卡。"""
+        service = self._service(
+            tmp_path,
+            [
+                {
+                    "id": "DeepFilterNet2",
+                    "family": "builtin_audio_utils",
+                    "task": "s2s",
+                    "path": r"D:\models\DeepFilterNet2",
+                    "url": "http://127.0.0.1:18104",
+                },
+                {
+                    "id": "rnnoise",
+                    "family": "builtin_audio_utils",
+                    "task": "s2s",
+                    "path": r"D:\models\rnnoise10Gb_15.safetensors",
+                    "url": "http://127.0.0.1:18104",
+                },
+                {
+                    "id": "zipenhancer",
+                    "family": "builtin_audio_utils",
+                    "task": "s2s",
+                    "path": r"D:\models\zipenhancer",
+                    "url": "http://127.0.0.1:18104",
+                },
+                {
+                    "id": "flashsr",
+                    "family": "builtin_audio_utils",
+                    "task": "s2s",
+                    "path": r"D:\models\flashsr",
+                    "url": "http://127.0.0.1:18104",
+                },
+                {
+                    "id": "sidon_f32",
+                    "family": "sidon",
+                    "task": "s2s",
+                    "url": "http://127.0.0.1:18103",
+                },
+            ],
+        )
+        steps = {row["key"]: row for row in service.state()["steps"]}
+        denoise = steps["denoise"]["models"]
+        by_id = {row["id"]: row for row in denoise}
+        # 小工具按推荐顺序排在官方包后面；FlashSR 不在这张卡里。
+        builtin_ids = [row["id"] for row in denoise if row["source"] == "builtin"]
+        assert builtin_ids == [
+            "deepfilternet2",
+            "zipenhancer",
+            "rnnoise",
+            "gtcrn_dns3",
+            "gtcrn_vctk",
+            "gtcrn_streaming",
+        ]
+        assert "flashsr" not in by_id
+        assert by_id["sidon_f32"]["ready"] is True
+        assert by_id["deepfilternet2"]["ready"] is True
+        assert by_id["deepfilternet2"]["label"] == "DeepFilterNet2"
+        assert by_id["deepfilternet2"]["prep"] == [48000, 1]
+        assert by_id["zipenhancer"]["prep"] == [16000, 1]
+        assert "16 kHz" in by_id["zipenhancer"]["note"]
+        bandwidth = steps["bandwidth"]["models"]
+        assert [row["id"] for row in bandwidth] == ["flashsr"]
+        assert bandwidth[0]["ready"] is True
+        assert "生成高频" in bandwidth[0]["note"]
+
+    def test_unknown_builtin_utility_is_not_listed(self, tmp_path: Path):
+        """认不出的工具不猜测用途：宁可不列，也不放进降噪或带宽扩展。"""
+        service = self._service(
+            tmp_path,
+            [
+                {
+                    "id": "my-utility",
+                    "family": "builtin_audio_utils",
+                    "task": "s2s",
+                    "path": r"D:\models\custom",
+                    "url": "http://127.0.0.1:18104",
+                }
+            ],
+        )
+        steps = {row["key"]: row for row in service.state()["steps"]}
+        ids = {
+            row["id"]
+            for step in steps.values()
+            for row in step["models"]
+            if row["source"] == "builtin"
+        }
+        assert "my-utility" not in ids
+        assert ids == {
+            "deepfilternet2",
+            "rnnoise",
+            "zipenhancer",
+            "gtcrn_dns3",
+            "gtcrn_vctk",
+            "gtcrn_streaming",
+            "flashsr",
+        }
 
     def test_family_registered_model_uses_step_package(self, tmp_path: Path):
-        """服务端注册族名时按该步骤推荐的包取名字与输入格式。"""
+        """服务端注册族名时，按该步骤排在最前的包认这条运行记录。"""
         service = self._service(
             tmp_path,
             [{"id": "mossformer2", "family": "mossformer2", "task": "s2s", "url": "http://127.0.0.1:18101"}],
         )
         steps = {row["key"]: row for row in service.state()["steps"]}
-        denoise = steps["denoise"]["models"][0]
-        separate = steps["separate"]["models"][0]
-        assert denoise["id"] == separate["id"] == "mossformer2"
+        denoise = next(
+            row for row in steps["denoise"]["models"] if row["family"] == "mossformer2"
+        )
+        separate = next(
+            row for row in steps["separate"]["models"] if row["family"] == "mossformer2"
+        )
+        assert denoise["id"] == "mossformer2_se_48k_f32"
+        assert separate["id"] == "mossformer2_ss_16k_f32"
+        assert denoise["ready"] is True
+        assert separate["ready"] is True
         assert denoise["prep"] == [48000, 1]
         assert separate["prep"] == [16000, 1]
         assert "MossFormer2" in denoise["label"]
 
-    def test_run_refuses_model_that_is_not_running(self, clean, scanned):
+    def test_run_refuses_model_that_is_not_downloaded(self, clean, scanned):
         voice = _voice(scanned, "胡桃")
-        with pytest.raises(ProducerError, match="没有在运行"):
+        with pytest.raises(ProducerError, match="还没下载"):
             clean.run(
                 {"voice_id": voice.id},
                 [{"key": "denoise", "enabled": True, "model": "sidon_f32", "options": {}}],
@@ -640,6 +979,56 @@ class TestPipeline:
             assert view["items"][0]["result_seconds"] > 0
             out = clean.apply(view["id"], [0])
             assert out["replaced"] == 1
+        finally:
+            stub.close()
+
+    @pytest.mark.skipif(not ffmpeg.find_ffmpeg(None), reason="本机没有 ffmpeg")
+    def test_utility_step_keeps_source_rate(self, scanned, tmp_path: Path):
+        """16 kHz 内置工具跑完后，回库结果仍按原样例采样率落盘。"""
+        from conftest import make_wav
+
+        sample_wav = tmp_path / "reply.wav"
+        make_wav(sample_wav, seconds=0.5)
+        stub = _StubModel(sample_wav, tmp_path / "models")
+        try:
+            clean = VoiceCleanService(
+                tmp_path / "vc",
+                lambda: VoiceCleanSettings(timeout=60),
+                running_models=lambda: [
+                    {
+                        "id": "zipenhancer",
+                        "family": "builtin_audio_utils",
+                        "task": "s2s",
+                        "path": r"D:\models\zipenhancer",
+                        "url": stub.url,
+                    }
+                ],
+            )
+            clean.run(
+                {"voice_id": _first_local(scanned)},
+                [
+                    {
+                        "key": "denoise",
+                        "enabled": True,
+                        "model": "zipenhancer",
+                        "options": {},
+                    }
+                ],
+            )
+            for _ in range(120):
+                view = clean.job_view()
+                if view and view["state"] != "running":
+                    break
+                time.sleep(0.1)
+            view = clean.job_view()
+            assert view["state"] == "done"
+            assert view["items"][0]["replaceable"] is True
+            origin = clean.audio_path(view["id"], 0, "origin")
+            result = clean.audio_path(view["id"], 0, "result")
+            with wave.open(str(origin), "rb") as handle:
+                origin_rate = handle.getframerate()
+            with wave.open(str(result), "rb") as handle:
+                assert handle.getframerate() == origin_rate
         finally:
             stub.close()
 
@@ -824,6 +1213,83 @@ class TestPipeline:
             assert view["items"][0]["replaceable"] is True
         finally:
             stub.close()
+
+
+class TestPipelineOrder:
+    @pytest.mark.skipif(not ffmpeg.find_ffmpeg(None), reason="本机没有 ffmpeg")
+    def test_steps_run_in_declared_order(self, scanned, tmp_path: Path, monkeypatch):
+        """提交顺序不决定执行顺序：带宽扩展总在降噪之后。"""
+        from app.producers.builtin.voiceclean import service as voiceclean_service
+
+        voice = _voice(scanned, "胡桃")
+        target = scanned.get_voice(voice.id).samples[0].file
+        calls: list[str] = []
+
+        def fake_run_task(_host, *, model, audio, options=None, timeout=0.0):
+            calls.append(model)
+            return Path(audio).read_bytes()
+
+        monkeypatch.setattr(voiceclean_service.client, "run_task", fake_run_task)
+        runtime = _FakeRuntime(tmp_path)
+        runtime.rows = [
+            {
+                "id": "sidon_f32",
+                "family": "sidon",
+                "task": "s2s",
+                "package": "sidon_f32",
+                "url": "http://127.0.0.1:18103",
+            },
+            {
+                "id": "flashsr",
+                "family": "builtin_audio_utils",
+                "task": "s2s",
+                "utility": "flashsr",
+                "path": "D:/models/flashsr",
+                "url": "http://127.0.0.1:18104",
+            },
+        ]
+        clean = VoiceCleanService(
+            tmp_path / "vc", lambda: VoiceCleanSettings(), runtime_reader=lambda: runtime
+        )
+        clean.run(
+            {"voice_id": voice.id, "files": [target]},
+            [
+                {"key": "bandwidth", "enabled": True, "model": "flashsr", "options": {}},
+                {"key": "denoise", "enabled": True, "model": "sidon_f32", "options": {}},
+            ],
+        )
+        for _ in range(120):
+            view = clean.job_view()
+            if view and view["state"] != "running":
+                break
+            time.sleep(0.1)
+        view = clean.job_view()
+        assert view["state"] == "done"
+        assert [step["key"] for step in view["steps"]] == ["denoise", "bandwidth"]
+        assert calls == ["sidon_f32", "flashsr"]
+
+    @pytest.mark.skipif(not ffmpeg.find_ffmpeg(None), reason="本机没有 ffmpeg")
+    def test_core_runs_after_models_and_twice_only(self, scanned, tmp_path: Path):
+        """没有模型步骤时，原声与结果是同一套收尾的同一份输出（不重复过滤）。"""
+        voice = _voice(scanned, "胡桃")
+        target = scanned.get_voice(voice.id).samples[0].file
+        clean = VoiceCleanService(
+            tmp_path / "vc", lambda: VoiceCleanSettings(), running_models=list
+        )
+        clean.run(
+            {"voice_id": voice.id, "files": [target]},
+            [{"key": "normalize", "enabled": True}],
+        )
+        for _ in range(120):
+            view = clean.job_view()
+            if view and view["state"] != "running":
+                break
+            time.sleep(0.1)
+        view = clean.job_view()
+        assert view["state"] == "done"
+        origin = clean.audio_path(view["id"], 0, "origin")
+        result = clean.audio_path(view["id"], 0, "result")
+        assert origin.read_bytes() == result.read_bytes()
 
 
 def _first_local(service) -> str:

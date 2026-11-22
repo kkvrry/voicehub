@@ -73,7 +73,19 @@ class RunIn(BaseModel):
     steps: list[StepIn] = Field(default_factory=list)
 
 
+class ModelIn(BaseModel):
+    step: str
+    model: str
+
+
 class ApplyIn(BaseModel):
+    job_id: str
+    indexes: list[int] = Field(default_factory=list)
+
+
+class SaveIn(BaseModel):
+    """把处理结果作为新样例入库；与替换同一条目集合，动作不同。"""
+
     job_id: str
     indexes: list[int] = Field(default_factory=list)
 
@@ -111,6 +123,10 @@ def build_router(service: VoiceCleanService) -> APIRouter:
     def run(body: RunIn) -> dict[str, Any]:
         return service.run(body.scope.model_dump(), [row.model_dump() for row in body.steps])
 
+    @router.post("/models/download", summary="下载模型并在完成后自动加载")
+    def download_model(body: ModelIn) -> dict[str, Any]:
+        return service.prepare_model(body.step, body.model)
+
     @router.get("/job", summary="当前任务与逐条结果")
     def job() -> dict[str, Any]:
         return service.job_view() or {}
@@ -126,7 +142,8 @@ def build_router(service: VoiceCleanService) -> APIRouter:
     @router.get("/job/audio", summary="试听：原声或处理结果")
     def audio(job_id: str, index: int, side: str = "result") -> FileResponse:
         path = service.audio_path(job_id, index, side)
-        return FileResponse(path, media_type="audio/wav", filename=path.name)
+        # 不带 filename：这是给播放条内联播放的，不能触发下载。
+        return FileResponse(path, media_type="audio/wav")
 
     @router.get("/job/download", summary="下载电脑文件的处理结果")
     def download(job_id: str, index: int) -> FileResponse:
@@ -140,5 +157,10 @@ def build_router(service: VoiceCleanService) -> APIRouter:
     @router.post("/job/apply", summary="按确认的条目替换样例音频")
     def apply(body: ApplyIn) -> dict[str, Any]:
         return service.apply(body.job_id, body.indexes)
+
+    @router.post("/job/save", summary="按确认的条目把结果作为新样例入库")
+    def save(body: SaveIn) -> dict[str, Any]:
+        """原样例不动：结果另存一条（文件名加「（处理）」），时长不必与原件一致。"""
+        return service.save(body.job_id, body.indexes)
 
     return router

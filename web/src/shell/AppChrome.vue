@@ -96,14 +96,28 @@
       <!-- 导航装一层坞：正常时是网格第一列；开启自动隐藏后坞收成左边缘一条窄带，
            悬停 / 键盘聚焦才滑出，不再占正文宽度。 -->
       <div class="sh-nav-dock">
-        <AppNav :active="active" @navigate="navigate" />
+        <AppNav
+          :active="active"
+          :rail-toggle="mode === 'app' && showRail && Boolean($slots.sidebar)"
+          :rail-hint="railHint"
+          @navigate="navigate"
+        />
       </div>
 
       <!-- 第二列与右侧内容合成一块（分类栏 + 内容 + 底栏）：
            设置页整块居中，分类栏始终紧贴卡片；音色库这一块铺满，第二列是音色树。
-           「引擎」页的第二列换成插件清单（TTS / 对话），「日志」页不要第二列。 -->
-      <div class="sh-pane" :class="{ 'is-bare': !showRail || !$slots.sidebar }">
-        <aside v-if="showRail && $slots.sidebar" class="sh-rail" :class="{ 'sh-sidebar': mode === 'app' }">
+           「引擎」页的第二列换成插件清单（TTS / 对话），「日志」页不要第二列。
+           左栏不另设收起控件：再点一次当前页的导航图标即收起 / 展开（见 navigate）。 -->
+      <div
+        class="sh-pane"
+        :class="{ 'is-bare': !showRail || !$slots.sidebar || !showTree }"
+      >
+        <aside
+          v-if="showRail && $slots.sidebar"
+          v-show="showTree"
+          class="sh-rail"
+          :class="{ 'sh-sidebar': mode === 'app' }"
+        >
           <slot name="sidebar" />
         </aside>
 
@@ -144,6 +158,9 @@ const props = withDefaults(
     showSearch?: boolean
     /** 要不要第二列：日志页没有「我有哪些音色」这回事，整块铺开。 */
     showRail?: boolean
+    /** 当前页有没有音色卡片列：有就按「树 + 卡 / 只有卡 / 都收」三档循环，
+     *  没有就只在「有树 / 无树」两档之间切换。 */
+    railCards?: boolean
     placeholder?: string
     hint?: string
   }>(),
@@ -153,6 +170,7 @@ const props = withDefaults(
     query: '',
     showSearch: true,
     showRail: true,
+    railCards: false,
     placeholder: '搜索',
     hint: '',
   }
@@ -173,6 +191,40 @@ const shellEl = ref<HTMLElement | null>(null)
 const bannerClosed = ref(false)
 
 const isDark = computed(() => app.theme === 'dark')
+
+/** 左栏可见档：设置页的分类栏不参与，始终按"两列都在"画。 */
+const leftRailState = computed(() =>
+  props.mode === 'app' ? settings.appearance.railVisibility : 'both'
+)
+
+/** 目录树只在 `both` 那一档出现；`cards` 是"只有音色栏"，`none` 是都收起。 */
+const showTree = computed(() => leftRailState.value === 'both')
+
+/** 当前页图标再点时，提示下一档会发生什么：
+ *  三档页（有音色栏）是"收目录树 → 收音色栏 → 全展开"，
+ *  两档页（音色库 / 引擎 / 音频库）是"收左栏 ↔ 展开左栏"。 */
+const railHint = computed(() => {
+  if (!props.railCards) {
+    return leftRailState.value === 'both' ? '点击收起左栏' : '点击展开左栏'
+  }
+  if (leftRailState.value === 'both') return '点击收起目录树'
+  if (leftRailState.value === 'cards') return '点击收起音色栏'
+  return '点击展开左栏'
+})
+
+/** 再点一次当前页的导航图标即切换左栏：不新增控件，图标本来就在手边。 */
+function cycleLeftRails() {
+  const state = settings.appearance.railVisibility
+  if (!props.railCards) {
+    // 这一页没有音色栏：只切目录树，用 `cards` 表示"树收起、音色栏留给有它的页"，
+    // 不写 `none`——否则在音色库收起树，回到生成页会把音色栏也一起收掉。
+    settings.appearance.railVisibility = state === 'both' ? 'cards' : 'both'
+    return
+  }
+  settings.appearance.railVisibility =
+    state === 'both' ? 'cards' : state === 'cards' ? 'none' : 'both'
+}
+
 const queryProxy = computed({
   get: () => props.query,
   set: (value: string) => emit('update:query', value),
@@ -189,6 +241,12 @@ function toggleTheme() {
 }
 
 function navigate(key: string) {
+  // 当前页的图标再点一次 = 收起 / 展开左栏；没有左栏的页（日志、工具型工作区）
+  // 就停在原地，不把同一页重新打开一遍。
+  if (key === props.active && props.mode === 'app') {
+    if (props.showRail) cycleLeftRails()
+    return
+  }
   if (key === 'library') {
     void actions.openLibrary()
     return

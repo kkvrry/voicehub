@@ -251,6 +251,7 @@ const lookOptions: SegmentOption[] = [
   { value: 'paper', label: '纸墨' },
   { value: 'celadon', label: '素瓷' },
   { value: 'glass', label: '玻璃' },
+  { value: 'stage', label: '舞台' },
 ]
 
 const densityOptions: SegmentOption[] = [

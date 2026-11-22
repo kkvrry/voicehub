@@ -109,7 +109,10 @@ class AsrCapabilities:
     :param local: 是不是本地 / 局域网推理（决定界面上要不要说"会联网/计费"）。
     :param formats: 引擎**直接接收**的音频容器（其余格式由插件自己转换或拒绝）。
     :param format_note: 输入格式的处理方式，界面原样显示。
-    :param streaming: 这个插件是否实现了流式返回（本项目调用都要整段结果）。
+    :param streaming: 这个插件的识别接口是否能边流边返回。
+        核心的连续麦克风（``/asr/stream``）**不走这一项**：它由核心 VAD 分段后
+        仍按整段调用插件，部分结果由核心重识别得到（见 ``usecase/asr_stream``）。
+        这里只描述插件自己的协议事实，界面原样显示。
     :param streaming_note: 服务端与插件在流式上的差异，界面原样显示。
     """
 

@@ -27,6 +27,18 @@ export const run = (scope, steps) =>
 
 export const job = () => request(`${base}/job`)
 
+/**
+ * 下载一个候选模型；下载完成后服务端会自动登记/加载。
+ * @param {string} step
+ * @param {string} model
+ */
+export const downloadModel = (step, model) =>
+  request(`${base}/models/download`, {
+    method: 'POST',
+    body: { step, model },
+    timeout: 600_000,
+  })
+
 export const cancel = () => request(`${base}/job/cancel`, { method: 'POST' })
 
 /** 清掉已完成 / 已替换的任务，回到可编辑状态。 */
@@ -38,6 +50,14 @@ export const clearJob = () => request(`${base}/job/clear`, { method: 'POST' })
  */
 export const apply = (job_id, indexes) =>
   request(`${base}/job/apply`, { method: 'POST', body: { job_id, indexes }, timeout: 120_000 })
+
+/**
+ * 把处理结果作为新样例入库（不替换原声）。
+ * @param {string} job_id
+ * @param {number[]} indexes
+ */
+export const save = (job_id, indexes) =>
+  request(`${base}/job/save`, { method: 'POST', body: { job_id, indexes }, timeout: 120_000 })
 
 /** @param {string} id */
 export const voiceDetail = (id) => request(`/api/v1/voices/${encodeURIComponent(id)}`)

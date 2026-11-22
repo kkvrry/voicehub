@@ -94,6 +94,28 @@ class TestSegmenter:
             seconds = len(segment) // 2 / asr_stream.TARGET_RATE
             assert seconds <= asr_stream.MAX_SEGMENT_MS / 1000 + 0.1
 
+    def test_partial_snapshot_grows_with_the_utterance(self):
+        """说话中的快照：够长才给、随说话变长，且不干扰切段。"""
+        scorer = ScriptedScorer([0.1] * 4 + [0.9] * 40 + [0.1] * 30)
+        session = asr_stream.StreamSession(scorer=scorer)
+        sizes: list[int] = []
+        segments: list[bytes] = []
+        for _ in range(75):
+            segments.extend(session.feed(_frame(), 16000))
+            snapshot = session.partial()
+            if snapshot is not None:
+                sizes.append(len(snapshot))
+        assert sizes, "说话满 800ms 后快照就该可用"
+        assert sizes[-1] > sizes[0], "快照要随说话推进变长"
+        assert len(segments) == 1, "取快照不能把这段话提前切断"
+
+    def test_partial_snapshot_is_absent_when_not_speaking(self):
+        scorer = ScriptedScorer([0.1] * 40)
+        session = asr_stream.StreamSession(scorer=scorer)
+        for _ in range(40):
+            session.feed(_frame(), 16000)
+        assert session.partial() is None, "没在说话就没有快照"
+
     def test_flush_pushes_out_the_unfinished_utterance(self):
         """还在说话中就收尾：已说的话要冲出去，不能吞掉。"""
         scorer = ScriptedScorer([0.1] * 4 + [0.9] * 12)
@@ -193,6 +215,54 @@ class TestStreamEndpoint:
             assert event["type"] == "error"
             assert "start / stop" in event["message"]
 
+    def test_speaking_emits_partial_transcripts(self, client, wired, monkeypatch):
+        """说得够久（≥1.2s）就有 partial 事件；说完了 segment 收尾，partial 在它前面。"""
+        # stop 会先等在途的部分识别收尾再冲尾段，顺序因此是确定的。
+        def long_session(on_speech=None):
+            script = [0.1] * 4 + [0.9] * 45 + [0.1] * 30
+            return asr_stream.StreamSession(scorer=ScriptedScorer(script), on_speech=on_speech)
+
+        monkeypatch.setattr(asr_stream, "new_session", long_session)
+        with client.websocket_connect("/api/v1/asr/stream") as ws:
+            ws.send_json({"type": "start", "sample_rate": 16000})
+            assert ws.receive_json()["type"] == "ready"
+            for _ in range(50):
+                ws.send_bytes(_frame())
+            ws.send_json({"type": "stop"})
+            kinds = []
+            while True:
+                event = ws.receive_json()
+                kinds.append(event["type"])
+                if event["type"] == "done":
+                    break
+            assert "partial" in kinds, "说话满 1.2s 必须推出部分识别"
+            assert kinds.index("speech") < kinds.index("partial") < kinds.index("segment")
+
+    def test_a_blink_never_produces_partials(self, client, wired, monkeypatch):
+        """碎音（不足最短说话时长）连段都不成，更不该有 partial 刷屏。"""
+
+        def blink_session(on_speech=None):
+            return asr_stream.StreamSession(
+                scorer=ScriptedScorer([0.9] * 2 + [0.1] * 40), on_speech=on_speech
+            )
+
+        monkeypatch.setattr(asr_stream, "new_session", blink_session)
+        with client.websocket_connect("/api/v1/asr/stream") as ws:
+            ws.send_json({"type": "start", "sample_rate": 16000})
+            assert ws.receive_json()["type"] == "ready"
+            for _ in range(42):
+                ws.send_bytes(_frame())
+            ws.send_json({"type": "stop"})
+            kinds = []
+            while True:
+                event = ws.receive_json()
+                kinds.append(event["type"])
+                if event["type"] == "done":
+                    break
+            assert "segment" not in kinds and "partial" not in kinds, (
+                f"碎音不该产生段落或部分事件：{kinds}"
+            )
+
     def test_stop_flushes_the_utterance_in_flight(self, client, wired, monkeypatch):
         """说话说到一半就点停：没说完的那截要冲出来成为一段。"""
 
@@ -213,4 +283,102 @@ class TestStreamEndpoint:
             segment = ws.receive_json()
             assert segment["type"] == "segment", "收尾要把没说完的话冲成一段"
             assert segment["text"] == "月亮升起来了。"
+            assert ws.receive_json()["type"] == "done"
+
+    def test_two_segments_are_recognized_in_order(self, client, wired, monkeypatch):
+        """两段先后切出：识别协程按队列顺序听，文字不能倒过来。"""
+        script = [0.9] * 10 + [0.1] * 25 + [0.9] * 10 + [0.1] * 25
+        monkeypatch.setattr(
+            asr_stream,
+            "new_session",
+            lambda on_speech=None: asr_stream.StreamSession(
+                scorer=ScriptedScorer(script), on_speech=on_speech
+            ),
+        )
+        seen: list[str] = []
+
+        def slow_transcribe(path):
+            seen.append(path.name)
+            return {"text": f"第{len(seen)}段"}
+
+        monkeypatch.setattr(asr, "transcribe_file", slow_transcribe)
+        with client.websocket_connect("/api/v1/asr/stream") as ws:
+            ws.send_json({"type": "start", "sample_rate": 16000})
+            assert ws.receive_json()["type"] == "ready"
+            for _ in range(80):
+                ws.send_bytes(_frame())
+            ws.send_json({"type": "stop"})
+            kinds: list[str] = []
+            texts: list[str] = []
+            while True:
+                event = ws.receive_json()
+                kinds.append(event["type"])
+                if event["type"] == "segment":
+                    texts.append(event["text"])
+                if event["type"] == "done":
+                    break
+            assert texts == ["第1段", "第2段"], f"段落顺序不对：{texts}"
+            assert kinds.count("speech") == 2
+
+    def test_an_impossible_sample_rate_is_rejected_without_starting(self, client, wired):
+        """采样率报错就给一句话，不能按错的值重采样后假装听懂了。"""
+        with client.websocket_connect("/api/v1/asr/stream") as ws:
+            ws.send_json({"type": "start", "sample_rate": 10})
+            event = ws.receive_json()
+            assert event["type"] == "error"
+            assert "采样率" in event["message"]
+            # 拒绝一次不影响下一次正常开始。
+            ws.send_json({"type": "start", "sample_rate": 16000})
+            assert ws.receive_json()["type"] == "ready"
+            ws.send_json({"type": "stop"})
+            assert ws.receive_json()["type"] == "done"
+
+    def test_a_broken_segmenter_reports_and_still_answers_stop(
+        self, client, wired, monkeypatch
+    ):
+        """分段器自身出错（VAD 模型坏了）：报错、别再喂帧，但 stop 仍要收尾。"""
+
+        class BrokenSession:
+            in_speech = False
+            speech_ms = 0
+
+            def feed(self, pcm, rate):
+                raise RuntimeError("VAD 推理失败")
+
+            def flush(self):
+                return None
+
+            def partial(self):
+                return None
+
+        monkeypatch.setattr(asr_stream, "new_session", lambda on_speech=None: BrokenSession())
+        with client.websocket_connect("/api/v1/asr/stream") as ws:
+            ws.send_json({"type": "start", "sample_rate": 16000})
+            assert ws.receive_json()["type"] == "ready"
+            ws.send_bytes(_frame())
+            event = ws.receive_json()
+            assert event["type"] == "error"
+            assert "中断" in event["message"]
+            ws.send_json({"type": "stop"})
+            assert ws.receive_json()["type"] == "done"
+
+    def test_an_unexpected_engine_error_becomes_a_segment_not_a_drop(
+        self, client, wired, monkeypatch
+    ):
+        """识别插件抛了非 AsrError 的异常：这一段标错，流本身不断。"""
+
+        def exploding(path):
+            raise RuntimeError("服务进程没了")
+
+        monkeypatch.setattr(asr, "transcribe_file", exploding)
+        with client.websocket_connect("/api/v1/asr/stream") as ws:
+            ws.send_json({"type": "start", "sample_rate": 16000})
+            assert ws.receive_json()["type"] == "ready"
+            for _ in range(40):
+                ws.send_bytes(_frame())
+            kinds = [ws.receive_json(), ws.receive_json()]
+            assert [event["type"] for event in kinds] == ["speech", "segment"]
+            assert kinds[1]["text"] == ""
+            assert "识别出错" in kinds[1]["error"]
+            ws.send_json({"type": "stop"})
             assert ws.receive_json()["type"] == "done"

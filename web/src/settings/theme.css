@@ -19,6 +19,9 @@
   color-scheme: light;
   --sh-font: 'Segoe UI Variable Text', 'Segoe UI', 'Inter', 'PingFang SC', 'Microsoft YaHei',
     system-ui, sans-serif;
+  /* 衬线只给"书名、角色名"这类要立起来的字；纸墨外观另有自己的一套（见 look-paper.css）。 */
+  --sh-font-serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Songti SC',
+    'Source Han Serif SC', 'STSong', serif;
   --sh-mono: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
 
   /* ---- 颜色（浅色）---- */
@@ -3517,4 +3520,8 @@ select.sh-field {
     padding-left: 0;
     padding-right: 0;
   }
+}
+/* 目录树收起后，上面让给树的左边距要还回来：否则工作区或卡片列会贴着导航列。 */
+.app-page[data-page='producer'] .producer-layout.is-tree-hidden {
+  padding-left: clamp(22px, 2vw, 40px);
 }

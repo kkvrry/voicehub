@@ -10,6 +10,19 @@
 （落成临时 wav 再听），**识别插件一行不用改**——流式只是核心提供的编排，
 不是新的引擎形态。识别服务通常是单实例串行的，所以逐段识别在进程内加锁。
 
+"边说边出字"不靠流式识别引擎：说话过程中把已积累的音频整段重识别一遍当
+部分结果（``partial`` 事件，只作实时展示），段落收尾的最终识别为准。这不是
+免费的：一次部分识别要重听整段话，说满 30 秒就是二十多次整段推理。所以端点
+同一时刻只允许一个部分识别在途，间隔随说话时长翻倍（:data:`PARTIAL_MS` →
+:data:`PARTIAL_MAX_MS`），新段落一成立旧结果即作废——宁可少推几次，也不让
+识别队列排在收尾段前面。
+
+为什么不让插件直接流式返回：识别插件契约是"整段文件进、整段文字出"，换一家
+服务不该要求它实现流式；连续麦克风是应用层的编排（本模块），只认 VAD 切出来
+的整段。将来某台引擎原生支持流式，可在这里加一条旁路，插件契约不必改。接
+云端识别时要注意：部分结果会按整段重复计费，应按引擎的 ``capabilities.local``
+关掉或做成开关。
+
 测试性：神经 VAD 对合成音不响应，单元测试给 :class:`StreamSession` 注入
 假打分器（:func:`new_session` 是端点用的工厂，测试替换它）。
 """
@@ -36,9 +49,12 @@ __all__ = [
     "transcribe_pcm",
     "vad_unavailable_reason",
 ]
-
 #: VAD 与分段统一在 16k 单声道下工作；其它采样率进来先线性重采样。
 TARGET_RATE = 16000
+#: 客户端报上来的采样率合法区间。超出就是协议错误，不做猜测：按错的值重采样
+#: 会让 VAD 与识别都拿到速度不对的音频，出来的字看着像真的、其实全错。
+MIN_RATE = 8000
+MAX_RATE = 192000
 
 #: Silero VAD @16k 的标准块长（32ms）。**必须**按这个粒度喂模型。
 FRAME_SAMPLES = 512
@@ -51,6 +67,14 @@ MIN_SILENCE_MS = 700
 PAD_MS = 60
 #: 一直不停地说也硬切（识别引擎吃不下无限长的段）。
 MAX_SEGMENT_MS = 30_000
+
+#: 说话中的部分识别（"边说边出字"）：第一次在说满 PARTIAL_MS 时跑，之后
+#: 每跑一次间隔翻倍，最多 PARTIAL_MAX_MS。重识别的是整段话，间隔不涨的话
+#: 一段 30 秒的独白要额外跑二十多次整段推理。
+PARTIAL_MS = 1200
+PARTIAL_MAX_MS = 8000
+#: 说得太短不值得跑部分识别——识别引擎对不足一秒的碎音给不出有意义的结果。
+PARTIAL_MIN_MS = 800
 
 #: 逐段识别互斥：识别服务通常一次只跑一条（见 usecase.asr 的串行约定）。
 _TRANSCRIBE_LOCK = threading.Lock()
@@ -107,13 +131,17 @@ def new_session(on_speech: Callable[[], None] | None = None) -> StreamSession:
     """端点用这个造会话；测试替换本函数即可注入假打分器。
 
     :param on_speech: 转入"正在说话"时的回调（界面点亮"在听"）——在喂帧的
-        协程里同步调用，务必轻（放个事件进队列这种）。
+        工作线程里同步调用，务必轻，而且必须线程安全（端点的 ``emit`` 会把
+        事件投递回事件循环，不直接碰 asyncio 队列）。
     """
     return StreamSession(on_speech=on_speech)
 
 
 class StreamSession:
-    """一路麦克风流的 VAD 分段器。**非线程安全**：只在收到帧的协程里用。
+    """一路麦克风流的 VAD 分段器。**非线程安全**：同一时刻只由一个线程调用。
+
+    端点在事件循环里收帧，把 :meth:`feed` 交给工作线程（VAD 推理是同步的），
+    等它返回再喂下一帧：调用是串行的，所以这里不需要锁。
 
     状态机：静音帧只保留最近的 :data:`PAD_MS`（说话起始的回填），说话帧进
     缓冲；连续静音满 :data:`MIN_SILENCE_MS` 判定说完，整段交出去。段长超过
@@ -147,6 +175,23 @@ class StreamSession:
     def in_speech(self) -> bool:
         """此刻是不是正在说话（界面用来点亮"在听"）。"""
         return self._in_speech
+
+    @property
+    def speech_ms(self) -> int:
+        """当前这段已经说了多久（毫秒）；不在说话中为 0。"""
+        if not self._in_speech:
+            return 0
+        return self._speech_samples * 1000 // TARGET_RATE
+
+    def partial(self) -> bytes | None:
+        """说话中的快照：已积累的整段 PCM（16k int16 bytes），用于"说到哪了"的部分识别。
+
+        快照是拷贝——喂帧协程继续往缓冲里追加也不会串进这份结果。说话太短
+        （不足 :data:`PARTIAL_MIN_MS`）返回 None，不值得跑一次识别。
+        """
+        if not self._in_speech or self.speech_ms < PARTIAL_MIN_MS:
+            return None
+        return np.concatenate(self._speech).tobytes()
 
     def feed(self, pcm: bytes, rate: int) -> list[bytes]:
         """喂一帧 int16 单声道 PCM，返回这一帧**切出来**的完整语音段（16k int16 bytes）。

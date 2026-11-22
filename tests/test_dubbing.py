@@ -205,6 +205,28 @@ class TestDubbingProject:
         # 旁白先建出来：不属于任何角色的段落都归它。
         assert [role["name"] for role in detail["roles"]] == ["旁白"]
 
+    def test_workflow_steps_own_their_models_and_parameters(
+        self, tmp_path: Path, ffmpeg_ready: None
+    ) -> None:
+        """角色不单列一步；识别 / 配音 / 贴齐 / 导出的参数各归自己的步骤。"""
+        service = self._service(tmp_path)
+        source = make_tone(tmp_path / "source.wav", 2.0)
+        detail = service.create(name="样片", upload=source, suffix=".wav")
+        keys = [item["key"] for item in detail["steps"]]
+        assert keys == ["extract", "separate", "transcribe", "synth", "align", "export"]
+        separate = next(item for item in detail["steps"] if item["key"] == "separate")
+        # 可选步骤没跑过时是「可选」，不是卡在等待。
+        assert separate["state"] == "off"
+
+        properties = DubbingSettings.model_json_schema()["properties"]
+        assert properties["silence_db"]["step"] == "transcribe"
+        assert properties["speaker_diar"]["step"] == "transcribe"
+        assert properties["concurrency"]["step"] == "synth"
+        assert properties["fit"]["step"] == "align"
+        assert properties["loudness"]["step"] == "align"
+        assert properties["audio_format"]["step"] == "export"
+        assert "step" not in properties["project_dir"]
+
     def test_transcribe_splits_on_silence_and_synthesizes_timeline(
         self, tmp_path: Path, ffmpeg_ready: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:

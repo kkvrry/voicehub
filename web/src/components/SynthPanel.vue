@@ -1,10 +1,14 @@
 <template>
   <div class="synth">
-    <div class="synth-body">
+    <div
+      class="synth-body"
+      :class="{ 'is-cards-hidden': !showCards, 'is-tree-hidden': treeHidden }"
+    >
       <!-- 最左：音色卡片列。数据就是左栏树当前选中的那一大段（点目录即筛），
            点一张卡 = 选为这次生成的音色，同时弹出它的详情——参考音频在详情里挑，
-           挑完这张卡置顶冻结在这一列头上。 -->
-      <SynthVoiceRail recordable />
+           挑完这张卡置顶冻结在这一列头上。当前页图标再点一次按三档收左栏，
+           收起时只隐藏、不卸载：列表与冻结参考都留在原处。 -->
+      <SynthVoiceRail v-show="showCards" recordable />
 
       <!-- 中：正文 + 语气词 + 情绪 + 引擎 + 生成 + 产物。
            「参考音频」不在这里占一段：它在卡片列头上那张冻结卡里（点卡 → 详情 → 使用），
@@ -328,6 +332,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Play, RotateCcw, Square, X } from 'lucide-vue-next'
 import { store, actions, say } from '../store'
+import { useSettingsStore } from '../stores/settings'
 import { formatClock } from '../utils/format'
 import EmotionField from './EmotionField.vue'
 import InstructionField from './InstructionField.vue'
@@ -340,6 +345,13 @@ import TextLibrary from './TextLibrary.vue'
 import UnsupportedEngines from './UnsupportedEngines.vue'
 import MicButton from './ui/MicButton.vue'
 import WaveBars from './ui/WaveBars.vue'
+
+const settings = useSettingsStore()
+
+/** 音色卡片列只在 `none` 那一档收起；`cards` 是"只有它"。 */
+const showCards = computed(() => settings.appearance.railVisibility !== 'none')
+/** 目录树收起后，这一页要把原本让给树的左边距还回来。 */
+const treeHidden = computed(() => settings.appearance.railVisibility !== 'both')
 
 /** 勾选的那几台引擎——"认不认这条指令""这一格有哪些候选"都从它们身上问。 */
 const pickedEngines = computed(() =>

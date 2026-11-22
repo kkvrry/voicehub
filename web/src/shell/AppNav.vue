@@ -6,7 +6,8 @@
       type="button"
       class="sh-nav-item"
       :class="{ 'is-active': active === item.key }"
-      :title="item.label"
+      :title="itemTitle(item)"
+      :aria-label="itemTitle(item)"
       :aria-current="active === item.key ? 'page' : undefined"
       @click="$emit('navigate', item.key)"
     >
@@ -33,7 +34,8 @@
       type="button"
       class="sh-nav-item"
       :class="{ 'is-active': active === item.key }"
-      :title="item.label"
+      :title="itemTitle(item)"
+      :aria-label="itemTitle(item)"
       :aria-current="active === item.key ? 'page' : undefined"
       @click="$emit('navigate', item.key)"
     >
@@ -73,12 +75,25 @@ import { computed } from 'vue'
 import { AudioLines, Cpu, Mic, ScrollText, Settings as SettingsIcon, Sparkles } from 'lucide-vue-next'
 import { store } from '../store'
 
-defineProps<{
+const props = defineProps<{
   /** 'library' | 'synth' | 'engine' | 'logs' | 'settings' */
   active: string
+  /** 这一页有没有可收起的左栏：当前页的图标再点一次就是切换。 */
+  railToggle?: boolean
+  /** 再点一次会发生什么（收起目录树 / 收起音色栏 / 展开左栏）。 */
+  railHint?: string
 }>()
 
 defineEmits<{ navigate: [key: string] }>()
+
+/** 当前页的图标兼作左栏开关：提示里说清再点一次会到哪一档。
+ *  其余图标仍是"去哪一页"，不额外加控件。 */
+function itemTitle(item: NavItem) {
+  if (props.railToggle && props.active === item.key && props.railHint) {
+    return `${item.label} · ${props.railHint}`
+  }
+  return item.label
+}
 
 type NavItem = { key: string; label: string; icon?: any; img?: string }
 

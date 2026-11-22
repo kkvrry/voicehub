@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from app.domain.uischema import ui_hints
@@ -52,6 +54,12 @@ GROUP_EXPORT = "导出"
 SETTINGS_PAGE_GROUPS: tuple[str, ...] = (GROUP_PROJECT,)
 
 
+def _at(step: str, label: str, **kwargs: Any) -> dict[str, Any]:
+    """字段归属的流水线步骤：工作区按 ``step`` 把参数画进对应步骤卡，
+    不再另抄一份分组表。步骤 key 与 ``service.STEP_MANIFEST`` 一致。"""
+    return {**ui_hints(label, **kwargs), "step": step}
+
+
 class DubbingSettings(BaseModel):
     project_dir: str = Field(
         default="",
@@ -67,7 +75,9 @@ class DubbingSettings(BaseModel):
         description=(
             "音量低于它算停顿。语音底噪一般在 −50 dB 以下，取值越接近 0 切得越碎。"
         ),
-        json_schema_extra=ui_hints("静音阈值（dB）", widget="number", group=GROUP_SPLIT),
+        json_schema_extra=_at(
+            "transcribe", "静音阈值（dB）", widget="number", group=GROUP_SPLIT
+        ),
     )
     silence_min: float = Field(
         default=0.35,
@@ -77,7 +87,9 @@ class DubbingSettings(BaseModel):
             "短于这个长度的停顿不切（那是换气）。字幕按切出来的段走，"
             "调得太小会让一句话拆成两三行。"
         ),
-        json_schema_extra=ui_hints("最短停顿（秒）", widget="number", group=GROUP_SPLIT),
+        json_schema_extra=_at(
+            "transcribe", "最短停顿（秒）", widget="number", group=GROUP_SPLIT
+        ),
     )
     max_segment: float = Field(
         default=15.0,
@@ -86,7 +98,9 @@ class DubbingSettings(BaseModel):
         description=(
             "没有停顿时最多按这个长度硬切，避免整段音频塞进一次识别请求。"
         ),
-        json_schema_extra=ui_hints("最长段（秒）", widget="number", group=GROUP_SPLIT),
+        json_schema_extra=_at(
+            "transcribe", "最长段（秒）", widget="number", group=GROUP_SPLIT
+        ),
     )
     speaker_diar: bool = Field(
         default=False,
@@ -94,7 +108,9 @@ class DubbingSettings(BaseModel):
             "转录后按说话人分离给每个说话人建一个角色，段落自动挂到角色上；"
             "需要 audio.cpp 装了说话人分离模型（diar）并在运行，没有就跳过。"
         ),
-        json_schema_extra=ui_hints("说话人分离", widget="switch", group=GROUP_SPLIT),
+        json_schema_extra=_at(
+            "transcribe", "说话人分离", widget="switch", group=GROUP_SPLIT
+        ),
     )
 
     # ---- 合成与贴齐 -------------------------------------------------------
@@ -104,7 +120,7 @@ class DubbingSettings(BaseModel):
             "长过时隙的段先加速再放，贴得进去就不算顺延；超过最大倍率仍贴不进去的"
             "按原句时隙截断，不越过下一段。关闭后不加速，长段仍会截断。"
         ),
-        json_schema_extra=ui_hints("变速贴齐", widget="switch", group=GROUP_SYNTH),
+        json_schema_extra=_at("align", "变速贴齐", widget="switch", group=GROUP_SYNTH),
     )
     max_speed: float = Field(
         default=1.35,
@@ -114,7 +130,8 @@ class DubbingSettings(BaseModel):
             "贴齐时允许的最大倍率。调大能贴进更多段，但语气会被改变；"
             "超过 1.4 人耳就能听出赶。"
         ),
-        json_schema_extra=ui_hints(
+        json_schema_extra=_at(
+            "align",
             "最大倍率",
             widget="number",
             group=GROUP_SYNTH,
@@ -128,12 +145,13 @@ class DubbingSettings(BaseModel):
         description=(
             "同时在途的合成请求数。本机单模型服务必须为 1：并发只增加排队时间。"
         ),
-        json_schema_extra=ui_hints("并发合成", widget="number", group=GROUP_SYNTH),
+        json_schema_extra=_at("synth", "并发合成", widget="number", group=GROUP_SYNTH),
     )
     loudness: str = Field(
         default="video",
         description="混音后的响度目标；不校准时保留各轨的原始电平。",
-        json_schema_extra=ui_hints(
+        json_schema_extra=_at(
+            "align",
             "响度目标",
             widget="select",
             choices=LOUDNESS_CHOICES,
@@ -145,7 +163,8 @@ class DubbingSettings(BaseModel):
     audio_format: str = Field(
         default="m4a",
         description="纯音频项目的成品容器；视频项目一律封装成 MP4。",
-        json_schema_extra=ui_hints(
+        json_schema_extra=_at(
+            "export",
             "音频格式",
             widget="select",
             choices=AUDIO_FORMAT_CHOICES,
@@ -155,12 +174,12 @@ class DubbingSettings(BaseModel):
     bitrate: str = Field(
         default="192k",
         description="有损容器的码率；WAV 忽略这一项。",
-        json_schema_extra=ui_hints("码率", group=GROUP_EXPORT),
+        json_schema_extra=_at("export", "码率", group=GROUP_EXPORT),
     )
     subtitle_formats: str = Field(
         default="srt",
         description="同时写出的字幕格式，逗号分隔：srt / vtt / lrc / txt / ass。",
-        json_schema_extra=ui_hints("字幕格式", group=GROUP_EXPORT),
+        json_schema_extra=_at("export", "字幕格式", group=GROUP_EXPORT),
     )
     subtitle_max_chars: int = Field(
         default=0,
@@ -170,12 +189,15 @@ class DubbingSettings(BaseModel):
             "导出时把长句切成不超过这么多字的一条；0 = 不切。"
             "只影响字幕文件，不改变时间轴上的段落。"
         ),
-        json_schema_extra=ui_hints("每行最多字数", widget="number", group=GROUP_EXPORT),
+        json_schema_extra=_at(
+            "export", "每行最多字数", widget="number", group=GROUP_EXPORT
+        ),
     )
     subtitle_encoding: str = Field(
         default="utf-8",
         description="字幕文件编码。播放器对 BOM 敏感，默认不带。",
-        json_schema_extra=ui_hints(
+        json_schema_extra=_at(
+            "export",
             "字幕编码",
             widget="select",
             choices=ENCODING_CHOICES,
@@ -188,5 +210,5 @@ class DubbingSettings(BaseModel):
             "视频项目导出时带上字幕轨（可开关，不烧进画面）。"
             "播放器不显示字幕轨时关掉它，另发 SRT。"
         ),
-        json_schema_extra=ui_hints("字幕轨", widget="switch", group=GROUP_EXPORT),
+        json_schema_extra=_at("export", "字幕轨", widget="switch", group=GROUP_EXPORT),
     )

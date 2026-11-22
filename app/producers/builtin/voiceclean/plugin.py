@@ -7,9 +7,10 @@
 
 - **核心**做 ffmpeg：单声道、采样率、高通、限峰、时长校验（:mod:`app.infra.ffmpeg`）；
 - **模型**走 audio.cpp 运行实例的 ``POST /v1/tasks/run``（``task`` 为 ``sep`` / ``s2s``）：
-  可选模型与地址都从正在运行的实例里取，插件不保存地址，也不在这里下载模型；
-  一台都没启动时只做裁剪；
-- **落库**走 :class:`app.usecase.library.LibraryService`：原件进回收站，sidecar 记处理链。
+  候选清单按步骤登记（官方默认包 + 内置工具），未下载可在卡片内下载；下载后自动
+  登记/加载。内置工具权重由本插件按固定版本下载，执行仍由 audio.cpp 完成；
+- **落库**走 :class:`app.usecase.library.LibraryService`：替换时原件进回收站，
+  入库时结果另存一条新样例；两种都把处理链记进 sidecar。
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ __all__ = ["VoiceClean"]
 class VoiceClean(ProducerPlugin):
     key = "voiceclean"
     label = "音色处理"
-    description = "对音色样例做分离、降噪与裁剪，逐条试听后替换。"
+    description = "对音色样例做分离、降噪与裁剪，逐条试听后替换或入库。"
     version = "0.1.0"
     settings_label = "音色处理"
     homepage = "https://github.com/0xShug0/audio.cpp"

@@ -11,9 +11,11 @@ import argparse
 import asyncio
 import contextlib
 import logging
+import os
 import socket
 import uuid
 import webbrowser
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -383,7 +385,27 @@ def main() -> None:
     set_bind_port(port)
     wildcard = host in WILDCARD_HOSTS
     browser_host = "127.0.0.1" if wildcard else ("[::1]" if host == "::1" else host)
-    url = f"http://{browser_host}:{port}/"
+    # 对局域网开放就顺带把连接变成安全上下文：浏览器只在 https / localhost 下给麦克风，
+    # 平板用 http://192.168.x.x 打开时连 navigator.mediaDevices 都没有。
+    # 只监听回环时不这样做——在本机给自己添一次证书警告没有好处。
+    scheme = "http"
+    ssl_files: tuple[Path, Path] | None = None
+    if wildcard and os.environ.get("VOICEHUB_HTTPS", "1") != "0":
+        from app.infra.tls import CertError, ensure_cert
+
+        cert_hosts = list(_lan_addresses())
+        try:
+            ssl_files = ensure_cert(data_dir() / "certs", cert_hosts)
+            scheme = "https"
+        except CertError as exc:
+            print(f"[VoiceHub] 自签证书没签成，仍用 http（麦克风在局域网下不可用）：{exc}", flush=True)
+    url = f"{scheme}://{browser_host}:{port}/"
+    if scheme == "https":
+        print(
+            "[VoiceHub] 已启用 https（自签证书）：浏览器第一次会提示\"不受信任\"，选择继续访问即可。",
+            flush=True,
+        )
+        print("[VoiceHub] 想改回 http：设 VOICEHUB_HTTPS=0 再启动。", flush=True)
     if _port_in_use(host, port):
         CHANNEL.warning(
             f"端口 {port} 已被占用——多半是服务已经在跑：{url}", source="app", port=port
@@ -410,7 +432,7 @@ def main() -> None:
     token_on = bool(resolve_token())
     if wildcard:
         for address in _lan_addresses():
-            print(f"[VoiceHub] 局域网：http://{address}:{port}/", flush=True)
+            print(f"[VoiceHub] 局域网：{scheme}://{address}:{port}/", flush=True)
         if token_on:
             print("[VoiceHub] 已启用访问令牌：其它设备首次打开要在 /login 输入。", flush=True)
         else:
@@ -439,7 +461,14 @@ def main() -> None:
         else create_app(host=host)
     )
     try:
-        uvicorn.run(server, host=host, port=port, log_level="warning")
+        uvicorn.run(
+            server,
+            host=host,
+            port=port,
+            log_level="warning",
+            ssl_certfile=str(ssl_files[0]) if ssl_files else None,
+            ssl_keyfile=str(ssl_files[1]) if ssl_files else None,
+        )
     finally:
         CHANNEL.info("服务退出。", source="app")
 

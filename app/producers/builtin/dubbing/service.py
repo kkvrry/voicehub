@@ -56,7 +56,6 @@ STEP_MANIFEST: tuple[tuple[str, str, str, str], ...] = (
         "project",
     ),
     ("transcribe", "转录", "按静音切段逐段识别，段落边界即字幕时间码。", "project"),
-    ("cast", "角色", "给每段指定说话人与音色。", "project"),
     ("synth", "配音", "按角色逐段合成，只重跑改动过的段。", "row"),
     (
         "align",
@@ -67,6 +66,7 @@ STEP_MANIFEST: tuple[tuple[str, str, str, str], ...] = (
     ("export", "导出", "封装成片并写出字幕。", "project"),
 )
 STEP_LABELS = {key: label for key, label, _note, _unit in STEP_MANIFEST}
+STEP_NOTES = {key: note for key, _label, note, _unit in STEP_MANIFEST}
 
 
 class _JobCancelled(Exception):
@@ -993,7 +993,7 @@ class DubbingService:
         files = [item for item in out.iterdir() if item.is_file()] if out.is_dir() else []
         reason = asr_uc.unavailable_reason()
         # 该配却配不了（角色没选音色）时在配音那一步说清，不然按钮点了只会报错。
-        unvoiced_note = f"，{stats['unvoiced']} 段缺音色" if stats["unvoiced"] else ""
+        unvoiced_note = f" · {stats['unvoiced']} 段缺音色" if stats["unvoiced"] else ""
         stem_state = self._stem_state(project)
         stem_rows = [
             {"id": row["id"], "label": row["label"], "family": row["family"], "note": row["note"]}
@@ -1054,10 +1054,12 @@ class DubbingService:
         # 段是另一档风险，导出时单独提示。
         block_count = stats["stale"] + stats["failed"] + stats["pending"]
 
+        # 角色不单列一步：分配角色在角色条完成，配音这一步直接带上它的统计。
         steps = [
             {
                 "key": "extract",
                 "label": STEP_LABELS["extract"],
+                "note": STEP_NOTES["extract"],
                 "state": "done" if has_audio else "wait",
                 "summary": (
                     "源文件不在了，先重新指定路径"
@@ -1074,10 +1076,11 @@ class DubbingService:
             {
                 "key": "separate",
                 "label": STEP_LABELS["separate"],
+                "note": STEP_NOTES["separate"],
                 "state": (
                     "run"
                     if job and job["kind"] == "separate" and job["state"] == "running"
-                    else ("done" if stem_state["ready"] else "wait")
+                    else ("done" if stem_state["ready"] else "off")
                 ),
                 "summary": (
                     f"人声 + 伴奏 · {stem_state['label'] or '已分轨'}"
@@ -1092,6 +1095,7 @@ class DubbingService:
             {
                 "key": "transcribe",
                 "label": STEP_LABELS["transcribe"],
+                "note": STEP_NOTES["transcribe"],
                 "state": (
                     "run" if job and job["kind"] == "transcribe" and job["state"] == "running"
                     else ("done" if stats["total"] else "wait")
@@ -1101,35 +1105,29 @@ class DubbingService:
                 ),
             },
             {
-                "key": "cast",
-                "label": STEP_LABELS["cast"],
-                "state": (
-                    "done"
-                    if stats["total"] and (not stats["dubbed"] or not stats["unvoiced"])
-                    else "wait"
-                ),
-                "summary": (
-                    f"{stats['dubbed']} 段配音 · {stats['keep']} 段原声{unvoiced_note}"
-                    if stats["total"]
-                    else "未分配"
-                ),
-            },
-            {
                 "key": "synth",
                 "label": STEP_LABELS["synth"],
+                "note": STEP_NOTES["synth"],
                 "state": (
                     "run" if job and job["kind"] == "synth" and job["state"] == "running"
-                    else ("done" if stats["dubbed"] and stats["ready"] == stats["dubbed"] else "wait")
+                    else (
+                        "done"
+                        if stats["total"]
+                        and (not stats["dubbed"] or stats["ready"] == stats["dubbed"])
+                        else "wait"
+                    )
                 ),
                 "summary": (
-                    f"{stats['ready']} / {stats['dubbed']} 段{unvoiced_note}"
+                    f"{stats['ready']} / {stats['dubbed']} 段已配音 · "
+                    f"{stats['keep']} 段原声{unvoiced_note}"
                     if stats["dubbed"]
-                    else ("没有需要配音的段落" if stats["total"] else "未开始")
+                    else ("没有需要配音的段落 · 全部保留原声" if stats["total"] else "未开始")
                 ),
             },
             {
                 "key": "align",
                 "label": STEP_LABELS["align"],
+                "note": STEP_NOTES["align"],
                 "state": "done" if mix.is_file() and mix_current else "wait",
                 "summary": (
                     f"替换 {stats['voiced']} 段 · 保留 {stats['total'] - stats['voiced']} 段"
@@ -1144,6 +1142,7 @@ class DubbingService:
             {
                 "key": "export",
                 "label": STEP_LABELS["export"],
+                "note": STEP_NOTES["export"],
                 "state": "done" if export_current else "wait",
                 "summary": (
                     f"{exports[0]}（最新）"

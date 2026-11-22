@@ -28,6 +28,7 @@ __all__ = [
     "Installer",
     "catalog",
     "minimum",
+    "mirror_order",
     "pick",
     "platform_key",
     "rows",
@@ -102,7 +103,8 @@ def pick(runtime_id: str = "", backend: str = "") -> dict[str, Any]:
     return found[0] if found else {}
 
 
-def _mirror_order() -> tuple[str, ...]:
+def mirror_order() -> tuple[str, ...]:
+    """直连与镜像的尝试顺序；上一次成功的排最前。"""
     with _LOCK:
         first = _HINT["prefix"]
     return (first, *[item for item in _MIRRORS if item != first])
@@ -220,7 +222,7 @@ class Installer:
 
     def _fetch(self, part: Path, url: str, checksum: str, index: int, count: int) -> None:
         last: Exception | None = None
-        for prefix in _mirror_order():
+        for prefix in mirror_order():
             try:
                 self._stream(part, f"{prefix}{url}", checksum, index, count, prefix)
                 _remember(prefix)

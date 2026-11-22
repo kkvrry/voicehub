@@ -1,0 +1,290 @@
+/* 舞台：设计稿《一间房 / 台本》那一套。暗的屋子、暖的光、衬线的名字。
+ *
+ * 与前四套的关系：它不是"浅色主题的变体"，而是**一套独立的暗色材质**——
+ * 令牌直接挂在 `.app-shell` 上，深浅色切到哪一边都还是这一套（否则切到浅色
+ * 就散架）。顶栏与导航取设计稿里那条压在画面上的半透明带。 */
+
+:root[data-look='stage'] .app-shell {
+  --sh-canvas: #06090e;
+  --sh-panel: #0d1219;
+  --sh-chip: #141c26;
+
+  --sh-text: #f4f6fa;
+  --sh-text-2: #c6cfdc;
+  --sh-text-3: #94a0b1;
+  --sh-text-4: #6f7a89;
+
+  /* 强调色取设计稿的暖灯：它出现在主操作、当前选中与正在说的话上。 */
+  --sh-accent: #f0a76b;
+  --sh-accent-2: #e08a4e;
+  --sh-accent-soft: rgba(240, 167, 107, 0.14);
+  --sh-accent-soft-2: rgba(240, 167, 107, 0.24);
+  --sh-accent-ring: rgba(240, 167, 107, 0.36);
+  --sh-accent-contrast: #21150a;
+
+  --sh-line: rgba(255, 255, 255, 0.12);
+  --sh-line-soft: rgba(255, 255, 255, 0.07);
+  --sh-line-strong: rgba(255, 255, 255, 0.2);
+  --sh-hover: rgba(255, 255, 255, 0.06);
+
+  --sh-glass: rgba(10, 14, 20, 0.62);
+  --sh-glass-soft: rgba(10, 14, 20, 0.42);
+  --sh-glass-strong: rgba(12, 18, 26, 0.88);
+  --sh-glass-border: rgba(255, 255, 255, 0.16);
+
+  --sh-scrim: rgba(5, 8, 12, 0.4);
+  --sh-scrim-on: rgba(5, 8, 12, 0.6);
+
+  --sh-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 18px 40px -28px rgba(0, 0, 0, 0.95);
+  --sh-shadow-2: 0 30px 70px -36px rgba(0, 0, 0, 1);
+  --sh-shadow-pop: 0 10px 28px -16px rgba(0, 0, 0, 0.85);
+
+  --sh-font-serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Songti SC',
+    'Source Han Serif SC', 'STSong', serif;
+
+  background-color: var(--sh-canvas);
+  color: var(--sh-text);
+}
+
+:root[data-look='stage'] .app-shell {
+  --sh-nav-w: 80px;
+  --sh-rail-w: 220px;
+}
+
+/* ------------------------------------------------------------------ 顶栏 -- */
+/* 数值取自设计稿 b.html：64px 高、0 22 内边距、底边 rgba(255,255,255,.07)、
+   渐变 180deg rgba(6,9,14,.52)→.14、模糊 20。 */
+:root[data-look='stage'] .app-shell .sh-topbar {
+  height: 64px;
+  padding: 0 22px;
+  gap: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(180deg, rgba(6, 9, 14, 0.52), rgba(6, 9, 14, 0.14));
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* 品牌那一格：34px、圆角 11、暖色描边与淡底；副标题小写字母间距。 */
+:root[data-look='stage'] .app-shell .sh-brand {
+  gap: 11px;
+}
+
+:root[data-look='stage'] .app-shell .sh-brand-mark {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(240, 167, 107, 0.34);
+  border-radius: 11px;
+  background: rgba(240, 167, 107, 0.1);
+  color: var(--sh-accent);
+  box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .sh-brand-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+:root[data-look='stage'] .app-shell .sh-brand-sub {
+  color: var(--sh-text-4);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------- 左侧导航 -- */
+:root[data-look='stage'] .app-shell .sh-nav {
+  gap: 6px;
+  padding: 18px 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(90deg, rgba(5, 8, 12, 0.42), rgba(5, 8, 12, 0.08));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+:root[data-look='stage'] .app-shell .sh-nav-item {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 13px;
+  background: none;
+  color: rgba(230, 238, 248, 0.52);
+}
+
+/* 设计稿的导航没有文字：图标即入口，悬停给一句 title。 */
+:root[data-look='stage'] .app-shell .sh-nav-label {
+  display: none;
+}
+
+:root[data-look='stage'] .app-shell .sh-nav-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--sh-text-2);
+}
+
+:root[data-look='stage'] .app-shell .sh-nav-item.is-active {
+  background: rgba(240, 167, 107, 0.14);
+  color: var(--sh-accent);
+  box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .sh-nav-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+:root[data-look='stage'] .app-shell .sh-nav-divider {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* --------------------------------------------------------- 结构栏与正文 -- */
+:root[data-look='stage'] .app-shell .sh-rail {
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(90deg, rgba(5, 8, 12, 0.34), rgba(5, 8, 12, 0.06));
+}
+
+:root[data-look='stage'] .app-shell .sh-card,
+:root[data-look='stage'] .app-shell .pb-shell {
+  border: 1px solid var(--sh-line);
+  background: color-mix(in srgb, var(--sh-panel) 72%, transparent);
+  backdrop-filter: blur(var(--sh-blur));
+  -webkit-backdrop-filter: blur(var(--sh-blur));
+  box-shadow: none;
+}
+
+/* 标题用衬线：设计稿里"门的那一口气""小暖"都是衬线，界面标题沿用。 */
+:root[data-look='stage'] .app-shell .sh-card-title,
+:root[data-look='stage'] .app-shell .sh-page-head h1,
+:root[data-look='stage'] .app-shell .lib-head h1 {
+  font-family: var(--sh-font-serif);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* 输入与按钮：暗面 + 一道亮边，焦点是暖色环。 */
+:root[data-look='stage'] .app-shell .sh-field {
+  border: 1px solid var(--sh-line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--sh-text);
+}
+
+:root[data-look='stage'] .app-shell .sh-field:focus {
+  border-color: rgba(240, 167, 107, 0.5);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+:root[data-look='stage'] .app-shell .sh-btn.is-ghost {
+  border: 1px solid var(--sh-line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--sh-text-2);
+}
+
+:root[data-look='stage'] .app-shell .sh-btn.is-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--sh-text);
+}
+
+:root[data-look='stage'] .app-shell .sh-btn.is-primary {
+  background: linear-gradient(135deg, var(--sh-accent), var(--sh-accent-2));
+  box-shadow: 0 10px 22px -12px rgba(240, 167, 107, 0.7);
+}
+
+/* 音色卡片：暗面、细边，选中是暖色描边；不再抬起。 */
+:root[data-look='stage'] .app-shell .card {
+  border: 1px solid var(--sh-line-soft);
+  background: color-mix(in srgb, var(--sh-panel) 66%, transparent);
+  box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .card:hover {
+  border-color: var(--sh-line);
+  background: color-mix(in srgb, var(--sh-panel) 78%, transparent);
+}
+
+:root[data-look='stage'] .app-shell .card.is-active,
+:root[data-look='stage'] .app-shell .card.is-selected {
+  border-color: rgba(240, 167, 107, 0.42);
+  background: rgba(240, 167, 107, 0.08);
+}
+
+/* 行表与日志：分隔线分层，不叠卡。 */
+:root[data-look='stage'] .app-shell .rows tbody tr,
+:root[data-look='stage'] .app-shell .log-row {
+  border-color: var(--sh-line-soft);
+}
+
+/* 滚动条：暗槽 + 细亮块。 */
+:root[data-look='stage'] .app-shell ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+:root[data-look='stage'] .app-shell ::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+:root[data-look='stage'] .app-shell ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+:root[data-look='stage'] .app-shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* 顶栏上的东西都不带框：图标直接落在玻璃上（设计稿里那颗太阳、那颗齿轮都没有底）。
+   只有品牌那一格是设计稿自带的暖色方牌。 */
+:root[data-look='stage'] .app-shell .sh-theme-toggle {
+  padding: 0 8px;
+  height: 32px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  box-shadow: none;
+  color: rgba(230, 238, 248, 0.62);
+}
+
+:root[data-look='stage'] .app-shell .sh-theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--sh-text);
+}
+
+/* 主题键只留图标，不写"浅色/深色"。 */
+:root[data-look='stage'] .app-shell .sh-theme-label {
+  display: none;
+}
+
+/* 搜索：一条没有边框的底，聚焦时只多一层极淡的亮。 */
+:root[data-look='stage'] .app-shell .sh-search {
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:root[data-look='stage'] .app-shell .sh-search:focus-within {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+:root[data-look='stage'] .app-shell .sh-search kbd {
+  border: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--sh-text-4);
+}
+
+:root[data-look='stage'] .app-shell .sh-search-clear {
+  border: 0;
+  background: none;
+}
+
+/* 导航与工具行上的小图标按钮同理：没有框，只有悬停时一层亮。 */
+:root[data-look='stage'] .app-shell .sh-icon-btn,
+:root[data-look='stage'] .app-shell .lib-head .sh-btn.is-ghost {
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .sh-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+}

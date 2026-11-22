@@ -157,5 +157,24 @@ class Connection:
             body["task"] = task
         return _request("POST", f"{self.url}/v1/models/load", body)
 
+    def load_path(
+        self,
+        model_id: str,
+        path: str,
+        family: str,
+        task: str,
+        load_options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """按本机路径登记一个模型；内置工具没有包 id，只能走这条。
+
+        加载大模型可能很久，调用方自己要给足超时。
+        """
+        body = {"id": model_id, "path": str(path), "family": family}
+        if task:
+            body["task"] = task
+        if load_options:
+            body["load_options"] = dict(load_options)
+        return _request("POST", f"{self.url}/v1/models/load", body, timeout=600.0)
+
     def unload(self, model_id: str) -> dict[str, Any]:
         return _request("POST", f"{self.url}/v1/models/unload", {"id": model_id})

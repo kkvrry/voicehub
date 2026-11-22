@@ -8,6 +8,7 @@
     :active="activeNav"
     :show-rail="showShellRail"
     :show-search="showVoiceSearch"
+    :rail-cards="railCards"
     v-model:query="searchQuery"
     :placeholder="searchPlaceholder"
     :hint="isSettings ? searchHint : ''"
@@ -41,12 +42,20 @@
         <EnginePanel v-else-if="store.pluginKind === 'tts'" />
         <LlmPanel v-else />
       </template>
-      <div v-else-if="store.view === 'producer'" class="producer-layout">
+      <div
+        v-else-if="store.view === 'producer'"
+        class="producer-layout"
+        :class="{ 'is-tree-hidden': showProducerRail && treeHidden }"
+      >
         <!-- 音色栏由插件自描述决定（`voice_rail`）：创作型工作区要挑音色，
              audio.cpp 这类运行时管理页不需要，整列让给工作区。
              栏的用法同样自描述（`rail_mode`）：`pick` = 点卡即选中（处理目标），
              `assign` = 卡右「指定」把音色交给工作区选角色。 -->
-        <aside v-if="showProducerRail" class="producer-cards">
+        <aside
+          v-if="showProducerRail"
+          v-show="showCards"
+          class="producer-cards"
+        >
           <SynthVoiceRail
             :pickable="railMode === 'pick'"
             :assignable="railMode !== 'pick'"
@@ -162,6 +171,7 @@ import DetailPanel from './components/DetailPanel.vue'
 import SettingsPage from './settings/SettingsPage.vue'
 import SettingsRail from './settings/SettingsRail.vue'
 import { jumpFirst, query as settingsQuery, searchHint } from './settings/pane'
+import { useSettingsStore } from './stores/settings'
 import AsrPanel from './components/AsrPanel.vue'
 import EngineCatalog from './components/EngineCatalog.vue'
 import EnginePanel from './components/EnginePanel.vue'
@@ -173,6 +183,8 @@ import LogView from './components/LogView.vue'
 
 /** 设置屏是壳内的一屏：壳的形态（mode）与主区内容跟着它换，壳本身不换。 */
 const isSettings = computed(() => store.view === 'settings')
+
+const settings = useSettingsStore()
 
 /** 顶部搜索同一格绑两件事：音色库等页筛音色，设置屏搜设置项。
  *  音色那一份的规矩不变——三页都摆着音色卡片，搜索就地筛卡片；其余页面才回音色库看结果。
@@ -231,6 +243,18 @@ const railMode = computed(() => {
   const entry = store.producers.find((item) => item.key === store.producer.key)
   return entry?.rail_mode === 'pick' ? 'pick' : 'assign'
 })
+
+/** 这一页有没有音色卡片列：生成页有，带音色栏的生产方工作区也有。
+ *  三档切换只在有这一列时成立；没有这一列的页只切目录树。 */
+const railCards = computed(
+  () => store.view === 'synth' || (store.view === 'producer' && showProducerRail.value)
+)
+
+/** 音色卡片列只在 `none` 那一档收起；`cards` 是"只有它"。 */
+const showCards = computed(() => settings.appearance.railVisibility !== 'none')
+
+/** 目录树收起（`cards` / `none`）后，工作区要把原本让给树的左边距还回来。 */
+const treeHidden = computed(() => settings.appearance.railVisibility !== 'both')
 
 /** 工具型工作区（不要音色栏）也不显示音色结构树与音色搜索：这一页不归音色库管。 */
 const showShellRail = computed(

@@ -445,13 +445,13 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 292px;
+  grid-template-columns: minmax(0, 1fr) 336px;
   gap: 12px;
   padding: 0 22px 14px;
 }
 
 @media (max-width: 1280px) {
-  .dub-body { grid-template-columns: minmax(0, 1fr) 260px; }
+  .dub-body { grid-template-columns: minmax(0, 1fr) 304px; }
 }
 
 @media (max-width: 980px) {

@@ -77,40 +77,76 @@
     </div>
   </header>
   <div v-if="store.tagCloud.length" class="lib-tagbar">
-    <!-- 「全部」占着原来那枚写着「标签」的文字：选了标签之后，这里依旧是同一行字，
-         点它就从任何一枚标签回到整份列表——不必再去找刚点过的那一枚。 -->
+    <!-- 标签条的总开关：标签多的时候收成一行，平板不再被这一墙标签占掉半屏。
+         收起后这一颗仍留着（正筛着某个标签时写那个标签名），点它展开。 -->
     <button
       type="button"
-      class="tag-chip is-all"
-      :class="{ active: !store.filters.tag }"
-      :aria-pressed="!store.filters.tag"
-      title="不限标签"
-      @click="showAll"
+      class="tagbar-toggle"
+      :class="{ active: collapsed && store.filters.tag }"
+      :aria-expanded="!collapsed"
+      :aria-label="
+        collapsed
+          ? store.filters.tag
+            ? `展开标签，当前筛选 ${store.filters.tag}`
+            : '展开标签'
+          : '收起标签'
+      "
+      :title="collapsed ? '展开标签' : '收起标签'"
+      @click="toggleTagbar"
     >
-      全部
+      <Tag :size="12" :stroke-width="1.8" aria-hidden="true" />
+      <span class="tagbar-toggle-label">
+        {{ collapsed && store.filters.tag ? store.filters.tag : '标签' }}
+      </span>
+      <ChevronDown v-if="collapsed" :size="12" :stroke-width="1.8" aria-hidden="true" />
+      <ChevronUp v-else :size="12" :stroke-width="1.8" aria-hidden="true" />
     </button>
-    <span class="tagbar-divider" aria-hidden="true" />
-    <button
-      v-for="entry in store.tagCloud"
-      :key="entry.tag"
-      class="tag-chip"
-      :class="{ active: store.filters.tag === entry.tag }"
-      :aria-pressed="store.filters.tag === entry.tag"
-      :title="store.filters.tag === entry.tag ? '再点一下取消' : `筛出 ${entry.count} 个`"
-      @click="pickTag(entry.tag)"
-    >
-      {{ entry.tag }}<span class="tag-count">{{ entry.count }}</span>
-    </button>
+    <template v-if="!collapsed">
+      <!-- 「全部」占着原来那枚写着「标签」的文字：选了标签之后，这里依旧是同一行字，
+           点它就从任何一枚标签回到整份列表——不必再去找刚点过的那一枚。 -->
+      <span class="tagbar-divider" aria-hidden="true" />
+      <button
+        type="button"
+        class="tag-chip is-all"
+        :class="{ active: !store.filters.tag }"
+        :aria-pressed="!store.filters.tag"
+        title="不限标签"
+        @click="showAll"
+      >
+        全部
+      </button>
+      <button
+        v-for="entry in store.tagCloud"
+        :key="entry.tag"
+        class="tag-chip"
+        :class="{ active: store.filters.tag === entry.tag }"
+        :aria-pressed="store.filters.tag === entry.tag"
+        :title="store.filters.tag === entry.tag ? '再点一下取消' : `筛出 ${entry.count} 个`"
+        @click="pickTag(entry.tag)"
+      >
+        {{ entry.tag }}<span class="tag-count">{{ entry.count }}</span>
+      </button>
+    </template>
   </div>
 </template>
 
 <script setup>
 // @ts-check
 import { computed } from 'vue'
-import { ImagePlus, Loader2, Play } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, ImagePlus, Loader2, Play, Tag } from 'lucide-vue-next'
 import { actions, store, visibleVoices, vocab } from '../store'
+import { useSettingsStore } from '../stores/settings'
 import ActionButton from './ui/ActionButton.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
+
+const settings = useSettingsStore()
+
+/** 标签条收起没有：偏好存在外观设置里，换页、刷新后保持。 */
+const collapsed = computed(() => settings.appearance.tagBarCollapsed)
+
+function toggleTagbar() {
+  settings.appearance.tagBarCollapsed = !collapsed.value
+}
 
 const title = computed(() => {
   const selection = store.selection

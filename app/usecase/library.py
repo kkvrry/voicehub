@@ -999,19 +999,32 @@ class LibraryService:
         names = [path.name for path in _audio_files(folder)]
         kept = {key: value for key, value in side.samples.items() if key in names}
         ffprobe = config.ffprobe_path
+        voice_id = voice_id_for(str(folder))
+        previous = self._db.get_voice(voice_id)
+        # sidecar 里通常没有整份逐字稿与情绪（它们由扫描从 .txt / 文件名推导）。
+        # 这里是"刚写完一份文件"的增量同步：sidecar 没写的字段沿用库里已有的，
+        # 不能拿空串盖掉同一目录里其它样例的转录。
+        earlier = {sample.file: sample for sample in previous.samples} if previous else {}
         samples = tuple(
             Sample(
                 file=name,
-                text=str(kept.get(name, {}).get("text") or ""),
-                emotion=str(kept.get(name, {}).get("emotion") or ""),
+                text=str(
+                    kept.get(name, {}).get("text")
+                    or (earlier[name].text if name in earlier else "")
+                ),
+                emotion=str(
+                    kept.get(name, {}).get("emotion")
+                    or (earlier[name].emotion if name in earlier else "")
+                ),
                 duration=probe_duration_cached(folder / name, ffprobe_path=ffprobe),
-                tags=tuple(kept.get(name, {}).get("tags") or ()),
+                tags=tuple(
+                    kept.get(name, {}).get("tags")
+                    or (earlier[name].tags if name in earlier else ())
+                ),
                 params=sample_params(kept.get(name)),
             )
             for name in names
         )
-        voice_id = voice_id_for(str(folder))
-        previous = self._db.get_voice(voice_id)
         category = previous.category if previous is not None else self._category_of(folder, roots)
         voice = Voice(
             id=voice_id,
@@ -1268,6 +1281,134 @@ class LibraryService:
         if voice.is_local:
             self._db.upsert_voice(updated)
         return updated
+
+    def add_sample(
+        self,
+        voice_id: str,
+        source: Path,
+        *,
+        name: str = "",
+        params: dict[str, Any] | None = None,
+        seconds: float = 0.0,
+    ) -> Sample:
+        """把一段音频作为**新**样例加进这条音色，原样例不动。
+
+        与 :meth:`replace_sample_audio` 的分工：替换是同一条样例换内容（文件名、
+        主样例、逐字稿全都不动）；入库是新增一条，原声与结果在库里并排保留。
+
+        文件名取源样例的基名加「（处理）」，重名时加序号；容器固定 WAV——新的一条
+        不必背原样例的后缀。文字、情绪与标签从源样例带过来（处理的是同一句话），
+        处理链写进 sidecar 的 ``params``。落盘后立刻 :meth:`sync_local_folder`，
+        不依赖下一次扫描。
+
+        :param name: 源样例的文件名，只取基名；空则用「音频」。
+        :param params: 处理链，写进 sidecar 的 ``params``。
+        :param seconds: 实测时长；``0`` 则自己量。
+        """
+        voice = self.get_voice(voice_id)
+        if not voice.is_local or not voice.folder:
+            raise LibraryError(
+                "平台音色没有本地样例目录，处理结果不能入库为它的样例。",
+                code="invalid_operation",
+                status=400,
+            )
+        folder = Path(voice.folder)
+        if not source.is_file():
+            raise LibraryError(
+                f"处理结果不存在（{source}）。", code="invalid_value", status=400
+            )
+        config = load_config()
+        roots = [Path(str(item).strip()) for item in config.folders if str(item).strip()]
+        if folder in roots:
+            raise LibraryError(
+                "这个音色目录本身就是扫描根：那里的每个文件都是一条独立音色，"
+                "处理结果不能入库为它的样例。",
+                code="invalid_operation",
+                status=400,
+            )
+        source_name = Path(Path(name).name) if name else None
+        stem = source_name.stem.strip() if source_name is not None else ""
+        base = f"{stem or '音频'}（处理）"
+        target = folder / f"{base}.wav"
+        serial = 2
+        while target.exists():
+            target = folder / f"{base}-{serial}.wav"
+            serial += 1
+        # 临时名不带音频后缀：扫描器只认音频扩展名，半份文件不会被认成一条样例。
+        staged = folder / f".{target.name}.{uuid.uuid4().hex[:8]}.incoming"
+        try:
+            shutil.copyfile(source, staged)
+        except OSError as exc:
+            staged.unlink(missing_ok=True)
+            raise LibraryError(
+                f"写入处理结果失败：{exc}。", code="invalid_operation", status=500
+            ) from exc
+        try:
+            os.replace(staged, target)
+        except OSError as exc:
+            staged.unlink(missing_ok=True)
+            raise LibraryError(
+                f"入库失败：{exc}。", code="invalid_operation", status=500
+            ) from exc
+
+        measured = (
+            round(float(seconds), 3)
+            if seconds > 0
+            else probe_duration_cached(target, ffprobe_path=config.ffprobe_path)
+        )
+        side = read_sidecar(folder)
+        entries = dict(side.samples)
+        entry = dict(entries.get(source_name.name if source_name else "") or {})
+        # 逐字稿与情绪可能来自源样例旁边的 .txt / 文件名，不都在 sidecar 里；
+        # 新样例句子里处理的是同一句话，缺的字段从库里那条记录补上。
+        source_sample = (
+            next((row for row in voice.samples if row.file == source_name.name), None)
+            if source_name is not None
+            else None
+        )
+        if source_sample is not None:
+            if not entry.get("text") and source_sample.text:
+                entry["text"] = source_sample.text
+            if not entry.get("emotion") and source_sample.emotion:
+                entry["emotion"] = source_sample.emotion
+            if not entry.get("tags") and source_sample.tags:
+                entry["tags"] = list(source_sample.tags)
+        entry["bytes"] = target.stat().st_size
+        entry["duration"] = measured
+        merged: dict[str, str] = dict(sample_params(entry))
+        if params:
+            merged.update({str(key): str(value) for key, value in params.items() if str(value)})
+            entry["params"] = merged
+        entries[target.name] = entry
+        write_sidecar(
+            folder,
+            Sidecar(
+                gender=side.gender,
+                age=side.age,
+                language=side.language,
+                tags=side.tags,
+                description=side.description,
+                display=side.display,
+                main_sample=side.main_sample,
+                favorite=side.favorite,
+                hidden=side.hidden,
+                samples=entries,
+                origin=side.origin,
+            ),
+        )
+        updated = self.sync_local_folder(folder)
+        saved = (
+            next((row for row in updated.samples if row.file == target.name), None)
+            if updated is not None
+            else None
+        )
+        if saved is None:
+            raise LibraryError(
+                "入库完成但读不回这条样例，重新扫描后再看。",
+                code="invalid_operation",
+                status=500,
+            )
+        return saved
 
     def set_main_sample(self, voice_id: str, file: str) -> Voice:
         """设主样例（空串 = 取消，回到"默认标记 → 升序第一条"）。"""

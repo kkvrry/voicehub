@@ -128,35 +128,97 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
           二进制帧（int16 单声道 PCM，建议 100ms 一帧）；收尾发文本
           ``{"type":"stop"}``，把没说完的话冲出来。
         - 服务端 → 客户端：``ready``（会话就绪）、``speech``（开始说话）、
+          ``partial``（说话中的部分识别，文字随说话推进变化，仅作实时展示）、
           ``segment``（一段话听完了，带 ``text`` 等识别结果）、``error``、
           ``done``。
 
-        逐段识别在线程里跑（引擎调用是同步的），主循环不被识别卡住、
-        继续收帧喂 VAD；发送全部经一个发送协程，保证事件顺序。
+        VAD 在事件循环里收帧、推理放工作线程；切出来的段进一条队列，由单独的
+        识别协程按序听，收帧不被识别卡住。部分识别同一时刻只跑一条，间隔随
+        说话时长翻倍；一旦切出整段，在途的部分结果即作废。发送全部经一个发送
+        协程，保证事件顺序。
         """
         await ws.accept()
-        reason = asr.unavailable_reason() or asr_stream.vad_unavailable_reason()
+        # 插件发现与 torch / silero 的 import 都可能有几秒，放线程里做：
+        # 这条连接还没 ready，但别的请求不该陪着等。
+        try:
+            reason = await asyncio.to_thread(
+                lambda: asr.unavailable_reason() or asr_stream.vad_unavailable_reason()
+            )
+        except Exception as exc:  # noqa: BLE001 - 依赖装坏（如 torch DLL）也要回一句话
+            reason = f"流式识别依赖检查失败：{exc}"
         if reason:
             await ws.send_json({"type": "error", "message": reason})
             await ws.close()
             return
 
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        # 切出来的段进这条队列，由单独的识别协程按序听：收帧循环只做 VAD，
+        # 不等识别。识别慢的时候帧会压在 WebSocket 里，但顺序与内容都不丢。
+        segment_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def emit(event: dict[str, Any] | None) -> None:
+            # VAD 回调在工作线程里跑；队列只能从事件循环线程碰。
+            loop.call_soon_threadsafe(queue.put_nowait, event)
 
         async def sender() -> None:
             while True:
                 event = await queue.get()
                 if event is None:
                     break
-                await ws.send_json(event)
+                try:
+                    await ws.send_json(event)
+                except Exception:  # noqa: BLE001 - 连接已断，发送方自行收摊
+                    return
+
+        async def recognizer() -> None:
+            while True:
+                pcm = await segment_queue.get()
+                if pcm is None:
+                    break
+                result = await asyncio.to_thread(_listen_segment, pcm)
+                emit({"type": "segment", **result})
 
         sender_task = asyncio.create_task(sender())
+        recognizer_task = asyncio.create_task(recognizer())
 
-        def emit(event: dict[str, Any]) -> None:
-            queue.put_nowait(event)
+        def enqueue_segment(pcm: bytes) -> None:
+            """切出一段：作废在途的部分结果，交给识别协程排队。"""
+            nonlocal segment_gen, partial_seq
+            segment_gen += 1
+            partial_seq += 1
+            segment_queue.put_nowait(pcm)
 
         session = None
         rate = asr_stream.TARGET_RATE
+        # 部分识别（边说边出字）的闸门：
+        # - segment_gen 每切出一段就 +1，在途的部分结果立即作废；
+        # - partial_seq 每起一次部分识别 +1，后发先至的旧结果不会盖掉新的；
+        # - partial_task 只留一个，上一轮没跑完就不再起下一轮（识别服务一次
+        #   只跑一条，排队只会把收尾段挡在后面）。
+        segment_gen = 0
+        partial_seq = 0
+        partial_mark = 0
+        partial_gap = asr_stream.PARTIAL_MS
+        partial_task: asyncio.Task[None] | None = None
+
+        def _on_speech() -> None:
+            nonlocal partial_mark, partial_gap
+            partial_mark = 0
+            partial_gap = asr_stream.PARTIAL_MS
+            emit({"type": "speech"})
+
+        async def _emit_partial(pcm: bytes, seq: int, gen: int) -> None:
+            try:
+                result = await asyncio.to_thread(_listen_segment, pcm)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - 部分结果失败不该断流
+                CHANNEL.warning(f"流式识别的部分结果失败：{exc}", source="asr")
+                return
+            if seq == partial_seq and gen == segment_gen and result.get("text"):
+                emit({"type": "partial", **result})
+
         try:
             while True:
                 message = await ws.receive()
@@ -171,30 +233,106 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
                         continue
                     command = payload.get("type")
                     if command == "start":
-                        rate = int(payload.get("sample_rate") or asr_stream.TARGET_RATE)
+                        if session is not None:
+                            emit(
+                                {
+                                    "type": "error",
+                                    "message": "已经在听，先 stop 再重新 start。",
+                                }
+                            )
+                            continue
+                        wanted = payload.get("sample_rate") or asr_stream.TARGET_RATE
+                        try:
+                            wanted_rate = int(wanted)
+                        except (TypeError, ValueError):
+                            wanted_rate = 0
+                        if not asr_stream.MIN_RATE <= wanted_rate <= asr_stream.MAX_RATE:
+                            emit(
+                                {
+                                    "type": "error",
+                                    "message": (
+                                        f"采样率不合法：{wanted}。"
+                                        f"应在 {asr_stream.MIN_RATE}–{asr_stream.MAX_RATE} Hz 之间。"
+                                    ),
+                                }
+                            )
+                            continue
+                        rate = wanted_rate
+                        if partial_task is not None:
+                            partial_task.cancel()
+                            partial_task = None
+                        partial_seq += 1
+                        segment_gen += 1
                         # speech 事件在"转入说话"的瞬间发（VAD 状态机回调），
                         # 好让界面立刻点亮"在听"，而不是等一段说完才知道。
-                        session = asr_stream.new_session(
-                            on_speech=lambda: emit({"type": "speech"})
-                        )
+                        try:
+                            session = await asyncio.to_thread(
+                                asr_stream.new_session, _on_speech
+                            )
+                        except Exception as exc:  # noqa: BLE001 - 模型装不上也要回一句话
+                            session = None
+                            CHANNEL.warning(f"流式识别启动失败：{exc}", source="asr")
+                            emit(
+                                {
+                                    "type": "error",
+                                    "message": f"流式识别启动失败：{exc}",
+                                }
+                            )
+                            continue
                         emit({"type": "ready"})
                     elif command == "stop":
+                        # 在途的部分识别等它做完：stop 之后前端还等着收尾事件，
+                        # 让它先说话，收尾段再跟上，顺序才不会乱。
+                        if partial_task is not None:
+                            with contextlib.suppress(Exception):
+                                await partial_task
+                            partial_task = None
                         if session is not None:
                             tail = session.flush()
                             session = None
                             if tail:
-                                emit({"type": "segment", **_listen_segment(tail)})
+                                enqueue_segment(tail)
+                        # 收尾段排在已切出的段后面；识别协程排干再报 done。
+                        segment_queue.put_nowait(None)
+                        with contextlib.suppress(Exception):
+                            await recognizer_task
                         emit({"type": "done"})
                         break
                     continue
                 data = message.get("bytes")
                 if data is None or session is None:
                     continue
-                for segment in session.feed(data, rate):
-                    emit({"type": "segment", **_listen_segment(segment)})
+                try:
+                    segments = await asyncio.to_thread(session.feed, data, rate)
+                except Exception as exc:  # noqa: BLE001 - 分段器坏了就明说，别静默断流
+                    session = None
+                    CHANNEL.warning(f"流式识别中断：{exc}", source="asr")
+                    emit({"type": "error", "message": f"流式识别中断：{exc}"})
+                    continue
+                for segment in segments:
+                    enqueue_segment(segment)
+                if (
+                    session is not None
+                    and session.in_speech
+                    and session.speech_ms - partial_mark >= partial_gap
+                    and (partial_task is None or partial_task.done())
+                ):
+                    snapshot = session.partial()
+                    if snapshot is not None:
+                        partial_mark = session.speech_ms
+                        partial_seq += 1
+                        partial_task = asyncio.create_task(
+                            _emit_partial(snapshot, partial_seq, segment_gen)
+                        )
+                        partial_gap = min(partial_gap * 2, asr_stream.PARTIAL_MAX_MS)
         except WebSocketDisconnect:
             pass
         finally:
+            background = [task for task in (partial_task, recognizer_task) if task is not None]
+            for task in background:
+                task.cancel()
+            if background:
+                await asyncio.gather(*background, return_exceptions=True)
             emit(None)
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(sender_task, timeout=5)
@@ -216,6 +354,9 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
             return asr_stream.transcribe_pcm(pcm)
         except asr.AsrError as exc:
             return {"text": "", "error": exc.reason}
+        except Exception as exc:  # noqa: BLE001 - 识别端点的最后一道边界
+            CHANNEL.warning(f"流式识别出错：{exc}", source="asr")
+            return {"text": "", "error": f"识别出错：{exc}"}
 
     @router.post("/recordings", summary="保存一段录音当参考音频", tags=["asr"])
     async def save_recording(

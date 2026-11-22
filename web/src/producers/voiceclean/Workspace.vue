@@ -98,40 +98,43 @@
                 v-for="step in steps"
                 :key="step.key"
                 class="vc-step"
-                :class="{ on: pickOn(step), missing: !hasModels(step), locked: lockedEdit }"
+                :class="{ on: pickOn(step), missing: !hasReady(step), locked: lockedEdit }"
                 role="button"
-                :tabindex="hasModels(step) && !lockedEdit ? 0 : -1"
+                :tabindex="hasReady(step) && !lockedEdit ? 0 : -1"
                 :aria-pressed="pickOn(step)"
-                :aria-disabled="!hasModels(step)"
-                @click="onToggleStep(step)"
-                @keydown.enter.prevent="onToggleStep(step)"
-                @keydown.space.prevent="onToggleStep(step)"
+                :aria-disabled="!hasReady(step)"
+                @click="onToggleStep(step, $event)"
+                @keydown.enter.prevent="onToggleStep(step, $event)"
+                @keydown.space.prevent="onToggleStep(step, $event)"
               >
                 <div class="vc-step-top">
                   <span class="vc-step-no">{{ step.order }}</span>
                   <span class="vc-step-name">{{ step.label }}</span>
                   <span class="vc-step-state" :class="{ on: pickOn(step) }">
                     <Check v-if="pickOn(step)" :size="12" :stroke-width="2" />
-                    {{ pickOn(step) ? '已启用' : hasModels(step) ? '未启用' : '无模型' }}
+                    {{ stepState(step) }}
                   </span>
                 </div>
-                <template v-if="hasModels(step)">
-                  <select
-                    v-model="pickOf(step).model"
-                    class="sh-field vc-step-select"
-                    :aria-label="`${step.label}模型`"
-                    :disabled="lockedEdit"
-                    @click.stop
-                    @keydown.stop
-                    @change="onPickModel(step)"
-                  >
-                    <option v-for="model in step.models" :key="model.id" :value="model.id">
-                      {{ model.label }}
-                    </option>
-                  </select>
-                  <span class="vc-step-note">{{ noteOf(step) }}</span>
-                </template>
-                <span v-else class="vc-step-note is-warn">{{ step.reason || '没有可用的模型。' }}</span>
+                <button
+                  type="button"
+                  class="vc-step-model"
+                  :class="{ 'is-empty': !currentModel(step) }"
+                  :disabled="lockedEdit || !step.models?.length"
+                  @click.stop="openModelForm(step, $event)"
+                >
+                  <span class="vc-step-model-name">
+                    {{ currentModel(step)?.label || '选择模型' }}
+                  </span>
+                  <ChevronDown :size="12" :stroke-width="1.8" />
+                </button>
+                <span
+                  v-if="stepJob(step)"
+                  class="vc-step-note"
+                  :class="{ 'is-warn': jobFailed(stepJob(step)) }"
+                >
+                  {{ jobLabel(stepJob(step)) }}
+                </span>
+                <span v-else class="vc-step-note">{{ noteOf(step) }}</span>
               </div>
 
               <div
@@ -155,6 +158,87 @@
                 <span class="vc-step-note">{{ core.note }}</span>
               </div>
             </div>
+
+            <Popover
+              :open="Boolean(activeStep)"
+              :anchor="modelAnchor"
+              :width="366"
+              label="选择模型"
+              @close="closeModelForm"
+            >
+              <div v-if="activeStep" class="vc-model-form">
+                <div class="vc-model-form-head">
+                  <span class="vc-model-form-title">{{ activeStep.label }}</span>
+                  <span class="vc-model-form-hint">未下载的直接下载；下载后自动加载。</span>
+                </div>
+                <div class="vc-model-list">
+                  <div
+                    v-for="model in activeStep.models"
+                    :key="model.id"
+                    class="vc-model-row"
+                    :class="{
+                      on: pickOf(activeStep).model === model.id,
+                      ready: model.downloaded,
+                    }"
+                  >
+                    <button
+                      type="button"
+                      class="vc-model-pick"
+                      :disabled="!model.downloaded || lockedEdit"
+                      @click="chooseModel(activeStep, model)"
+                    >
+                      <span class="vc-model-name">
+                        {{ model.label }}
+                        <span v-if="model.recommended" class="vc-model-tag">推荐</span>
+                      </span>
+                      <span class="vc-model-note">{{ model.note }}</span>
+                    </button>
+                    <div class="vc-model-side">
+                      <template v-if="model.job && jobActive(model.job)">
+                        <span class="vc-model-job">{{ jobLabel(model.job) }}</span>
+                      </template>
+                      <template v-else-if="jobFailed(model.job)">
+                        <span
+                          class="vc-model-job is-error"
+                          :title="model.job.message"
+                        >
+                          {{ model.job.message || '失败' }}
+                        </span>
+                        <button
+                          v-if="!model.downloaded"
+                          type="button"
+                          class="sh-btn is-soft vc-model-download"
+                          :disabled="Boolean(state.modelBusy) || lockedEdit"
+                          @click="downloadModel(activeStep, model)"
+                        >
+                          <Download :size="12" :stroke-width="1.8" />
+                          重试
+                        </button>
+                      </template>
+                      <template v-else>
+                        <button
+                          v-if="!model.downloaded"
+                          type="button"
+                          class="sh-btn is-soft vc-model-download"
+                          :disabled="Boolean(state.modelBusy) || lockedEdit"
+                          @click="downloadModel(activeStep, model)"
+                        >
+                          <Download :size="12" :stroke-width="1.8" />
+                          下载
+                        </button>
+                        <span
+                          v-else-if="pickOf(activeStep).model === model.id"
+                          class="vc-model-current"
+                        >
+                          当前
+                        </span>
+                        <span v-else class="vc-model-pickable">选择</span>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Popover>
           </section>
 
           <!-- 目标音色：头像、名字、样例选择、波形与裁剪都在这一张卡里。
@@ -290,14 +374,14 @@
                     <span v-if="canCompare(sample)" class="vc-ab">
                       <button
                         type="button"
-                        :class="{ on: state.playing === `${itemFor(sample.key).index}:origin` }"
+                        :class="{ on: playingSide(itemFor(sample.key).index, 'origin') }"
                         @click="play(itemFor(sample.key).index, 'origin')"
                       >
                         原声
                       </button>
                       <button
                         type="button"
-                        :class="{ on: state.playing === `${itemFor(sample.key).index}:result` }"
+                        :class="{ on: playingSide(itemFor(sample.key).index, 'result') }"
                         :disabled="itemFor(sample.key).state === 'failed'"
                         @click="play(itemFor(sample.key).index, 'result')"
                       >
@@ -457,9 +541,44 @@
                 <button type="button" class="sh-btn is-ghost" :disabled="busy !== ''" @click="onResetRun">
                   返回编辑
                 </button>
-                <button type="button" class="sh-btn is-primary" :disabled="!applicableCount || busy !== ''" @click="onApply">
-                  替换 {{ applicableCount }} 条
+                <button
+                  v-if="savableCount"
+                  type="button"
+                  class="sh-btn is-soft"
+                  :disabled="busy !== ''"
+                  title="把结果另存为这条音色的新样例，原样例保留"
+                  @click="onSave"
+                >
+                  <BookPlus :size="14" :stroke-width="1.8" />
+                  {{ busy === 'save' ? '入库中…' : `入库 ${savableCount} 条` }}
                 </button>
+                <template v-if="applicableCount">
+                  <button
+                    v-if="confirmApply"
+                    type="button"
+                    class="sh-btn is-ghost"
+                    :disabled="busy !== ''"
+                    @click="cancelApply"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    class="sh-btn"
+                    :class="confirmApply ? 'is-danger' : 'is-primary'"
+                    :disabled="busy !== ''"
+                    :title="confirmApply ? '再点一次才会覆盖原样例' : '覆盖原样例，需要再点一次确认'"
+                    @click="onApply"
+                  >
+                    {{
+                      busy === 'apply'
+                        ? '替换中…'
+                        : confirmApply
+                          ? `确认替换 ${applicableCount} 条`
+                          : `替换 ${applicableCount} 条`
+                    }}
+                  </button>
+                </template>
               </template>
               <template v-else-if="dockMode === 'download'">
                 <button type="button" class="sh-btn is-ghost" :disabled="busy !== ''" @click="onResetRun">
@@ -475,6 +594,15 @@
                   下载处理结果
                 </button>
               </template>
+              <button
+                v-else-if="dockMode === 'saved'"
+                type="button"
+                class="sh-btn is-primary"
+                :disabled="busy !== ''"
+                @click="onResetRun"
+              >
+                继续编辑
+              </button>
               <button
                 v-else-if="dockMode === 'applied'"
                 type="button"
@@ -494,11 +622,14 @@
                 重新处理
               </button>
               <span v-else class="vc-dock-hint">
-                在「处理链」生成结果后，在这里{{ isFile ? '下载' : '确认替换' }}。
+                在「处理链」生成结果后，在这里{{ isFile ? '下载' : '确认替换或入库' }}。
               </span>
             </div>
           </div>
-          <div v-if="appliedNote" class="vc-dock-note" :class="{ 'is-warn': appliedWarn }">{{ appliedNote }}</div>
+          <div v-if="confirmApply" class="vc-dock-note is-warn">
+            替换会覆盖原样例，原件进回收站；再点一次确认。
+          </div>
+          <div v-if="dockNote" class="vc-dock-note" :class="{ 'is-warn': dockWarn }">{{ dockNote }}</div>
         </div>
       </footer>
     </template>
@@ -527,7 +658,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AudioLines,
+  BookPlus,
   Check,
+  ChevronDown,
+  Download,
   FileAudio,
   Focus,
   LoaderCircle,
@@ -540,6 +674,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import { actions, labelOf, say, store, vocab } from '../../store'
+import Popover from '../../components/ui/Popover.vue'
 import { useSettingsStore } from '../../stores/settings'
 import { avatarFill } from '../../composables/avatarColor'
 import { canTakeOver, openObjectMenu } from '../../composables/contextMenu'
@@ -553,10 +688,11 @@ import {
   canUndo,
   clearTarget,
   closeWindow,
+  currentModel,
   deleteSelection,
+  downloadModel,
   downloadName,
   downloadResult,
-  enableStep,
   enabledSteps as enabledStepNames,
   hasSelection,
   isFileTarget,
@@ -571,10 +707,12 @@ import {
   onlyThis,
   pickOf,
   play,
+  playingSide,
   playSample,
   previewSelection,
   previewTrim,
   queueRows,
+  readyModels,
   refresh,
   rowKey,
   redoTrim,
@@ -583,7 +721,9 @@ import {
   resetRun,
   resetTrim,
   restore,
+  saveSelected,
   segmentsOf,
+  selectModel,
   selectionOf,
   setSelection,
   start,
@@ -600,6 +740,9 @@ import {
 } from './store'
 
 const editor = ref('')
+/** 替换的二次确认：第一次点击只进确认态，第二次才覆盖。 */
+const confirmApply = ref(false)
+let confirmTimer = 0
 const settings = useSettingsStore()
 const fileInput = ref(/** @type {HTMLInputElement|null} */ (null))
 const dragging = ref(false)
@@ -654,6 +797,14 @@ const applicableCount = computed(
         row.replaceable
     ).length
 )
+/** 可入库的条目：完成即可，时长偏差不拦——入库是新样例，不涉及对齐。 */
+const savableCount = computed(
+  () =>
+    (job.value?.items || []).filter(
+      (/** @type {any} */ row) =>
+        queuedKeys.value.has(rowKey(row.voice_id, row.file)) && row.state === 'done'
+    ).length
+)
 /** 电脑文件的结果是否已经可下载。 */
 const downloadable = computed(
   () =>
@@ -693,6 +844,7 @@ const startHint = computed(() => {
 const headLabel = computed(() => {
   if (running.value) return `${state.job?.finished || 0} / ${state.job?.total || 0}`
   if (job.value?.state === 'applied') return '已替换'
+  if (job.value?.state === 'saved') return '已入库'
   if (job.value?.state === 'done') return '已处理'
   if (job.value?.state === 'cancelled') return '已取消'
   return ''
@@ -707,7 +859,10 @@ const dockMode = computed(() => {
     return 'idle'
   }
   if (current.state === 'applied') return 'applied'
-  if (current.state === 'done') return applicableCount.value ? 'apply' : 'retry'
+  if (current.state === 'saved') return 'saved'
+  if (current.state === 'done') {
+    return applicableCount.value || savableCount.value ? 'apply' : 'retry'
+  }
   if (current.state === 'cancelled') return 'retry'
   return 'idle'
 })
@@ -721,6 +876,9 @@ const dockTitle = computed(() => {
   }
   if (job.value?.state === 'applied') {
     return `已替换 ${state.applied?.replaced ?? 0} 条`
+  }
+  if (job.value?.state === 'saved') {
+    return `已入库 ${state.saved?.saved ?? 0} 条`
   }
   if (job.value?.state === 'done') {
     const failed = job.value.failed ? ` · ${job.value.failed} 条失败` : ''
@@ -752,12 +910,18 @@ const dockSub = computed(() => {
     return `${chainSummary.value} · 生成后下载`
   }
   if (job.value?.state === 'applied') return '原件在回收站；要再处理一轮就点「继续编辑」。'
-  if (job.value?.state === 'done') {
-    return applicableCount.value
-      ? '确认替换范围后再写入音色库；返回编辑可以继续裁剪。'
-      : '没有可替换的条目：看下行内原因，或重新处理。'
+  if (job.value?.state === 'saved') {
+    return '原样例还在，结果已作为新样例入库；要再处理一轮就点「继续编辑」。'
   }
-  if (job.value?.state === 'cancelled') return '停在中途，未完成的条目不会替换。'
+  if (job.value?.state === 'done') {
+    if (applicableCount.value) {
+      return '入库另存一条新样例；替换覆盖原样例（原件进回收站）。'
+    }
+    return savableCount.value
+      ? '时长与原样例不一致，不能替换；可以入库为新样例。'
+      : '没有可写入的条目：看下行内原因，或重新处理。'
+  }
+  if (job.value?.state === 'cancelled') return '停在中途，未完成的条目不会写入音色库。'
   if (!activeSteps.value.length && !trimEdits.value) {
     return '选择处理步骤，或先展开裁剪；生成结果后在这里确认。'
   }
@@ -775,12 +939,28 @@ const appliedNote = computed(() => {
     .join('；')
   return `${failures} 条没有替换${reasons ? `：${reasons}` : ''}`
 })
-const appliedWarn = computed(() => Boolean(state.applied?.failures?.length))
+const savedNote = computed(() => {
+  const payload = state.saved
+  if (!payload) return ''
+  const files = (payload.files || [])
+    .map((/** @type {any} */ row) => String(row.file || ''))
+    .filter(Boolean)
+  const head = files.length
+    ? `已入库：${files.slice(0, 3).join('、')}${files.length > 3 ? '…' : ''}`
+    : ''
+  const failures = payload.failures?.length || 0
+  if (!failures) return head
+  return `${head ? `${head}；` : ''}${failures} 条没有入库`
+})
+const dockNote = computed(() => appliedNote.value || savedNote.value)
+const dockWarn = computed(() =>
+  Boolean(state.applied?.failures?.length || state.saved?.failures?.length)
+)
 const initial = computed(() => (voice.value?.shown_name || '?').slice(0, 1))
 
 /** @param {any} step */
-function hasModels(step) {
-  return Boolean(step.models?.length)
+function hasReady(step) {
+  return readyModels(step).length > 0
 }
 
 /** @param {any} step */
@@ -790,22 +970,100 @@ function pickOn(step) {
 
 /** @param {any} step */
 function noteOf(step) {
-  const model = (step.models || []).find(
-    (/** @type {any} */ row) => row.id === pickOf(step).model
-  )
+  if (!step.models?.length) return step.reason || step.note
+  const model = currentModel(step)
   return model?.note || step.note
 }
 
+/** @param {any} job */
+function jobActive(job) {
+  return ['queued', 'running', 'cancelling', 'downloading', 'loading'].includes(
+    String(job?.state || '')
+  )
+}
+
+/** @param {any} job */
+function jobFailed(job) {
+  return ['failed', 'error', 'cancelled', 'canceled'].includes(String(job?.state || ''))
+}
+
+/** @param {any} job */
+function jobLabel(job) {
+  const state = String(job?.state || '')
+  if (state === 'downloading') {
+    const progress = Math.round(Number(job?.progress) || 0)
+    return progress > 0 ? `下载中 ${progress}%` : '下载中'
+  }
+  if (state === 'queued') return '等待下载'
+  if (state === 'loading') return '加载中'
+  if (jobFailed(job)) return String(job?.message || '失败')
+  return '已就绪'
+}
+
+/** 卡片上只展示当前模型的失败，或任何模型的进行中任务；完成的任务不占说明行。 */
 /** @param {any} step */
-function onToggleStep(step) {
-  if (lockedEdit.value) return
-  toggleStep(step)
+function stepJob(step) {
+  const chosen = currentModel(step)
+  if (chosen?.job && (jobActive(chosen.job) || jobFailed(chosen.job))) {
+    return chosen.job
+  }
+  for (const model of step.models || []) {
+    if (jobActive(model.job)) return model.job
+  }
+  return null
 }
 
 /** @param {any} step */
-function onPickModel(step) {
+function stepState(step) {
+  if (!step.models?.length) return '无模型'
+  if (!hasReady(step)) {
+    return (step.models || []).some((/** @type {any} */ row) => jobActive(row.job))
+      ? '下载中'
+      : '待下载'
+  }
+  if (!currentModel(step)) return '待选择'
+  return pickOn(step) ? '已启用' : '未启用'
+}
+
+const modelMenu = ref('')
+const modelAnchor = ref(/** @type {any} */ (null))
+const activeStep = computed(
+  () => steps.value.find((/** @type {any} */ row) => row.key === modelMenu.value) || null
+)
+
+/** @param {any} step @param {MouseEvent} event */
+function openModelForm(step, event) {
   if (lockedEdit.value) return
-  enableStep(step)
+  modelMenu.value = step.key
+  modelAnchor.value =
+    event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+}
+
+function closeModelForm() {
+  modelMenu.value = ''
+  modelAnchor.value = null
+}
+
+/** @param {any} step @param {any} model */
+function chooseModel(step, model) {
+  if (lockedEdit.value) return
+  selectModel(step, model)
+  closeModelForm()
+}
+
+/** @param {any} step @param {any} event */
+function onToggleStep(step, event) {
+  if (lockedEdit.value) return
+  if (!currentModel(step) && readyModels(step).length > 1) {
+    const card = event?.currentTarget
+    const button =
+      card instanceof HTMLElement ? card.querySelector('.vc-step-model') : null
+    modelMenu.value = step.key
+    modelAnchor.value =
+      button instanceof HTMLElement ? button : card instanceof HTMLElement ? card : null
+    return
+  }
+  toggleStep(step)
 }
 
 function onToggleNormalize() {
@@ -1022,8 +1280,39 @@ function onCancel() {
   void cancel()
 }
 
+/** 替换不可撤销（原件只能从回收站还原），所以第一次点击只进确认态，
+ *  第二次才真的覆盖；8 秒没有后续动作自动退回。 */
 function onApply() {
+  if (busy.value !== '') return
+  if (!confirmApply.value) {
+    armApplyConfirm()
+    return
+  }
+  cancelApply()
   void applySelected()
+}
+
+function onSave() {
+  if (busy.value !== '') return
+  cancelApply()
+  void saveSelected()
+}
+
+function armApplyConfirm() {
+  confirmApply.value = true
+  if (confirmTimer) window.clearTimeout(confirmTimer)
+  confirmTimer = window.setTimeout(() => {
+    confirmTimer = 0
+    confirmApply.value = false
+  }, 8000)
+}
+
+function cancelApply() {
+  if (confirmTimer) {
+    window.clearTimeout(confirmTimer)
+    confirmTimer = 0
+  }
+  confirmApply.value = false
 }
 
 function onDownload() {
@@ -1031,6 +1320,7 @@ function onDownload() {
 }
 
 function onClearTarget() {
+  cancelApply()
   void clearTarget()
 }
 
@@ -1088,6 +1378,7 @@ function onDrop(event) {
 }
 
 function onResetRun() {
+  cancelApply()
   closeEditor()
   void resetRun()
 }
@@ -1168,7 +1459,7 @@ function trimHint(sample) {
 /** @param {any} sample */
 function canCompare(sample) {
   const item = itemFor(sample.key)
-  return item?.state === 'done' || item?.state === 'applied'
+  return item?.state === 'done' || item?.state === 'applied' || item?.state === 'saved'
 }
 
 /** @param {any} sample */
@@ -1192,6 +1483,7 @@ watch(
 )
 
 watch(job, (value) => {
+  cancelApply()
   if (value) {
     editor.value = ''
     stopPreview()
@@ -1212,6 +1504,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  cancelApply()
   resetWorkspace()
 })
 </script>
@@ -1389,7 +1682,7 @@ onBeforeUnmount(() => {
 }
 .vc-step-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 9px;
 }
 .vc-step {
@@ -1429,7 +1722,6 @@ onBeforeUnmount(() => {
   background: var(--sh-accent);
 }
 .vc-step.missing {
-  opacity: 0.68;
   cursor: default;
 }
 .vc-step.missing:hover {
@@ -1494,11 +1786,35 @@ onBeforeUnmount(() => {
   background: var(--sh-accent-soft-2);
   border-color: var(--sh-accent-ring);
 }
-.vc-step-select {
+.vc-step-model {
   width: 100%;
+  min-width: 0;
   height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 0 8px;
+  border: 1px solid var(--sh-line-soft);
+  border-radius: var(--sh-r-xs);
+  background: var(--sh-panel);
+  color: var(--sh-text);
   font-size: 11.5px;
+  cursor: pointer;
+}
+.vc-step-model:hover {
+  border-color: var(--sh-accent-ring);
+  color: var(--sh-accent);
+}
+.vc-step-model.is-empty {
+  color: var(--sh-text-4);
+}
+.vc-step-model-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
 }
 .vc-step-note {
   min-height: 2.2em;
@@ -1514,6 +1830,121 @@ onBeforeUnmount(() => {
 }
 .vc-step.is-core.on {
   border-style: solid;
+}
+
+/* 模型表单：弹层里列出这一步的全部候选，下载按钮在行尾。 */
+.vc-model-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 12px 10px;
+}
+.vc-model-form-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 2px 2px;
+}
+.vc-model-form-title {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--sh-text);
+}
+.vc-model-form-hint {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--sh-text-4);
+}
+.vc-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(56vh, 430px);
+  overflow-y: auto;
+}
+.vc-model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: var(--sh-r-xs);
+}
+.vc-model-row:hover {
+  background: var(--sh-hover);
+}
+.vc-model-row.on {
+  background: var(--sh-accent-soft);
+}
+.vc-model-pick {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vc-model-pick:disabled {
+  cursor: default;
+}
+.vc-model-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--sh-text);
+}
+.vc-model-tag {
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 9px;
+  line-height: 1.6;
+  font-weight: 500;
+  color: var(--sh-accent);
+  background: var(--sh-accent-soft-2);
+}
+.vc-model-note {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--sh-text-4);
+}
+.vc-model-side {
+  min-width: 50px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.vc-model-job {
+  font-size: 10px;
+  color: var(--sh-accent);
+  white-space: nowrap;
+}
+.vc-model-job.is-error {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sh-warn);
+}
+.vc-model-download {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 10.5px;
+}
+.vc-model-current {
+  font-size: 9.5px;
+  color: var(--sh-accent);
+}
+.vc-model-pickable {
+  font-size: 10px;
+  color: var(--sh-accent);
 }
 
 /* ---------------- 目标与样例 ---------------- */
@@ -1877,6 +2308,10 @@ onBeforeUnmount(() => {
   color: var(--sh-ok);
   background: var(--sh-ok-soft);
 }
+.vc-status.is-saved {
+  color: var(--sh-ok);
+  background: var(--sh-ok-soft);
+}
 .vc-status.is-failed {
   color: var(--sh-danger);
   background: var(--sh-danger-soft);
@@ -2101,10 +2536,14 @@ onBeforeUnmount(() => {
   color: var(--sh-text-4);
 }
 
-@media (max-width: 1180px) {
+/* 四张步骤卡在 1440 以上排一行（每卡约 195px）；再窄就分两行，不然下拉里的
+   模型名会被截掉。 */
+@media (max-width: 1439px) {
   .vc-step-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+@media (max-width: 1180px) {
   .vc-audio {
     grid-template-columns: minmax(0, 1fr) 74px auto;
   }

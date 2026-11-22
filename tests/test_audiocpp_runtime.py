@@ -729,3 +729,30 @@ def test_a_runtime_without_a_checksum_is_refused(tmp_path: Path) -> None:
     installer = Installer(tmp_path / "rt", lambda *_args: None)
     with pytest.raises(ProducerError, match="sha256"):
         installer.install({"url": "https://example.com/a.zip", "sha256": ""})
+
+
+def test_ensure_family_instance_adds_a_startable_row(service: rt.RuntimeService) -> None:
+    """没配引擎、也没装过这个族时，下载前补一行可启动实例，不让用户先去页面手加。"""
+    item = service.ensure_family_instance("sidon", "Sidon v0.1 F32")
+    assert item.family == "sidon"
+    rows = [row for row in service.instances() if row.family == "sidon"]
+    assert rows and rows[0].port == item.port
+
+
+def test_ensure_management_refuses_without_a_runtime(service: rt.RuntimeService) -> None:
+    with pytest.raises(ProducerError, match="运行包"):
+        service.ensure_management()
+
+
+def test_load_builtin_registers_a_path(
+    service: rt.RuntimeService, fake_conn: _FakeConn, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "weights"
+    path.mkdir()
+    fake_conn.load_path = lambda model_id, source, family, task, options=None: fake_conn.calls.append(
+        ("load-path", model_id, family, task, options)
+    )
+    monkeypatch.setattr(service, "ensure_management", lambda: fake_conn)
+    service.load_builtin("deepfilternet2", path)
+    assert ("load-path", "builtin-deepfilternet2", "builtin_audio_utils", "s2s", {"utility": "deepfilternet2"}) in fake_conn.calls

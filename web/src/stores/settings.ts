@@ -18,7 +18,9 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 export type AccentKey = 'azure' | 'indigo' | 'violet' | 'teal'
 export type Density = 'compact' | 'cozy' | 'roomy'
 /** 界面风格：classic 是最早的平面界面，glass 是玻璃拟态，paper 是纸墨编辑台，celadon 是素瓷青釉。 */
-export type Look = 'classic' | 'glass' | 'paper' | 'celadon'
+export type Look = 'classic' | 'glass' | 'paper' | 'celadon' | 'stage'
+/** 左栏可见档：`both` = 目录树 + 音色栏；`cards` = 只有音色栏；`none` = 都收起。 */
+export type RailVisibility = 'both' | 'cards' | 'none'
 export type OutputFormat = 'mp3' | 'wav' | 'flac'
 export type SectionKey =
   | 'general'
@@ -92,6 +94,10 @@ export interface AppearancePrefs {
   navAutoHide: boolean
   /** 主导航只留图标，文字不占宽度。 */
   navHideLabels: boolean
+  /** 左栏可见档：页内导航图标的重复点击在 both / cards / none 之间循环。 */
+  railVisibility: RailVisibility
+  /** 音色库标签条收起：标签太多时省出平板高度。 */
+  tagBarCollapsed: boolean
   avatar: AvatarPrefs
 }
 
@@ -166,6 +172,8 @@ const DEFAULTS = {
     reduceMotion: false,
     navAutoHide: false,
     navHideLabels: false,
+    railVisibility: 'both',
+    tagBarCollapsed: false,
     avatar: {
       show: true,
       rail: true,
@@ -188,6 +196,7 @@ const DEFAULTS = {
 
 const AVATAR_SIZES: AvatarSize[] = ['auto', 'sm', 'lg']
 const AVATAR_SHAPES: AvatarShape[] = ['auto', 'round', 'soft', 'square']
+const RAIL_VISIBILITIES: RailVisibility[] = ['both', 'cards', 'none']
 
 /** 存档里的头像段：逐项取用，旧版本带来的多余字段不进入新快照。 */
 function normalizeAvatar(raw?: Partial<AvatarPrefs>): AvatarPrefs {
@@ -391,6 +400,14 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
         '--sh-radius-inner': '10px',
       }
     }
+    if (appearance.look === 'stage') {
+      return {
+        '--sh-blur': `${blurPx.value + 4}px`,
+        '--sh-blur-strong': `${blurPx.value + 12}px`,
+        '--sh-radius-card': '14px',
+        '--sh-radius-inner': '9px',
+      }
+    }
     return {
       '--sh-blur': `${blurPx.value}px`,
       '--sh-blur-strong': `${blurPx.value + 10}px`,
@@ -443,6 +460,11 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
       Object.assign(appearance, clone(DEFAULTS.appearance), savedAppearance)
       // 这里必须换成新对象——在原对象上合并默认值，会把作为来源的已存值一起覆盖。
       appearance.avatar = normalizeAvatar(savedAppearance?.avatar)
+      // 旧存档没有这两项，或者存了不认识的值：回到默认档，不让坏值把左栏锁死。
+      appearance.railVisibility = RAIL_VISIBILITIES.includes(appearance.railVisibility)
+        ? appearance.railVisibility
+        : 'both'
+      appearance.tagBarCollapsed = appearance.tagBarCollapsed === true
       Object.assign(shortcuts, DEFAULTS.shortcuts, stored.shortcuts)
       // 「筛选音色」发布前换过默认键位（Ctrl+Shift+F → Alt+F → Alt+S）。
       // 旧值只可能来自未发布的开发版存档，留着会把新默认永远盖住，当作没存过。

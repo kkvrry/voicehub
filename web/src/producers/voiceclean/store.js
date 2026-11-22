@@ -17,6 +17,8 @@ export const state = reactive({
   loaded: false,
   error: '',
   busy: '',
+  /** 正在下载/加载哪个候选模型（`step:model`）。 */
+  modelBusy: '',
   /** 已取回的音色详情：voiceId → detail（samples 带时长与试听地址） */
   /** @type {Record<string, any>} */
   cards: {},
@@ -43,9 +45,10 @@ export const state = reactive({
   /** @type {Record<string, { past: { start: number, end: number }[][], future: { start: number, end: number }[][] }>} */
   history: {},
   /** @type {any} */ job: null,
-  /** 正在试听 A/B 的 ``index:side`` */
-  playing: '',
+  /** 正在试听 A/B 的 ``index:side`` 不另存：播放条认 URL，见 `playingSide`。 */
   /** @type {any} */ applied: null,
+  /** 最近一次入库的回执：`{ saved, files, failures }` */
+  /** @type {any} */ saved: null,
   /** 正在试听哪一行 */
   preview: '',
   /** 试听的是整段结果还是选区 */
@@ -56,10 +59,11 @@ export const state = reactive({
 })
 
 let timer = 0
+let modelTimer = 0
 let loading = false
 let coreInited = false
-/** @type {HTMLAudioElement|null} */
-let audio = null
+/** 刚点过下载的模型：下载完成后优先选中它。 */
+let pendingModel = /** @type {{ step: string, model: string } | null} */ (null)
 /** @type {HTMLAudioElement|null} */
 let previewAudio = null
 let previewTimer = 0
@@ -83,30 +87,37 @@ function fail(error) {
 }
 
 /** 勾选状态：第一次见到某一步时用后端给的默认值，之后记住用户的选择。
- *  没有可选模型时一律不勾：模型来自运行中的实例，没启动就选不了。 */
+ *  只有下载过的模型才能选；未下载的模型仍列在卡片里，等用户点下载。
+ *  只有一个可用模型时自动选中；有多个时留空，由用户在卡片里选。 */
 /** @param {any[]} steps */
 function mergePicks(steps) {
   for (const step of steps || []) {
     const models = step.models || []
+    const ready = models.filter((/** @type {any} */ row) => row.downloaded)
     const known = state.picks[step.key]
     if (!known) {
       state.picks[step.key] = {
-        enabled: models.length > 0 && Boolean(step.default),
-        model: models[0]?.id || '',
+        enabled: ready.length === 1 && Boolean(step.default),
+        model: ready.length === 1 ? ready[0].id : '',
       }
-      continue
-    }
-    if (!models.length) {
+    } else if (!ready.length) {
       known.enabled = false
       known.model = ''
-      continue
+    } else if (!ready.some((/** @type {any} */ row) => row.id === known.model)) {
+      // 选过的那一个不在了：只剩一个可以自动补上，多个则交回用户选。
+      known.model = ready.length === 1 ? ready[0].id : ''
+      if (!known.model) known.enabled = false
     }
-    const wasEmpty = !known.model
-    if (!models.some((/** @type {any} */ row) => row.id === known.model)) {
-      known.model = models[0].id
+    const pick = state.picks[step.key]
+    if (
+      pendingModel &&
+      pendingModel.step === step.key &&
+      ready.some((/** @type {any} */ row) => row.id === pendingModel?.model)
+    ) {
+      pick.model = pendingModel.model
+      pick.enabled = true
+      pendingModel = null
     }
-    // 第一次出现可选项、且这一步默认勾选：顺手勾上，不必让用户回去补一下。
-    if (wasEmpty && step.default) known.enabled = true
   }
 }
 
@@ -135,6 +146,8 @@ export async function refresh() {
       state.normalize = payload.core?.default !== false
     }
     mergePicks(payload.steps)
+    if (hasActiveModelJob()) startModelPolling()
+    else stopModelPolling()
     if (state.job?.state === 'running') startPolling()
   } catch (error) {
     fail(error)
@@ -829,18 +842,76 @@ export function pickOf(step) {
   return state.picks[step.key]
 }
 
+/** 这一步已经下载、可以选中的模型。 */
+/** @param {any} step */
+export function readyModels(step) {
+  return (step.models || []).filter((/** @type {any} */ row) => row.downloaded)
+}
+
+/** 当前选中的候选模型；没有时返回空。 */
+/** @param {any} step */
+export function currentModel(step) {
+  const id = pickOf(step).model
+  return (step.models || []).find((/** @type {any} */ row) => row.id === id) || null
+}
+
+/** @param {any} step @param {any} model */
+export function selectModel(step, model) {
+  if (isRunning() || !model?.downloaded) return
+  const pick = pickOf(step)
+  pick.model = model.id
+  pick.enabled = true
+}
+
+/**
+ * 下载一个候选模型。服务端下载完成后会自动登记/加载，这里只轮询状态。
+ * @param {any} step
+ * @param {any} model
+ */
+export async function downloadModel(step, model) {
+  if (isRunning() || state.modelBusy) return
+  if (model?.downloaded) {
+    selectModel(step, model)
+    return
+  }
+  pendingModel = { step: step.key, model: model.id }
+  state.modelBusy = `${step.key}:${model.id}`
+  try {
+    const payload = await api.downloadModel(step.key, model.id)
+    state.data = payload
+    mergePicks(payload.steps)
+    startModelPolling()
+  } catch (error) {
+    pendingModel = null
+    fail(error)
+  } finally {
+    state.modelBusy = ''
+  }
+}
+
 /** @param {any} step */
 export function toggleStep(step) {
-  if (isRunning() || !step.models?.length) return
+  const ready = readyModels(step)
+  if (isRunning() || !ready.length) return
   const pick = pickOf(step)
+  if (!pick.model) {
+    if (ready.length !== 1) return
+    pick.model = ready[0].id
+  }
   pick.enabled = !pick.enabled
 }
 
 /** 选了模型就把这一步打开：换模型是个明确的"用它"动作。 */
 /** @param {any} step */
 export function enableStep(step) {
-  if (isRunning() || !step.models?.length) return
-  pickOf(step).enabled = true
+  const ready = readyModels(step)
+  if (isRunning() || !ready.length) return
+  const pick = pickOf(step)
+  if (!pick.model) {
+    if (ready.length !== 1) return
+    pick.model = ready[0].id
+  }
+  pick.enabled = true
 }
 
 /** 收尾可以跳过：不勾就不做高通与限峰，服务端仍统一单声道。 */
@@ -854,7 +925,13 @@ export function enabledSteps() {
   const rows = []
   for (const step of state.data?.steps || []) {
     const pick = state.picks[step.key]
-    if (pick?.enabled && pick.model && step.models?.length) rows.push(step.label)
+    if (
+      pick?.enabled &&
+      pick.model &&
+      readyModels(step).some((/** @type {any} */ row) => row.id === pick.model)
+    ) {
+      rows.push(step.label)
+    }
   }
   if (state.normalize) rows.push(state.data?.core?.label || '统一声道与峰值')
   return rows
@@ -865,7 +942,11 @@ export function stepsPayload() {
     const pick = state.picks[step.key] || { enabled: false, model: '' }
     return {
       key: step.key,
-      enabled: Boolean(pick.enabled && pick.model && step.models?.length),
+      enabled: Boolean(
+        pick.enabled &&
+          pick.model &&
+          readyModels(step).some((/** @type {any} */ row) => row.id === pick.model)
+      ),
       model: pick.model,
       options: {},
     }
@@ -924,6 +1005,7 @@ export function statusOf(sample) {
     if (item.state === 'pending') return { key: 'queued', label: '排队', hint: '' }
     if (item.state === 'failed') return { key: 'failed', label: '失败', hint: item.error || '' }
     if (item.state === 'applied') return { key: 'applied', label: '已替换', hint: '' }
+    if (item.state === 'saved') return { key: 'saved', label: '已入库', hint: '' }
     if (item.state === 'done') {
       return item.replaceable
         ? { key: 'done', label: '已完成', hint: '' }
@@ -1047,6 +1129,7 @@ export async function start() {
   stopPreview()
   state.busy = 'run'
   state.applied = null
+  state.saved = null
   try {
     const scope = currentScope()
     // 只裁剪时不碰未改动的行：它们既没有模型步骤也没有收尾，处理一遍只会得到同一段音频。
@@ -1087,6 +1170,31 @@ function stopPolling() {
   timer = 0
 }
 
+function hasActiveModelJob() {
+  return (state.data?.steps || []).some((/** @type {any} */ step) =>
+    (step.models || []).some((/** @type {any} */ model) => {
+      const jobState = String(model?.job?.state || '')
+      return ['queued', 'running', 'cancelling', 'downloading', 'loading'].includes(jobState)
+    })
+  )
+}
+
+function startModelPolling() {
+  if (modelTimer) return
+  modelTimer = window.setInterval(pollModels, 1200)
+}
+
+function stopModelPolling() {
+  if (!modelTimer) return
+  window.clearInterval(modelTimer)
+  modelTimer = 0
+}
+
+async function pollModels() {
+  await refresh()
+  if (!hasActiveModelJob()) stopModelPolling()
+}
+
 export async function poll() {
   try {
     const payload = await api.job()
@@ -1098,21 +1206,35 @@ export async function poll() {
   }
 }
 
+/** 停掉播放条上属于这一轮任务的那条音频：任务清掉后它的地址就不再有效。 */
+/** @param {any} job */
+function stopJobAudio(job) {
+  const url = String(store.player.url || '')
+  if (!job?.id || !url.includes(`job_id=${job.id}`)) return
+  actions.stop()
+}
+
+/** 当前这一轮里落在处理序列上的条目（替换与入库都只认这些）。 */
+/** @param {any} job */
+function queuedItems(job) {
+  const keys = new Set(allRows().map((row) => row.key))
+  return (job?.items || []).filter((/** @type {any} */ row) =>
+    keys.has(keyOf(row.voice_id, row.file))
+  )
+}
+
 /** 替换序列里可替换的完成条目。 */
 export async function applySelected() {
   const job = jobForTarget()
   if (!job || state.busy || job.scope?.kind === 'file') return
-  const keys = new Set(allRows().map((row) => row.key))
-  const picked = (job.items || []).filter(
-    (/** @type {any} */ row) =>
-      keys.has(keyOf(row.voice_id, row.file)) &&
-      row.state === 'done' &&
-      row.replaceable
+  const picked = queuedItems(job).filter(
+    (/** @type {any} */ row) => row.state === 'done' && row.replaceable
   )
   if (!picked.length) {
     say('没有可替换的条目。', { kind: 'warn' })
     return
   }
+  stopJobAudio(job)
   state.busy = 'apply'
   try {
     const payload = await api.apply(
@@ -1120,6 +1242,7 @@ export async function applySelected() {
       picked.map((/** @type {any} */ row) => row.index)
     )
     state.applied = payload
+    state.saved = null
     state.job = payload.job
     const voiceIds = [...new Set(picked.map((/** @type {any} */ row) => row.voice_id))]
     const appliedFiles = new Set(`${picked.map((/** @type {any} */ row) => row.file).join('\n')}`.split('\n'))
@@ -1145,10 +1268,47 @@ export async function applySelected() {
   }
 }
 
+/** 把完成条目的处理结果入库为新样例；原样例与它的裁剪记录都不动。 */
+export async function saveSelected() {
+  const job = jobForTarget()
+  if (!job || state.busy || job.scope?.kind === 'file') return
+  // 时长偏差的条目不能替换，但入库是新样例，不受这条限制。
+  const picked = queuedItems(job).filter((/** @type {any} */ row) => row.state === 'done')
+  if (!picked.length) {
+    say('没有可入库的条目。', { kind: 'warn' })
+    return
+  }
+  stopJobAudio(job)
+  state.busy = 'save'
+  try {
+    const payload = await api.save(
+      job.id,
+      picked.map((/** @type {any} */ row) => row.index)
+    )
+    state.saved = payload
+    state.applied = null
+    state.job = payload.job
+    const voiceIds = [...new Set(picked.map((/** @type {any} */ row) => row.voice_id))]
+    state.selections = {}
+    await Promise.all([
+      refresh(),
+      ...voiceIds.map((voiceId) => ensureVoice(voiceId, true)),
+      ...voiceIds.map((voiceId) => actions.reloadVoice(voiceId)),
+    ])
+    state.saved = payload
+  } catch (error) {
+    fail(error)
+  } finally {
+    state.busy = ''
+  }
+}
+
 /** 不替换，回到可编辑状态：清掉后端当前任务，保留刚才那组裁剪。 */
 export async function resetRun() {
   if (state.busy) return
-  const applied = state.job?.state === 'applied'
+  const job = state.job
+  const applied = job?.state === 'applied'
+  stopJobAudio(job)
   try {
     await api.clearJob()
   } catch (error) {
@@ -1157,11 +1317,7 @@ export async function resetRun() {
   }
   state.job = null
   state.applied = null
-  state.playing = ''
-  if (audio) {
-    audio.pause()
-    audio = null
-  }
+  state.saved = null
   stopPreview()
   state.selections = {}
   if (applied) {
@@ -1176,6 +1332,7 @@ function clearFinishedJob() {
   if (!state.job || state.job.state === 'running') return
   state.job = null
   state.applied = null
+  state.saved = null
   api.clearJob().catch(() => {})
 }
 
@@ -1183,6 +1340,7 @@ function clearFinishedJob() {
 export async function clearTarget() {
   if (isRunning() || state.busy) return
   const hadJob = Boolean(state.job)
+  stopJobAudio(state.job)
   state.fileTarget = null
   state.windows = []
   state.activeVoiceId = ''
@@ -1191,6 +1349,7 @@ export async function clearTarget() {
   state.history = {}
   state.job = null
   state.applied = null
+  state.saved = null
   state.preview = ''
   stopPreview()
   actions.clearPick()
@@ -1224,7 +1383,18 @@ export function downloadResult() {
   link.remove()
 }
 
-/** 一行里 A/B 试听：借用任务目录的两份产物。 */
+/** 这一行的原声 / 处理结果是不是播放条上正在放的那一条。 */
+/**
+ * @param {number} index
+ * @param {string} side
+ */
+export function playingSide(index, side) {
+  const job = jobForTarget()
+  if (!job?.id || !store.player.playing) return false
+  return store.player.url === api.audioUrl(job.id, index, side)
+}
+
+/** 一行里 A/B 试听：借用任务目录的两份产物，走同一条播放条（不另起音轨）。 */
 /**
  * @param {number} index
  * @param {string} side
@@ -1233,36 +1403,25 @@ export function play(index, side) {
   const job = jobForTarget()
   if (!job?.id) return
   stopPreview()
-  const key = `${index}:${side}`
-  if (audio) {
-    audio.pause()
-    audio = null
-  }
-  if (state.playing === key) {
-    state.playing = ''
-    return
-  }
-  const element = new Audio(api.audioUrl(job.id, index, side))
-  element.onended = () => {
-    state.playing = ''
-  }
-  element.onerror = () => {
-    state.playing = ''
-    say('这一段试听不了。', { kind: 'error' })
-  }
-  element.play().catch(() => {
-    state.playing = ''
+  const item = (job.items || []).find((/** @type {any} */ row) => row.index === index) || null
+  const voice =
+    item && !String(item.voice_id || '').startsWith('file:')
+      ? state.cards[item.voice_id] || listVoice(item.voice_id)
+      : null
+  actions.play({
+    url: api.audioUrl(job.id, index, side),
+    label: item?.file || '试听',
+    sub: `${side === 'origin' ? '原声' : '处理结果'}${item?.voice ? ` · ${item.voice}` : ''}`,
+    voice,
   })
-  audio = element
-  state.playing = key
 }
 
 export function reset() {
   stopPolling()
+  stopModelPolling()
+  pendingModel = null
+  state.modelBusy = ''
   stopPreview()
-  if (audio) audio.pause()
-  audio = null
-  state.playing = ''
 }
 
 /** @param {number} value */

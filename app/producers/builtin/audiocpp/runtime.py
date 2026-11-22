@@ -1323,7 +1323,7 @@ class RuntimeService:
         return rows
 
     def running_models(self) -> list[dict[str, Any]]:
-        """正在运行的实例注册的模型：``[{id, family, task, path, url}]``。
+        """正在运行的实例注册的模型：``[{id, family, task, path, package, utility, name, url}]``。
 
         音色处理按这份清单找模型与地址：只认 ``/v1/models`` 里真有的——
         装了没启动、或实例没加载那个包，都不该出现在可选列表里。
@@ -1351,15 +1351,149 @@ class RuntimeService:
                 model_id = str(row.get("id") or "")
                 if not model_id or model_id in found:
                     continue
+                load = row.get("load_options") if isinstance(row.get("load_options"), dict) else {}
                 found[model_id] = {
                     "id": model_id,
                     "family": str(row.get("family") or ""),
                     "task": str(row.get("task") or ""),
                     "path": str(row.get("path") or ""),
                     "package": str(row.get("package_id") or ""),
+                    # 内置工具没有 package：能带出 load_options.utility 就带，带不出由
+                    # 消费方按 id / path 认，界面才知道是 DeepFilterNet2 还是 RNNoise。
+                    "utility": str(load.get("utility") or row.get("utility") or ""),
+                    "name": str(row.get("name") or row.get("display_name") or ""),
                     "url": url,
                 }
         return list(found.values())
+
+    # ------------------------------------------------------------------ #
+    # 给消费方（音色处理）的模型准备接口
+    # ------------------------------------------------------------------ #
+
+    def installed_packages(self) -> set[str]:
+        """模型目录里已经装好的包 id；只按官方声明的落点存在与否判断。
+
+        接入外部服务时以它自报的 ``models_root`` 为准（见 :meth:`_scan_root`），
+        不能拿本机配置目录去扫别人的模型。
+        """
+        root = self._scan_root()
+        if root is None:
+            return set()
+        return catalog.installed_packages(root, self.root)
+
+    def download_jobs(self) -> dict[str, dict[str, Any]]:
+        """按包 id 返回安装进度；服务没起时也能拿到 ModelScope 的后台任务。"""
+        conn = self.connection()
+        return {
+            package_id: self._job_view(row)
+            for package_id, row in self._job_rows(conn).items()
+        }
+
+    def ensure_family_instance(self, family: str, label: str = "") -> Instance:
+        """保证这个模型族有一行可启动的实例；没有就补一行手动实例。
+
+        安装模型前需要一台能开模型管理的服务，但新用户可能既没配引擎、也没装过
+        这个族——不能要求他先去 audio.cpp 页手加一行。
+        """
+        rows = [item for item in self.instances() if item.family == family]
+        if rows:
+            return rows[0]
+        with self._lock:
+            saved = [
+                dict(item)
+                for item in (self._cfg.get("instances") or [])
+                if isinstance(item, dict)
+            ]
+            if len(saved) >= 8:
+                raise ProducerError("手动实例已经有 8 条，先到 audio.cpp 页删一条。")
+            used = {item.port for item in self.instances()}
+            port = self._free_port(used)
+            if port is None:
+                raise ProducerError("没有空闲端口分配给这个模型。")
+            saved.append(
+                {
+                    "port": port,
+                    "model": family,
+                    "label": label or family,
+                    "family": family,
+                }
+            )
+            self._cfg["instances"] = saved
+            self._write_state()
+        return Instance(port, family, label or family, family)
+
+    def ensure_management(self) -> manager.Connection:
+        """拿到一台开放模型管理的服务；没有就按现有实例拉一台。
+
+        只在这里替用户启动：下载、加载与处理都需要它。填了外部地址时不另起进程，
+        外部服务没开管理就把原因说清楚。
+        """
+        conn = self.connection()
+        if conn is not None and conn.management:
+            return conn
+        if self.endpoint:
+            if conn is None:
+                raise ProducerError(f"接入的 audio.cpp 服务连不上（{self.endpoint}）。")
+            raise ProducerError("接入的 audio.cpp 服务没有开放模型管理，不能在这里加载模型。")
+        if self.exe()[0] is None:
+            raise ProducerError(
+                "没有可用的 audio.cpp 运行包：先到 audio.cpp 页下载运行包，或指定已有的程序。"
+            )
+        for item in self.instances():
+            if self.pool.probe(item.port)[0]:
+                continue
+            try:
+                self.start(item.port)
+            except ProducerError:
+                continue
+            conn = self.connection()
+            if conn is not None and conn.management:
+                return conn
+        # 现有实例都不可用：起一台不带模型的专用服务，只做模型管理。
+        with self._lock:
+            saved = [
+                dict(item)
+                for item in (self._cfg.get("instances") or [])
+                if isinstance(item, dict)
+            ]
+            if len(saved) >= 8:
+                raise ProducerError("手动实例已经有 8 条，先到 audio.cpp 页删一条。")
+            used = {item.port for item in self.instances()}
+            port = self._free_port(used)
+            if port is None:
+                raise ProducerError("没有空闲端口启动 audio.cpp 服务。")
+            saved.append(
+                {
+                    "port": port,
+                    "model": "audio-tools",
+                    "label": "音频处理",
+                    "family": "",
+                }
+            )
+            self._cfg["instances"] = saved
+            self._write_state()
+        self.start(port)
+        conn = self.connection()
+        if conn is not None and conn.management:
+            return conn
+        raise ProducerError("audio.cpp 服务没有开放模型管理，无法加载模型。")
+
+    def load_builtin(self, utility: str, path: Path) -> None:
+        """把内置工具的权重目录登记进运行中的实例。
+
+        这类工具没有包 id：server 的 ``/v1/models/load`` 走 ``path`` 与
+        ``load_options.utility``，不需要重启实例。
+        """
+        if not path.is_dir():
+            raise ProducerError("内置工具的权重目录不存在，先下载。")
+        conn = self.ensure_management()
+        conn.load_path(
+            f"builtin-{utility}",
+            str(path),
+            "builtin_audio_utils",
+            "s2s",
+            {"utility": utility},
+        )
 
     def state(self) -> dict[str, Any]:
         self.pool.reap()
