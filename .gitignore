@@ -15,6 +15,7 @@ settings.ini
 # IDE
 .idea/
 .vscode/
+.codebuddy/
 
 # 工具与测试缓存
 .pytest_cache/
