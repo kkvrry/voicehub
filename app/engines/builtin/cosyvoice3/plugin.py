@@ -41,8 +41,9 @@
 同时把模板切到 ``instruct``。方言与情绪可以同时发；有明确指令时指令优先，情绪不再
 重复发送。
 
-没有的能力如实不声明：没有内置音色、不注册音色 id、没有原生情绪枚举、没有语速 /
-音量 / 音高——语气由指令与参考音频决定。没有落点的项给了就在结果说明里逐条报
+没有的能力如实不声明：没有内置音色、不注册音色 id、没有原生情绪枚举、没有音量 /
+音高——语气由指令与参考音频决定。语速自 audio.cpp 0.9.6 起原生支持（
+``options.speed``，HiFT 前重采样 mel）。没有落点的项给了就在结果说明里逐条报
 "未发送"；情绪有落点（翻成 instruct），不在其中。
 """
 
@@ -96,6 +97,11 @@ MAPPING = EngineMapping(
             warning=True,
         ),
         ParamMapping("reference_text", "reference_text", note="参考音频的逐字稿。"),
+        ParamMapping(
+            "speed",
+            "options.speed",
+            note="语速倍率，>1 加快、<1 放慢（audio.cpp 0.9.6 起支持）。",
+        ),
     ),
     cautions=(
         "模板由插件按输入选：有引导指令走 instruct、开了跨语种走 cross_lingual、否则 zero_shot。",
@@ -107,7 +113,6 @@ MAPPING = EngineMapping(
 _UNSUPPORTED: dict[str, str] = {
     "reference_language": "本引擎无对应参数",
     "guidance_scale": "本引擎无指令强度参数",
-    "speed": "本引擎无对应参数",
     "volume": "本引擎无对应参数",
     "pitch": "本引擎无对应参数",
     "lead_silence": "本引擎无对应参数",

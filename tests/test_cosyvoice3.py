@@ -9,8 +9,9 @@
    否则 ``zero_shot``——模板定不下来，其余参数说了也白说；
 2. **参考音频是硬前提**（三种模板都吃它），缺了当场说清，不发请求；
 3. **种子省略时引擎用定值 1986**，"每次不一样"必须由插件抽；
-4. 没有的能力（内置音色 / 音色 id / 音色设计 / 语速）一条都不声明，给了就在
-   结果说明里报"未发送"；情绪没有枚举，但会翻成一句 instruct 发出去。
+4. 没有的能力（内置音色 / 音色 id / 音色设计 / 音量 / 音高）一条都不声明，给了就在
+   结果说明里报"未发送"；语速自 audio.cpp 0.9.6 起映射到 ``options.speed``；
+   情绪没有枚举，但会翻成一句 instruct 发出去。
 5. **方言/语言也走 instruct**（官方示例是「用四川话说这句话」），不是单独参数；
 6. **正文发声事件用方括号原生标签**（``[laughter]`` / ``[breath]`` / ``[cough]`` /
    ``[sigh]``），而 ``<|endofprompt|>`` 不能发——这一层会把它前面的指令念出来；
@@ -270,11 +271,20 @@ class TestBody:
 
     def test_unsupported_values_are_reported(self):
         _, notes = _engine().build_body_with_notes(
-            _cfg(), _req(extra={"speed": 1.2, "volume": 1.1})
+            _cfg(), _req(extra={"volume": 1.1})
         )
         joined = "".join(notes)
         assert "未发送" in joined
-        assert "语速" in joined and "音量" in joined
+        assert "音量" in joined
+
+    def test_speed_maps_into_options(self):
+        """audio.cpp 0.9.6 起有原生语速：统一参数 speed 落到 options.speed。"""
+        body = _engine().build_body(_cfg(), _req(extra={"speed": 1.2}))
+        assert body["options"]["speed"] == 1.2
+        _, notes = _engine().build_body_with_notes(
+            _cfg(), _req(extra={"speed": 0.8})
+        )
+        assert not any("语速" in note for note in notes)
 
     def test_emotion_becomes_an_instruction(self):
         """没有情绪枚举，但 instruct 模板收自由文本：情绪翻成一句再发。"""
