@@ -4,7 +4,7 @@
 // 扇出勾几台，试听只有一条结果。
 import { api } from '../api'
 import { store } from './state'
-import { engineOf, loadEngines, loadMarkGroups } from './engine'
+import { engineOf, loadEngines, loadMarkGroups, orderedEngines } from './engine'
 import { say } from './shell'
 import { ensureLexicon } from './lexicon'
 import { loadTree, loadVoices } from './library'
@@ -352,7 +352,7 @@ export async function runSynthesis() {
     .filter((job) => !fresh.has(job.key))
     .map((job) => ({ ...job, stale: true }))
   // 摆回引擎行的顺序：产物列表同时是「全部播放」的队列，顺序得跟屏幕一致。
-  const rank = new Map(store.engines.map((engine, at) => [engine.key, at]))
+  const rank = new Map(orderedEngines(store.engines).map((engine, at) => [engine.key, at]))
   const order = (/** @type {any} */ job) => rank.get(job.key) ?? Number.MAX_SAFE_INTEGER
   store.synthJobs = [...fresh.values(), ...kept].sort((a, b) => order(a) - order(b))
   // 从 store 上取回来再写：存进去的是响应式代理，改代理才驱动界面（改手边那批

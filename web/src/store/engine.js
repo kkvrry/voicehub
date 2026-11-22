@@ -11,6 +11,16 @@ export async function loadEngines() {
   store.engines = await api.engines()
 }
 
+/** 生成页与产物队列共用的引擎顺序：此刻可用的在前，同档保持后端给的 key 顺序。
+ *  可用性由后端按部署形态算好（云端看 Key、本地看实例），前端不再自己拼条件。
+ * @param {any[]} engines
+ */
+export function orderedEngines(engines) {
+  return [...engines].sort(
+    (a, b) => Number(Boolean(b.available)) - Number(Boolean(a.available))
+  )
+}
+
 /**
  * 启用集合变了之后要一起刷新的那几份：语气词「通用」组是已启用引擎之间的交集，
  * 换一批引擎就换一份。「引导指令」预设与此无关——它按全部插件合并，启停不改候选。

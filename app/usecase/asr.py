@@ -3,7 +3,7 @@
 识别引擎是一个插件类别（见 :mod:`app.engines.asr_base`）：
 换模型 = 换一个插件目录，这里一行不用改。本模块只做三件事——
 
-1. 定"现在用哪台"（配置里的 ``asr_engine``，读不到就取第一台）；
+1. 定"现在用哪台"（手动指定优先；未指定时按 key 顺序取当前开着的识别服务）；
 2. 把一段音频交给它，并记一条日志（谁、多长、多少字、几秒）；
 3. 拼出界面要的状态（每台的说明、当前值、够不够用）。
 
@@ -42,6 +42,7 @@ from app.usecase.engines import (
     save_asr_settings_for,
 )
 from app.usecase.library import LibraryError, LibraryService
+from app.usecase.live_models import live_engine_keys
 
 __all__ = [
     "AsrError",
@@ -131,16 +132,27 @@ def save_options(patch: dict[str, Any]) -> dict[str, Any]:
 
 
 def current_key() -> str:
-    """现在实际会用的那台：配置里那台（还在）→ 第一台 → 空（一台都没有）。"""
+    """现在实际会用的那台：手动指定优先，没指定就按 key 顺序选开着的。
+
+    "开着"的判据来自 audio.cpp 的运行实例（一处探测、短缓存）。读不到这份状态
+    （插件未启用、服务在外部或别的机器上）就退回配置里那台 / 第一台，不让外部
+    服务因此判死。所有识别入口都经这里，不会出现闸与实际识别选中不同一台。
+    """
     engines = list_asr_engines()
+    if not engines:
+        return ""
     configured = load_config().asr_engine.strip()
-    if configured in engines:
-        return configured
-    return next(iter(engines), "")
+    if configured:
+        return configured if configured in engines else next(iter(engines))
+    live = live_engine_keys(engines.keys())
+    for key in engines:
+        if key in live:
+            return key
+    return next(iter(engines))
 
 
 def set_current(key: str) -> dict[str, Any]:
-    """选一台。空串 = 回到"第一台"（只有一台时省一次选择）。"""
+    """选一台。空串 = 回到自动（按 key 顺序选当前开着的识别服务）。"""
     wanted = (key or "").strip()
     if wanted and wanted not in list_asr_engines():
         raise AsrError(
@@ -193,7 +205,8 @@ def engine_of(key: str) -> AsrEngine:
 def status() -> dict[str, Any]:
     """界面要的全部：每台识别引擎的说明与当前值、哪台在用、能不能用。
 
-    **不探网络**：这个接口随设置页每次打开被调用，探测（``probe``）是单独的按钮。
+    不逐台发 ``probe``（那是「测试连接」按钮的事）；自动模式要读一份带短缓存的
+    运行实例状态，成本与一次界面刷新相当。
     """
     engines = list_asr_engines()
     rows = [asr_payload(engine) for engine in engines.values()]
@@ -202,6 +215,8 @@ def status() -> dict[str, Any]:
     return {
         "engines": rows,
         "current": current,
+        # 空配置 = 自动：界面据此显示"自动"，并说明实际选中了哪台。
+        "auto": not bool(load_config().asr_engine.strip()),
         "ready": bool(active and active["ready"]),
         "note": (active or {}).get("note", "还没有可用的识别引擎。"),
         "options": options().model_dump(),

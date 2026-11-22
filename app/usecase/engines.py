@@ -26,6 +26,7 @@ from app.domain.models import platform_voice_id
 from app.engines import ratelimit
 from app.engines.asr_base import AsrEngine
 from app.engines.base import (
+    KIND_CLOUD,
     KIND_LABELS,
     ORPHAN_LABEL,
     SECTION_LABELS,
@@ -40,6 +41,7 @@ from app.infra import migrate as migrate_mod
 from app.infra import secrets as secret_store
 from app.infra.config import load_config, save_config
 from app.infra.loghub import CHANNEL
+from app.usecase.live_models import live_engine_keys
 
 __all__ = [
     "AsrConfigError",
@@ -231,9 +233,20 @@ def _facts(engine: EnginePlugin) -> tuple[BaseModel, Any, str]:
     return cfg, engine.capabilities(), engine.readiness(cfg)
 
 
+def _available(kind: str, ready: bool, running: bool) -> bool:
+    """此刻能不能合成：云端填了 Key（就绪）即可，本地还得 audio.cpp 上有实例在跑。
+
+    ``ready`` 与 ``running`` 各说各的，谁都不改；这里只把它们按部署形态合起来，
+    给界面一个"此刻可用"的单一判据。云引擎没有常驻实例、``running`` 恒假，
+    所以只认 ``ready``；本地引擎光填了地址还不够，实例没起就是不能用。
+    """
+    return ready and (kind == KIND_CLOUD or running)
+
+
 def catalog_payload() -> list[dict[str, Any]]:
     """适配清单：发现到的每一台，带"是否已启用"。供「引擎清单」用。"""
     enabled = enabled_keys()
+    live = live_engine_keys()
     out: list[dict[str, Any]] = []
     for key, engine in list_engines().items():
         cfg, caps, note = _facts(engine)
@@ -247,6 +260,10 @@ def catalog_payload() -> list[dict[str, Any]]:
                 "icon_url": f"/api/v1/engines/{key}/icon",
                 "enabled": key in enabled,
                 "ready": not note,
+                # 与 ready 不同维：此刻 audio.cpp 上有没有这台的模型在跑。
+                "running": key in live,
+                # 单一可用性判据：云端看就绪，本地还要实例在跑。
+                "available": _available(caps.kind, not note, key in live),
                 "note": note,
                 "needs_key": _needs_key(engine, cfg),
                 # 添加前给人看的两条事实：它有没有音色清单、能不能克隆。
@@ -468,6 +485,7 @@ def settings_payload(key: str, *, common: set[str] | None = None) -> dict[str, A
     note = engine.readiness(cfg)
     if common is None:
         common = {row["name"] for row in mark_groups(_mark_sources())["common"]}
+    live = live_engine_keys()
     # 通用的排在前（稳定排序，各组内部仍按 MARKS 次序）。
     data["marks"] = sorted(
         ({**row, "common": row["name"] in common} for row in data.get("marks") or ()),
@@ -480,6 +498,10 @@ def settings_payload(key: str, *, common: set[str] | None = None) -> dict[str, A
         "enabled": is_enabled(key),
         "secrets_set": [name for name in sorted(engine.secret_fields()) if getattr(cfg, name, "")],
         "ready": not note,
+        # 此刻有没有对应模型在跑；云引擎与自建服务不经过 audio.cpp，仍按 ready 判断。
+        "running": key in live,
+        # 单一可用性判据：云端看就绪，本地还要实例在跑。
+        "available": _available(engine.capabilities().kind, not note, key in live),
         "note": note,
         # 只差密钥：界面不再复述一句提示（徽标已经说了）。
         "needs_key": _needs_key(engine, cfg),
@@ -675,6 +697,7 @@ def engine_entries(counts: dict[str, int]) -> list[dict[str, Any]]:
     """
     engines = list_engines()
     enabled = enabled_keys()
+    live = live_engine_keys()
     out: list[dict[str, Any]] = []
     for key, engine in engines.items():
         cfg, caps, note = _facts(engine)
@@ -695,6 +718,8 @@ def engine_entries(counts: dict[str, int]) -> list[dict[str, Any]]:
                     "icon_url": f"/api/v1/engines/{key}/icon",
                     "total": int(counts[key]),
                     "ready": True,
+                    "running": False,
+                    "available": False,
                     "note": "",
                     "needs_key": False,
                     "can_list": False,
@@ -714,6 +739,8 @@ def engine_entries(counts: dict[str, int]) -> list[dict[str, Any]]:
                 "icon_url": f"/api/v1/engines/{key}/icon",
                 "total": int(counts.get(key, 0)),
                 "ready": not note,
+                "running": key in live,
+                "available": _available(caps.kind, not note, key in live),
                 "note": note,
                 # 只差密钥：左栏与面板都不再复述提示。
                 "needs_key": _needs_key(engine, cfg),
@@ -749,6 +776,8 @@ def engine_entries(counts: dict[str, int]) -> list[dict[str, Any]]:
                 "icon_url": "",
                 "total": int(total),
                 "ready": True,
+                "running": False,
+                "available": False,
                 "note": "",
                 "can_list": False,
                 "can_clone": False,
@@ -766,6 +795,7 @@ def engine_choices() -> tuple[dict[str, Any], ...]:
     """现在**已启用**哪几台引擎，够上游画下拉用。刻意只给键 / 名字 / 形态 / 可用性，
     不搬完整的 ``describe()``（那是本站界面的内部结构）。"""
     out: list[dict[str, Any]] = []
+    live = live_engine_keys()
     for key, engine in active_engines().items():
         _cfg, caps, note = _facts(engine)
         out.append(
@@ -775,6 +805,8 @@ def engine_choices() -> tuple[dict[str, Any], ...]:
                 "kind": caps.kind,
                 "kind_label": KIND_LABELS.get(caps.kind, ("", ""))[0],
                 "ready": not note,
+                "running": key in live,
+                "available": _available(caps.kind, not note, key in live),
                 "note": note,
                 "can_list": caps.voice_listing,
             }

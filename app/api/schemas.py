@@ -122,6 +122,10 @@ class EngineChoiceOut(BaseModel):
     kind: str = ""
     kind_label: str = ""
     ready: bool = True
+    #: audio.cpp 此刻有没有对应模型在跑；与 ready 不同维。
+    running: bool = False
+    #: 此刻能不能合成：云端看就绪、本地还要实例在跑。上游据此灰条目，不再自算。
+    available: bool = False
     note: str = ""
     can_list: bool = False
 

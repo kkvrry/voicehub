@@ -32,7 +32,7 @@ export function asrEngineOf(key) {
   return store.asr.engines.find((item) => item.key === key) || null
 }
 
-/** 选一台。空串 = 第一台。 */
+/** 选一台。空串 = 自动，按引擎顺序用当前开着的服务。 */
 /** @param {string} key */
 export async function setAsrCurrent(key) {
   store.asr = await api.setAsrCurrent(key)

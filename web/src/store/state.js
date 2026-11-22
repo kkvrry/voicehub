@@ -102,6 +102,7 @@ export const store = reactive({
   asr: {
     engines: /** @type {any[]} */ ([]),
     current: '',
+    auto: true,
     ready: false,
     note: '',
     options: {

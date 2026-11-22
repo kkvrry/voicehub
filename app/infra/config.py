@@ -121,9 +121,10 @@ class Config:
     :param cache_keep_days: 转换产物的保留天数，超过就删（不论总量）；``0`` = 不按时间回收。
     :param engine_outputs: 每台引擎自己的保存目录（引擎 key → 路径），配了则覆盖全局层。
         不硬编码引擎名：装了的引擎都会在自己的设置页里得到这一格。
-    :param asr_engine: 当前使用的识别引擎（``app.engines.asr_base`` 插件的 key）；
-        空 = 取第一台。识别不再下载权重、不再有"装没装"这回事——引擎自己的
-        ``settings`` 段说明它从哪来（HTTP 服务 / 本地推理），配置照常存在 ``engines`` 里。
+    :param asr_engine: 指定使用的识别引擎（``app.engines.asr_base`` 插件的 key）；
+        空 = 自动，按 key 顺序选当前开着的识别服务，都没有则取第一台。识别不再
+        下载权重、不再有"装没装"这回事——引擎自己的 ``settings`` 段说明它从哪来
+        （HTTP 服务 / 本地推理），配置照常存在 ``engines`` 里。
     :param asr_options: 应用层识别选项（自动识别、写回样例、录音转写、语种写回），
         与 ``engines`` 分开：保存引擎设置会整段重写 ``engines[key]``，放一起会被抹掉。
     :param engines: 每台引擎的配置，键是引擎 key。放服务端：密钥属于这台机器，不随音色库拷贝。

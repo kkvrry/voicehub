@@ -10,23 +10,27 @@
 
       <SettingRow
         title="当前识别引擎"
-        desc="选项来自已加载的识别引擎；引擎本身的地址、模型与语种提示在「引擎 → 识别」里配置。"
-        keywords="识别 引擎 选择 当前 asr 转写"
+        desc="未指定时按引擎顺序选用当前开着的服务；引擎地址与模型在「引擎 → 识别」里配置。"
+        keywords="识别 引擎 选择 当前 asr 转写 自动"
       >
         <div class="asr-pick">
           <select
             v-if="asr.engines.length"
             class="sh-field"
-            :value="asr.current"
+            :value="asr.auto ? '' : asr.current"
             :disabled="choosing"
             aria-label="当前识别引擎"
             @change="choose(($event.target as HTMLSelectElement).value)"
           >
+            <option value="">自动（按引擎顺序选开着的服务）</option>
             <option v-for="row in asr.engines" :key="row.key" :value="row.key">
               {{ row.label }}{{ row.ready ? '' : '（未就绪）' }}
             </option>
           </select>
           <span v-else class="sh-hint">尚无识别引擎。</span>
+          <span v-if="asr.auto && currentEngine" class="sh-hint">
+            当前：{{ currentEngine.label }}
+          </span>
           <ActionButton
             v-if="currentEngine"
             variant="soft"
@@ -151,6 +155,7 @@ interface AsrEngineRow {
 interface AsrState {
   engines: AsrEngineRow[]
   current: string
+  auto: boolean
 }
 
 const settings = useSettingsStore()
@@ -170,11 +175,12 @@ const supportsLanguage = computed(() => {
 const choosing = ref(false)
 
 async function choose(key: string) {
-  if (!key || key === asr.value.current || choosing.value) return
+  const wanted = key || ''
+  if (wanted === (asr.value.auto ? '' : asr.value.current) || choosing.value) return
   choosing.value = true
   try {
-    await actions.setAsrCurrent(key)
-    say('已切换识别引擎')
+    await actions.setAsrCurrent(wanted)
+    say(wanted ? '已切换识别引擎' : '已改为自动选择')
   } catch (error) {
     say(error instanceof Error ? error.message : String(error))
   } finally {

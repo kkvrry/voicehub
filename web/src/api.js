@@ -541,7 +541,7 @@ export const api = {
   /** 停止补逐字稿：当前这条收尾后不再开始下一条。 */
   cancelAsrFill: () => request('/api/v1/asr/fill/cancel', { method: 'POST' }),
   /**
-   * 当前用哪台。空串 = 第一台。
+   * 当前用哪台。空串 = 自动，按引擎顺序用当前开着的服务。
    * @param {string} key
    */
   setAsrCurrent: (key) => request('/api/v1/asr/current', { method: 'PUT', body: { key } }),

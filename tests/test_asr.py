@@ -6,8 +6,9 @@
 1. **核心不认识任何一家**：``usecase/asr.py`` 只调 ``transcribe`` / ``readiness``，
    换引擎 = 换插件，这里的一行代码都不用动。
 2. **"没配好"要说成一句人能懂的话**，而不是空 200 或 KeyError。
-3. **当前那台**来自 ``config.asr_engine``；配的那台不在了就回落第一台；
-   应用层选项（自动识别 / 写回 / 录音转写）单独存、单独改。
+3. **当前那台**：手动指定来自 ``config.asr_engine``；未指定时按 key 顺序取 audio.cpp
+   上运行中的识别服务，没有则回落第一台；应用层选项（自动识别 / 写回 / 录音转写）
+   单独存、单独改。
 4. **Qwen3-ASR 那一家**的请求形状与响应解析：音频总是 multipart 上传，非 WAV
    先转 16 kHz 单声道；``details`` 给语言、普通端点不给。
 
@@ -99,6 +100,72 @@ class TestDispatch:
     def test_a_single_engine_is_current_without_choosing(self, stub: _StubEngine) -> None:
         assert asr.current_key() == "stub_asr"
         assert asr.available() is True
+
+    def test_auto_picks_the_running_engine_in_key_order(
+        self, monkeypatch: pytest.MonkeyPatch, data_dir: Path
+    ) -> None:
+        """未指定时按 key 顺序取开着的；两台都开着取前一台。"""
+
+        class _Other(_StubEngine):
+            key = "another_asr"
+
+        first, second = _Other(), _StubEngine()
+        monkeypatch.setattr(
+            asr, "list_asr_engines", lambda: {first.key: first, second.key: second}
+        )
+        config = load_config()
+        config.asr_engine = ""
+        save_config(config)
+        monkeypatch.setattr(
+            asr,
+            "live_engine_keys",
+            lambda keys: {second.key: {"id": "x", "family": second.key, "url": ""}},
+        )
+        assert asr.current_key() == second.key
+        monkeypatch.setattr(
+            asr, "live_engine_keys", lambda keys: {first.key: {}, second.key: {}}
+        )
+        assert asr.current_key() == first.key
+
+    def test_auto_falls_back_when_nothing_is_running(
+        self, monkeypatch: pytest.MonkeyPatch, data_dir: Path
+    ) -> None:
+        """没有运行实例时退回第一台，手动服务不因此判死。"""
+
+        class _Other(_StubEngine):
+            key = "another_asr"
+
+        first, second = _Other(), _StubEngine()
+        monkeypatch.setattr(
+            asr, "list_asr_engines", lambda: {first.key: first, second.key: second}
+        )
+        config = load_config()
+        config.asr_engine = ""
+        save_config(config)
+        monkeypatch.setattr(asr, "live_engine_keys", lambda keys: {})
+        assert asr.current_key() == first.key
+
+    def test_manual_choice_wins_over_running_state(
+        self, stub: _StubEngine, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """手动指定就是指定，不被自动探测覆盖。"""
+        config = load_config()
+        config.asr_engine = "stub_asr"
+        save_config(config)
+        monkeypatch.setattr(asr, "live_engine_keys", lambda keys: {})
+        assert asr.current_key() == "stub_asr"
+
+    def test_status_reports_auto_mode(
+        self, stub: _StubEngine, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(asr, "live_engine_keys", lambda keys: {})
+        config = load_config()
+        config.asr_engine = ""
+        save_config(config)
+        assert asr.status()["auto"] is True
+        config.asr_engine = "stub_asr"
+        save_config(config)
+        assert asr.status()["auto"] is False
 
     def test_the_configured_engine_wins(self, stub: _StubEngine) -> None:
         config = load_config()

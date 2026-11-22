@@ -101,13 +101,15 @@
                   :checked="isPicked(row.engine.key)"
                   @change="toggleEngine(row.engine.key)"
                 />
-                <img
-                  v-if="row.engine.icon_url"
-                  class="engine-icon"
-                  :src="row.engine.icon_url"
-                  alt=""
-                  :title="engineTitle(row.engine)"
-                />
+                <span v-if="row.engine.icon_url" class="engine-icon-wrap">
+                  <img
+                    class="engine-icon"
+                    :src="row.engine.icon_url"
+                    alt=""
+                    :title="engineTitle(row.engine)"
+                  />
+                  <i v-if="row.engine.available" class="engine-available-dot"></i>
+                </span>
                 <span class="engine-body">
                   <span class="engine-line">
                     <span class="engine-pick-label" :title="engineTitle(row.engine)">
@@ -537,7 +539,9 @@ function jobOf(key) {
 
 /** 引擎行 = 引擎 + 它自己的产物，模板一遍画完（row.engine / row.job）。 */
 const engineRows = computed(() =>
-  store.engines.map((engine) => ({ engine, job: jobOf(engine.key) }))
+  actions
+    .orderedEngines(store.engines)
+    .map((engine) => ({ engine, job: jobOf(engine.key) }))
 )
 
 /**
@@ -573,6 +577,9 @@ function toggleEngine(key) {
  */
 function engineTitle(engine) {
   const lines = [engine.kind_note || engine.kind_label]
+  if (engine.available) {
+    lines.push(engine.kind === 'cloud' ? '已填 Key，可以合成' : '实例运行中，可以合成')
+  }
   if (!engine.ready && engine.note) lines.push(engine.note)
   return lines.filter(Boolean).join('\n')
 }

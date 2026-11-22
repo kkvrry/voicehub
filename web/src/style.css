@@ -965,6 +965,15 @@ button.rail-cover { border: 0; padding: 0; font: inherit; font-size: 13px; font-
 .engine-item:has(.engine-check:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* 未就绪：一个点就够，理由在悬停里（缺模型 / 缺依赖这类原因也不是一眼能看出来的）。 */
 .engine-dot { flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--warn); }
+/* 可用指示：图标右下角一枚小绿点，带一圈面板色描边，压在彩色图标上也跳得出来。
+   语义是"此刻能合成"——本地实例在跑 / 云端填了 Key，由后端 available 统一给出；
+   与名字后的未就绪黄点分开：一个说"能不能用"，一个说"配置全不全"。 */
+.engine-icon-wrap { position: relative; flex: none; line-height: 0; }
+.engine-available-dot {
+  position: absolute; right: -2px; bottom: -2px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ok); border: 1.5px solid var(--panel);
+}
 
 /* 行内两段：上行名字与规格（格式 · 体积 · 时长；播放时换成时间），下行整条波形；
    右侧一列动作（撤下 / 重跑 / 播放）。只有名字与图标仍属于行开关——
