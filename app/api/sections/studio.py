@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
+import json
 import time
 import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, File, Form, Header, UploadFile
+from fastapi import APIRouter, File, Form, Header, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from app.api.errors import ApiError, not_found
@@ -35,6 +37,7 @@ from app.infra.loghub import CHANNEL
 from app.infra.vocab import VocabError
 from app.usecase import (
     asr,
+    asr_stream,
     avatar,
     gateway,
 )
@@ -113,6 +116,106 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
             return {"object": "transcript", **asr.transcribe_file(path)}
         finally:
             path.unlink(missing_ok=True)
+
+    @router.websocket("/asr/stream")
+    async def asr_stream_ws(ws: WebSocket) -> None:
+        """麦克风音频流：**服务端 VAD 分段**，说完一段推一段文字。
+
+        协议（``/api/v1/asr/stream``）：
+
+        - 客户端 → 服务端：第一条文本 ``{"type":"start","sample_rate":48000}``
+          （浏览器 AudioContext 的实际采样率，服务端统一重采样到 16k）；之后是
+          二进制帧（int16 单声道 PCM，建议 100ms 一帧）；收尾发文本
+          ``{"type":"stop"}``，把没说完的话冲出来。
+        - 服务端 → 客户端：``ready``（会话就绪）、``speech``（开始说话）、
+          ``segment``（一段话听完了，带 ``text`` 等识别结果）、``error``、
+          ``done``。
+
+        逐段识别在线程里跑（引擎调用是同步的），主循环不被识别卡住、
+        继续收帧喂 VAD；发送全部经一个发送协程，保证事件顺序。
+        """
+        await ws.accept()
+        reason = asr.unavailable_reason() or asr_stream.vad_unavailable_reason()
+        if reason:
+            await ws.send_json({"type": "error", "message": reason})
+            await ws.close()
+            return
+
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+        async def sender() -> None:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                await ws.send_json(event)
+
+        sender_task = asyncio.create_task(sender())
+
+        def emit(event: dict[str, Any]) -> None:
+            queue.put_nowait(event)
+
+        session = None
+        rate = asr_stream.TARGET_RATE
+        try:
+            while True:
+                message = await ws.receive()
+                kind = message.get("type")
+                if kind == "websocket.disconnect":
+                    break
+                text = message.get("text")
+                if text is not None:
+                    payload = _stream_command(text)
+                    if payload is None:
+                        emit({"type": "error", "message": "指令不认识，应为 start / stop。"})
+                        continue
+                    command = payload.get("type")
+                    if command == "start":
+                        rate = int(payload.get("sample_rate") or asr_stream.TARGET_RATE)
+                        # speech 事件在"转入说话"的瞬间发（VAD 状态机回调），
+                        # 好让界面立刻点亮"在听"，而不是等一段说完才知道。
+                        session = asr_stream.new_session(
+                            on_speech=lambda: emit({"type": "speech"})
+                        )
+                        emit({"type": "ready"})
+                    elif command == "stop":
+                        if session is not None:
+                            tail = session.flush()
+                            session = None
+                            if tail:
+                                emit({"type": "segment", **_listen_segment(tail)})
+                        emit({"type": "done"})
+                        break
+                    continue
+                data = message.get("bytes")
+                if data is None or session is None:
+                    continue
+                for segment in session.feed(data, rate):
+                    emit({"type": "segment", **_listen_segment(segment)})
+        except WebSocketDisconnect:
+            pass
+        finally:
+            emit(None)
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(sender_task, timeout=5)
+            with contextlib.suppress(Exception):
+                await ws.close()
+
+    def _stream_command(text: str) -> dict[str, Any] | None:
+        try:
+            payload = json.loads(text)
+        except ValueError:
+            return None
+        if not isinstance(payload, dict) or payload.get("type") not in ("start", "stop"):
+            return None
+        return payload
+
+    def _listen_segment(pcm: bytes) -> dict[str, Any]:
+        """一段 PCM → 识别结果；失败给一条可读的事件而不是断流。"""
+        try:
+            return asr_stream.transcribe_pcm(pcm)
+        except asr.AsrError as exc:
+            return {"text": "", "error": exc.reason}
 
     @router.post("/recordings", summary="保存一段录音当参考音频", tags=["asr"])
     async def save_recording(
