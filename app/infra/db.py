@@ -113,9 +113,11 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 #: 这样的行仍留在库里（它的样例、时长、指纹都还有用），但**不再单独列出来**：
 #: 界面按那条平台音色显示（见 ``LibraryService._with_generated``）。平台行已经不在库里
 #: （引擎卸载 / 音色删了）时它照旧当本地音色出现——那句 ``IN (SELECT id FROM voices)``
-#: 就是这条退路。
+#: 就是这条退路。``origin_id != voices.id`` 排除自己指着自己：本地音色的目录就是它
+#: 自己的家，不是任何人的样例目录（历史数据里有过这样的坏账，查询层一并挡住）。
 _LINKED_LOCAL = (
-    "NOT (source = 'local' AND origin_id != '' AND origin_id IN (SELECT id FROM voices))"
+    "NOT (source = 'local' AND origin_id != '' AND origin_id != voices.id"
+    " AND origin_id IN (SELECT id FROM voices))"
 )
 
 
@@ -772,6 +774,7 @@ class HubDB:
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM voices WHERE source = ? AND origin_id != ''"
+                " AND origin_id != voices.id"
                 " AND origin_id IN (SELECT id FROM voices)",
                 (SOURCE_LOCAL,),
             ).fetchall()

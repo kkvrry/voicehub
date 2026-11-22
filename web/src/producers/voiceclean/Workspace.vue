@@ -867,6 +867,7 @@ function onTabMenu(win, event) {
     'voiceclean.tab',
     {
       name: win.name,
+      id: win.voiceId,
       hasAudio: Boolean(card?.main_audio_url),
       locked: lockedSelect.value,
       play: () => {

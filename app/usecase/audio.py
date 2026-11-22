@@ -12,6 +12,8 @@
 **入库 = 复制一份进音色目录**，源文件不动。样例必须落在音色目录里才活得过缓存清理，
 所以这里不做「引用缓存」那种省磁盘的做法。入库后两处 sidecar 各记一笔：目标音色记
 ``source``（这条样例从音频库哪一条来），源目录记 ``absorbed``（这条音频进了哪几条音色）。
+归属（``origin``）只写给平台音色——本地音色的目录就是它自己的家；写完盘当场把索引
+跟上（:meth:`LibraryService.sync_local_folder`），不依赖下一次扫描。
 """
 
 from __future__ import annotations
@@ -29,8 +31,10 @@ from app.engines.registry import list_engines
 from app.infra import archive, recordings, sidecar
 from app.infra.audioprobe import probe_duration_cached
 from app.infra.config import load_config
+from app.infra.loghub import CHANNEL
 from app.infra.sidecar import Sidecar, read_sidecar, write_sidecar
 from app.infra.trash import move_to_trash
+from app.usecase.library import LibraryError
 
 __all__ = ["AudioError", "absorb", "discard", "index"]
 
@@ -337,21 +341,21 @@ def _create_voice(target: dict[str, Any]) -> tuple[Path, str]:
     return folder, name
 
 
-def _voice_target(service: Any, target: dict[str, Any], row: dict[str, Any]) -> tuple[Path, str, str]:
-    """解析这一条的落点：(目录, voice_id, 显示名)。"""
+def _voice_target(service: Any, target: dict[str, Any], row: dict[str, Any]) -> tuple[Path, Any]:
+    """解析这一条的落点：(目录, 目标音色)。"""
     kind = str(target.get("kind") or "")
     if kind == "origin":
         voice_id = str(row.get("voice_id") or "")
         if not voice_id:
             raise AudioError("这条音频不属于任何音色，需要指定目标。", code="target_required")
         voice = service.get_voice(voice_id)
-        return _voice_folder(service, voice), voice.id, voice.shown_name
+        return _voice_folder(service, voice), voice
     if kind == "voice":
         voice_id = str(target.get("voice_id") or "")
         if not voice_id:
             raise AudioError("没有选择目标音色。", code="target_required")
         voice = service.get_voice(voice_id)
-        return _voice_folder(service, voice), voice.id, voice.shown_name
+        return _voice_folder(service, voice), voice
     raise AudioError("入库目标不明确。", code="target_required")
 
 
@@ -409,11 +413,23 @@ def absorb(service: Any, ids: list[str], target: dict[str, Any]) -> list[dict[st
             raise AudioError("这批音频不属于同一条音色，需要指定目标。", code="target_required")
 
     done: list[dict[str, Any]] = []
+    local_folders: list[Path] = []
     for row in rows:
         if folder is not None:
-            target_folder, target_voice, name = folder, voice_id, voice_name
+            target_folder, voice_obj = folder, None
+            target_voice, name = voice_id, voice_name
         else:
-            target_folder, target_voice, name = _voice_target(service, target, row)
+            target_folder, voice_obj = _voice_target(service, target, row)
+            target_voice, name = voice_obj.id, voice_obj.shown_name
+        # 归属只写给平台音色：本地音色的样例目录就是它自己的家，把自己的 id 写进
+        # origin 会让扫描把它当成"某条平台音色的样例目录"而整条隐藏。
+        origin = (
+            {"voice_id": target_voice, "engine": row["engine_key"]}
+            if voice_obj is not None and not voice_obj.is_local
+            else None
+        )
+        if (voice_obj is None or voice_obj.is_local) and target_folder not in local_folders:
+            local_folders.append(target_folder)
         source = Path(row["path"])
         dest = _copy_into(target_folder, source)
         archive.record_sample(
@@ -422,7 +438,7 @@ def absorb(service: Any, ids: list[str], target: dict[str, Any]) -> list[dict[st
             text=row["text"],
             emotion=emotion or row["emotion"],
             params=_sample_params(row),
-            origin={"voice_id": target_voice, "engine": row["engine_key"]},
+            origin=origin,
             source=row["id"],
         )
         archive.note_absorbed(
@@ -434,9 +450,15 @@ def absorb(service: Any, ids: list[str], target: dict[str, Any]) -> list[dict[st
 
     forget()
     service.invalidate_generated()
-    if target.get("kind") == "new":
-        # 新目录要经过一次扫描才进库；不阻塞这次请求，库自己起后台任务。
-        service.start_scan()
+    for target_folder in local_folders:
+        # 文件与 sidecar 都已落盘，索引当场跟上：入库完立刻可见，不需要再扫描。
+        # 平铺根目录（每个文件一条音色）不归这条路管，交还后台扫描收尾。
+        if service.sync_local_folder(target_folder) is None:
+            try:
+                service.start_scan()
+            except LibraryError as exc:
+                # 同步扫描已在跑：稍后它自己会把这个目录扫进去，这里不必再做什么。
+                CHANNEL.warning(f"入库后的收尾扫描未启动：{exc}", source="library")
     return done
 
 

@@ -11,6 +11,7 @@ import { actions, say, store } from '../store'
 export function voiceMenuContext(voice, extra = {}) {
   return {
     name: voice.shown_name || '',
+    id: voice.id || '',
     folder: voice.folder || '',
     isLocal: Boolean(voice.is_local),
     avatarGenerated: Boolean(voice.avatar_generated),

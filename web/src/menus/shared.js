@@ -3,12 +3,12 @@
 import { Copy as CopyIcon } from 'lucide-vue-next'
 import { say } from '../store'
 
-/** @param {string} text @param {string} label */
-export function copyItem(text, label) {
+/** @param {string} text @param {string} label @param {string} [key] */
+export function copyItem(text, label, key = 'copy') {
   const value = String(text || '').trim()
   if (!value) return null
   return {
-    key: 'copy',
+    key,
     label,
     icon: CopyIcon,
     run: () => copyText(value),

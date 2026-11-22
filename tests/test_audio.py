@@ -93,6 +93,10 @@ class TestAbsorb:
         assert again["unabsorbed"] == 3
         assert again["data"][0]["absorbed"][0]["voice_id"] == hutao.id
 
+        # 索引当场跟上：不扫描也能看到新样例。
+        voice = audio_lib.get_voice(hutao.id)
+        assert item["file"] in {sample.file for sample in voice.samples}
+
     def test_absorb_twice_is_idempotent(self, audio_lib):
         item = next(row for row in audio_uc.index()["data"] if row["source"] == "engine")
         hutao = next(voice for voice in audio_lib.list_voices() if voice.name == "胡桃")
@@ -123,6 +127,27 @@ class TestAbsorb:
         assert side.display == "新录"
         assert side.gender == "female"
         assert side.main_sample == item["file"]
+        # 本地音色不写归属：自己的目录不是谁的样例目录。
+        assert not side.origin.get("voice_id")
+
+        # 不扫描就看得见：列表、左栏计数、详情三处口径一致。
+        voice = next(v for v in audio_lib.list_voices() if v.shown_name == "新录")
+        assert voice.sample_count == 1
+        assert voice.main_sample == item["file"]
+        tree = audio_lib.tree()
+        assert sum(root["total"] for root in tree["roots"]) >= 1
+        detail = audio_lib.get_voice(voice.id)
+        assert item["file"] in {sample.file for sample in detail.samples}
+
+    def test_self_origin_does_not_hide_the_voice(self, audio_lib):
+        """历史坏账：sidecar 里指着自己的 origin 不再把整条音色藏掉。"""
+        hutao = next(voice for voice in audio_lib.list_voices() if voice.name == "胡桃")
+        side = read_sidecar(Path(hutao.folder))
+        side.origin = {"voice_id": hutao.id, "engine": "mimo"}
+        from app.infra.sidecar import write_sidecar
+
+        write_sidecar(Path(hutao.folder), side)
+        assert any(voice.id == hutao.id for voice in audio_lib.list_voices())
 
     def test_origin_without_voice_is_rejected(self, audio_lib):
         item = next(row for row in audio_uc.index()["data"] if row["source"] == "record")

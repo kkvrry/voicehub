@@ -78,7 +78,10 @@ const MENUS = {
     ])
     return [
       manage,
-      [copyItem(ctx.name, '复制音色名')],
+      [
+        copyItem(ctx.name, '复制音色名'),
+        copyItem(ctx.id, '复制音色 ID', 'copy-id'),
+      ],
       [{ key: 'remove', label: '移除音色', icon: Trash2, danger: true, run: ctx.remove }],
     ]
   },

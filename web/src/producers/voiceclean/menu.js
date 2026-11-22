@@ -25,7 +25,10 @@ const menus = {
         run: ctx.close,
       },
     ],
-    [copyItem(ctx.name, '复制音色名')],
+    [
+      copyItem(ctx.name, '复制音色名'),
+      copyItem(ctx.id, '复制音色 ID', 'copy-id'),
+    ],
   ],
 
   'voiceclean.row': (ctx) => {

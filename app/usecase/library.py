@@ -29,7 +29,7 @@ from app.domain.models import (
     platform_voice_id,
     voice_id_for,
 )
-from app.domain.scanner import main_sample_of
+from app.domain.scanner import main_sample_of, relative_category
 from app.engines.base import KIND_LABELS, VoiceMeta
 from app.engines.registry import list_engines
 from app.infra import archive, sidecar
@@ -180,6 +180,12 @@ def _design_prompt_sync(voice: Voice, description: Any) -> dict[str, Any]:
     if text != str(payload.get("design_prompt") or "").strip():
         payload["design_prompt"] = text
     return payload
+
+
+def _linked_origin(side: Sidecar, identity: str) -> str:
+    """sidecar 里记的归属 id；指着自己的一律当没有（本地音色不是谁的样例目录）。"""
+    origin_id = (side.origin.get("voice_id") or "").strip()
+    return "" if origin_id == voice_id_for(identity) else origin_id
 
 
 @dataclass(slots=True)
@@ -540,8 +546,7 @@ class LibraryService:
         """
         side = found.sidecar
         identity = os.path.join(found.folder, found.name) if found.flat else found.folder
-        files = [s["file"] for s in found.samples]
-        # sidecar 里指向已删文件的样例键，写库时清掉（不带到下一次）。
+        files = [s["file"] for s in found.samples]        # sidecar 里指向已删文件的样例键，写库时清掉（不带到下一次）。
         kept = {k: v for k, v in side.samples.items() if k in files}
         samples = tuple(
             Sample(
@@ -576,7 +581,8 @@ class LibraryService:
             samples=samples,
             # 平台归属：这个文件夹是某条平台音色的样例目录（生成时就写在 sidecar 里）。
             # 有值时它不单独列，按那条平台音色出现（见 _with_generated）。
-            origin_id=(side.origin.get("voice_id") or "").strip(),
+            # 指着自己不算归属：本地音色的目录就是它自己的家，写坏的历史数据在这里洗净。
+            origin_id=_linked_origin(side, identity),
         )
 
     # ------------------------------------------------------------------ #
@@ -972,6 +978,70 @@ class LibraryService:
     # ------------------------------------------------------------------ #
     # 编辑（本地音色 → sidecar + 索引）
     # ------------------------------------------------------------------ #
+
+    def sync_local_folder(self, folder: Path) -> Voice | None:
+        """把一个本地音色目录的磁盘现状（文件 + sidecar）即时写进索引，返回该行。
+
+        入库这类"本进程刚写完磁盘"的写动作走它：写完立刻可见，不依赖下一次扫描。
+        元数据与样例口径与 :meth:`_merge_sidecar` 一致（sidecar 为源）；封面沿用
+        库里已有的（新目录还没有封面文件，扫描以后再认）。目录是某个扫描根本身
+        （平铺布局，每个文件一条音色）时返回 ``None``——那里的新文件是新的独立
+        音色，交给扫描去认。
+        """
+        folder = Path(folder)
+        if not folder.is_dir():
+            return None
+        config = load_config()
+        roots = [Path(str(item).strip()) for item in config.folders if str(item).strip()]
+        if any(folder == root for root in roots):
+            return None
+        side = read_sidecar(folder)
+        names = [path.name for path in _audio_files(folder)]
+        kept = {key: value for key, value in side.samples.items() if key in names}
+        ffprobe = config.ffprobe_path
+        samples = tuple(
+            Sample(
+                file=name,
+                text=str(kept.get(name, {}).get("text") or ""),
+                emotion=str(kept.get(name, {}).get("emotion") or ""),
+                duration=probe_duration_cached(folder / name, ffprobe_path=ffprobe),
+                tags=tuple(kept.get(name, {}).get("tags") or ()),
+                params=sample_params(kept.get(name)),
+            )
+            for name in names
+        )
+        voice_id = voice_id_for(str(folder))
+        previous = self._db.get_voice(voice_id)
+        category = previous.category if previous is not None else self._category_of(folder, roots)
+        voice = Voice(
+            id=voice_id,
+            source=SOURCE_LOCAL,
+            name=folder.name,
+            display=side.display,
+            category=category,
+            gender=side.gender if side.gender in GENDERS else "",
+            language=side.language,
+            age=side.age,
+            tags=tuple(side.tags),
+            description=side.description,
+            folder=str(folder),
+            cover=previous.cover if previous is not None else "",
+            main_sample=main_sample_of(names, side.main_sample),
+            samples=samples,
+            origin_id=_linked_origin(side, str(folder)),
+            hidden=previous.hidden if previous is not None else False,
+            favorite=previous.favorite if previous is not None else False,
+        )
+        self._db.upsert_voice(voice)
+        return voice
+
+    @staticmethod
+    def _category_of(folder: Path, roots: list[Path]) -> str:
+        """目录相对哪个扫描根的分类（不在任何根下 = 空串）。"""
+        for root in roots:
+            if root.is_dir() and folder != root and root in folder.parents:
+                return relative_category(folder, root)
+        return ""
 
     def update_voice(self, voice_id: str, patch: dict[str, Any]) -> Voice:
         """改音色元数据。**先写 sidecar、再更新索引**——sidecar 是源。"""
