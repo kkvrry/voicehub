@@ -45,7 +45,10 @@
                       <span class="ledger-main">
                         <span class="ledger-name">
                           <span class="ledger-role">{{ item.name }}</span>
-                          <span class="ledger-rows">{{ item.rows }} 行</span>
+                          <span v-if="item.mode" class="ledger-mode">
+                            {{ item.mode === 'original' ? '原声' : '配音' }}
+                          </span>
+                          <span class="ledger-rows">{{ item.rows }} {{ unit }}</span>
                         </span>
                       </span>
                     </button>
@@ -76,7 +79,10 @@
                         <span class="ledger-name">
                           <i class="ledger-dot" aria-hidden="true" />
                           <span class="ledger-role">{{ item.name }}</span>
-                          <span class="ledger-rows">{{ item.rows }} 行</span>
+                          <span v-if="item.mode" class="ledger-mode">
+                            {{ item.mode === 'original' ? '原声' : '配音' }}
+                          </span>
+                          <span class="ledger-rows">{{ item.rows }} {{ unit }}</span>
                         </span>
                         <span class="ledger-voice">
                           <span class="ledger-voice-name">{{ assignedName(item.key) }}</span>
@@ -178,6 +184,11 @@
               </div>
               <p v-else class="assign-hint">这个音色没有样例可选：合成时会退回主样例。</p>
             </template>
+
+            <label v-if="selectionCount" class="assign-selection">
+              <input v-model="assignSelection" type="checkbox" />
+              同时把选中的 {{ selectionCount }} {{ unit }}改为{{ selectionTarget }}
+            </label>
           </div>
 
           <footer class="assign-foot">
@@ -187,11 +198,11 @@
             <button class="sh-btn is-ghost" @click="close">取消</button>
             <button
               class="sh-btn is-primary"
-              :disabled="!role || (isLocal && !engines.length)"
+              :disabled="!role || (isLocal && !engines.length) || busy"
               :title="selectedAssigned ? `${scopeOne}已有音色，点下会用它覆盖` : ''"
               @click="submit"
             >
-              {{ selectedAssigned ? '覆盖' : '指定' }}
+              {{ busy ? '指定中…' : selectedAssigned ? '覆盖' : '指定' }}
             </button>
           </footer>
         </div>
@@ -205,10 +216,10 @@
 import { computed, ref, watch } from 'vue'
 import { Check, Play, Square, X } from 'lucide-vue-next'
 import EngineSelect from './EngineSelect.vue'
-import SegmentedControl from '../../components/ui/SegmentedControl.vue'
-import { actions, store } from '../../store'
-import { api } from '../../api'
-import { overlayTarget } from '../../composables/overlayTarget'
+import SegmentedControl from './ui/SegmentedControl.vue'
+import { actions, store } from '../store'
+import { api } from '../api'
+import { overlayTarget } from '../composables/overlayTarget'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -225,6 +236,12 @@ const props = defineProps({
   assignments: { type: Object, default: () => ({}) },
   /** 本地音色可选哪几台引擎（都用音色库的通道）；平台音色为空。 */
   engines: { type: Array, default: () => [] },
+  /** 工作区里当前选中的行数：大于 0 时多一格「顺便把这些行改为这个目标」。 */
+  selectionCount: { type: Number, default: 0 },
+  /** 行数的单位：创作页讲「行」，配音页讲「段」。 */
+  unit: { type: String, default: '行' },
+  /** 提交中：按钮换成进行状态，避免连点重复指定。 */
+  busy: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close', 'assign'])
 
@@ -243,6 +260,7 @@ const mode = ref('emotion')
 const sample = ref('')
 const samples = ref(/** @type {any[]} */ ([]))
 const loading = ref(false)
+const assignSelection = ref(true)
 
 const modes = [
   { value: 'emotion', label: '按情绪匹配' },
@@ -273,6 +291,9 @@ const selectedName = computed(
     roleList.value.find(
       /** @param {any} item */ (item) => item.key === role.value
     )?.name || ''
+)
+const selectionTarget = computed(() =>
+  selectedName.value ? `「${selectedName.value}」` : `选中的${scopeLabel.value}`
 )
 
 /**
@@ -321,7 +342,8 @@ function roleTitle(item) {
   const voice = assignedName(item.key)
   return [
     item.name,
-    item.rows ? `${item.rows} 行` : '',
+    item.mode ? (item.mode === 'original' ? '原声' : '配音') : '',
+    item.rows ? `${item.rows} ${props.unit}` : '',
     voice ? `已指定 ${voice}` : '未指定',
   ]
     .filter(Boolean)
@@ -388,6 +410,7 @@ watch(
     mode.value = 'emotion'
     sample.value = ''
     samples.value = []
+    assignSelection.value = true
     // 已指定目标的试听按钮要读主样例地址：清单不在就先取一份，失败也不拦指定。
     if (!store.allVoices?.length) void actions.loadAllVoices()
     if (!props.voice?.id || !isLocal.value) return
@@ -432,6 +455,7 @@ function submit() {
     engine: engineKey.value,
     sample_mode: isLocal.value ? mode.value : 'emotion',
     sample_file: isLocal.value && mode.value === 'fixed' ? sample.value : '',
+    selection: Boolean(props.selectionCount && assignSelection.value),
   })
 }
 </script>
@@ -660,6 +684,16 @@ function submit() {
   color: var(--sh-text-4);
   font-variant-numeric: tabular-nums;
 }
+.ledger-mode {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--sh-chip);
+  color: var(--sh-text-3);
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 14px;
+}
 /* 试听：占满整行高度的一格，左沿一条线与文字分开；没音频的行走同宽空位，行尾对齐。 */
 .voice-play {
   align-self: stretch;
@@ -698,6 +732,21 @@ function submit() {
 .assign-label {
   font-size: 12.2px;
   color: var(--sh-text-2);
+}
+.assign-selection {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--sh-line-soft);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-field);
+  font-size: 11.5px;
+  color: var(--sh-text-2);
+  cursor: pointer;
+}
+.assign-selection input {
+  accent-color: var(--sh-accent);
 }
 .assign-hint {
   margin: 0;

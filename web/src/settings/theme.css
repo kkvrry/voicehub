@@ -19,6 +19,7 @@
   color-scheme: light;
   --sh-font: 'Segoe UI Variable Text', 'Segoe UI', 'Inter', 'PingFang SC', 'Microsoft YaHei',
     system-ui, sans-serif;
+  --sh-mono: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
 
   /* ---- 颜色（浅色）---- */
   --sh-text: #101f38;
@@ -71,6 +72,14 @@
   --sh-mask-strong: rgba(16, 31, 56, 0.34);
   --sh-toast-bg: #16233a;
   --sh-toast-text: #ffffff;
+
+  /* ---- 媒体画面：视频/音频预览、字幕叠加与走带共用 ----
+     组件不写十六进制；四套外观只覆盖这里的值。 */
+  --sh-media-bg: #0b1220;
+  --sh-media-text: #ffffff;
+  --sh-media-sub: #9ec5ff;
+  --sh-media-scrim: rgba(8, 12, 20, 0.72);
+  --sh-media-track: rgba(120, 148, 186, 0.28);
 
   /* ---- 间距阶梯：组件只从这里取值，别再出现 9 / 11 / 13 这种孤值 ---- */
   --sh-gap-1: 4px;

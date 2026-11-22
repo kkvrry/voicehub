@@ -64,7 +64,13 @@ export async function request(path, options = {}) {
   }
   if (resp.status === 401) throw toLogin()
   if (!resp.ok) {
-    throw new Error(await errorMessage(resp))
+    const error = /** @type {Error & { status?: number }} */ (
+      new Error(await errorMessage(resp))
+    )
+    // 带上状态码：调用方要分得清"这次请求不被接受"（4xx，重试没意义）
+    // 与"服务端一时写不进去"（5xx，值得退避重试）。
+    error.status = resp.status
+    throw error
   }
   return resp.json()
 }

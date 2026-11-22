@@ -55,7 +55,7 @@
 // @ts-check
 import { computed, ref, watch } from 'vue'
 import { Check } from 'lucide-vue-next'
-import EngineSelect from './EngineSelect.vue'
+import EngineSelect from '../../components/EngineSelect.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },

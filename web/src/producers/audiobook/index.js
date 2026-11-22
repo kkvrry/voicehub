@@ -5,5 +5,6 @@
 import AssignOverlay from './AssignOverlay.vue'
 import Workspace from './Workspace.vue'
 import * as store from './store'
+import './menu'
 
 export { AssignOverlay as Overlay, Workspace, store }

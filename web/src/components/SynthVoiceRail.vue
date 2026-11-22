@@ -68,6 +68,7 @@
       tabindex="0"
       :title="reference.hint"
       @click="openReference"
+      @contextmenu="onReferenceMenu"
       @keydown.enter.prevent="openReference"
       @keydown.space.prevent="openReference"
     >
@@ -161,6 +162,7 @@
         :aria-pressed="pickable ? voice.id === activeId : undefined"
         :title="voice.shown_name"
         @click="pick(voice)"
+        @contextmenu="openMenu(voice, $event)"
         @keydown.enter.prevent="pick(voice)"
         @keydown.space.prevent="pick(voice)"
       >
@@ -260,7 +262,9 @@ import { useSettingsStore } from '../stores/settings'
 import { useAvatarImage } from '../composables/avatar'
 import { avatarFill } from '../composables/avatarColor'
 import { useCardPaging } from '../composables/cardPaging'
+import { openObjectMenu } from '../composables/contextMenu'
 import { useRailWindow } from '../composables/railWindow'
+import { voiceMenuContext } from '../composables/voiceMenu'
 import CoverImage from './ui/CoverImage.vue'
 import DesignVoiceDialog from './DesignVoiceDialog.vue'
 import GenderPicker from './ui/GenderPicker.vue'
@@ -404,6 +408,27 @@ function play(voice) {
  */
 function assign(voice) {
   actions.requestAssign(voice)
+}
+
+/**
+ * 小卡也走同一份音色菜单：管理动作与「打开音色卡」都在里面。
+ *
+ * @param {any} voice
+ * @param {MouseEvent} event
+ */
+function openMenu(voice, event) {
+  openObjectMenu(
+    'voice.card',
+    voiceMenuContext(voice, { open: () => actions.openDetail(voice) }),
+    { event }
+  )
+}
+
+/** 顶上冻结的是一段录音时不挂菜单：它不是库里的音色，没有可管理的东西。 */
+/** @param {MouseEvent} event */
+function onReferenceMenu(event) {
+  if (!reference.value?.isVoice || !reference.value.voice) return
+  openMenu(reference.value.voice, event)
 }
 
 /**

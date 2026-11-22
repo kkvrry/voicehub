@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from app.infra.config import data_dir
 from app.producers.base import ProducerPlugin, ProducerStep
 from app.producers.builtin.dubbing.api import build_router
-from app.producers.builtin.dubbing.service import DubbingService
+from app.producers.builtin.dubbing.service import STEP_MANIFEST, DubbingService
 from app.producers.builtin.dubbing.settings import SETTINGS_PAGE_GROUPS, DubbingSettings
 
 __all__ = ["DubbingProducer"]
@@ -21,24 +21,20 @@ class DubbingProducer(ProducerPlugin):
     key = "dubbing"
     label = "配音"
     description = "导入音视频，转写字幕，按角色逐段配音并封装成片。"
-    version = "0.1.0"
+    version = "0.2.0"
     settings_label = "配音"
     order = 20
-    #: 角色的音色在左列就地选，工作区不需要宿主那条通用音色栏。
-    voice_rail = False
+    #: 左侧音色栏是挑音色的入口：卡片右端「指定」把这条音色交给当前角色。
+    #: 工作区不再自己维护一份音色清单，搜索框、音色树与播放条也跟着主壳走。
+    rail_mode = "assign"
 
     @classmethod
     def settings_schema(cls) -> type[BaseModel]:
         return DubbingSettings
 
     def steps(self) -> tuple[ProducerStep, ...]:
-        return (
-            ProducerStep("extract", "抽音轨", "解复用源文件，取出一条完整音轨。"),
-            ProducerStep("transcribe", "转录", "按静音切段逐段识别，段落边界即字幕时间码。", "project"),
-            ProducerStep("synth", "配音", "按角色逐段合成，只重跑改动过的段。", "row"),
-            ProducerStep("assemble", "贴齐", "按时间码补静音、加速贴齐、越界顺延。"),
-            ProducerStep("export", "导出", "封装成片并写出字幕。"),
-        )
+        # 与项目详情里的步骤卡共用一份清单，标签与说明不会各写一套。
+        return tuple(ProducerStep(*item) for item in STEP_MANIFEST)
 
     def service(self, root: Path) -> Any:
         return DubbingService(root, self.current_settings)

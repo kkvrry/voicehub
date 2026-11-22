@@ -18,7 +18,7 @@
 // @ts-check
 import { computed, ref, watch } from 'vue'
 import { say, store } from '../../store'
-import AssignVoiceDialog from './AssignVoiceDialog.vue'
+import AssignVoiceDialog from '../../components/VoiceAssignDialog.vue'
 import {
   engineForAssign,
   engineLabelForVoice,

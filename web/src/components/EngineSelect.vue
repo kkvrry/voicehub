@@ -55,8 +55,8 @@
 // @ts-check
 import { Check } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { createWheelStepper } from '../../utils/wheel-step'
-import { overlayTarget } from '../../composables/overlayTarget'
+import { createWheelStepper } from '../utils/wheel-step'
+import { overlayTarget } from '../composables/overlayTarget'
 
 const props = defineProps({
   value: { type: String, default: '' },

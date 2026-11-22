@@ -235,7 +235,7 @@ import { Loader2, Play, Sparkles, TriangleAlert } from 'lucide-vue-next'
 import { actions, say, store } from '../../store'
 import { api } from '../../api'
 import { assignChapterVoices, assignVoices, runAssist } from './store'
-import EngineSelect from './EngineSelect.vue'
+import EngineSelect from '../../components/EngineSelect.vue'
 import VoiceCombo from './VoiceCombo.vue'
 import { voiceOptions } from './api'
 

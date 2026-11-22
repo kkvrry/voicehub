@@ -42,6 +42,7 @@ __all__ = [
     "find_ffmpeg",
     "mux_media",
     "normalize",
+    "run_ffmpeg",
     "silence_spans",
     "slice_audio",
     "stage_ascii_path",
@@ -758,6 +759,15 @@ def _run_ffmpeg(
         raise FfmpegError(f"{what}失败：{detail}")
 
 
+def run_ffmpeg(command: list[str], *, timeout: float, what: str) -> None:
+    """跑一条已经拼好的 ffmpeg 命令；失败时抛出带 stderr 末尾的 :class:`FfmpegError`。
+
+    滤镜图这类调用方自己拼命令的场景也要走这一处：UTF-8 解码与超时只在这里写一次，
+    中文 Windows 上不会因为 stderr 是 UTF-8 而把错误吞成解码异常。
+    """
+    _run_ffmpeg(command, timeout=timeout, what=what)
+
+
 def _require_source(source: Path, configured: str | None, what: str) -> str:
     if not source.is_file():
         raise FfmpegError(f"{what}：源文件不存在（{source}）。")
@@ -870,6 +880,7 @@ def mux_media(
     subtitles: Path | None = None,
     subtitle_codec: str = "mov_text",
     copy_video: bool = True,
+    bitrate: str = "192k",
     configured: str | None = None,
     timeout: float = 3600.0,
 ) -> Path:
@@ -902,7 +913,7 @@ def mux_media(
     if subtitles is not None:
         command += ["-map", "2:0"]
     command += ["-c:v", "copy" if copy_video else "libx264"]
-    command += ["-c:a", "aac", "-b:a", "192k"]
+    command += ["-c:a", "aac", "-b:a", bitrate]
     if subtitles is not None:
         command += ["-c:s", subtitle_codec]
         if subtitle_codec == "mov_text":

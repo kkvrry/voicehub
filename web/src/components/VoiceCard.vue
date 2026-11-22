@@ -106,8 +106,7 @@
 // @ts-check
 import { computed } from 'vue'
 import { Pause, Play, Star } from 'lucide-vue-next'
-import { api } from '../api'
-import { store, actions, vocab, say } from '../store'
+import { store, actions, vocab } from '../store'
 import { useSettingsStore } from '../stores/settings'
 import { useAvatarImage } from '../composables/avatar'
 import { avatarFill } from '../composables/avatarColor'
@@ -115,6 +114,7 @@ import CoverImage from './ui/CoverImage.vue'
 import GenderPicker from './ui/GenderPicker.vue'
 import { toneOf } from './ui/tones'
 import { openObjectMenu } from '../composables/contextMenu'
+import { voiceMenuContext } from '../composables/voiceMenu'
 
 const props = defineProps({ voice: { type: Object, required: true } })
 
@@ -167,47 +167,12 @@ async function toggleFavorite() {
   await actions.setPrefs(props.voice, { favorite: !props.voice.favorite })
 }
 
-async function openFolder() {
-  try {
-    await api.revealVoice(props.voice.id)
-  } catch (error) {
-    say(error instanceof Error ? error.message : String(error))
-  }
-}
-
-function pickAvatar() {
-  store.avatarPick = props.voice
-}
-
-async function toggleHidden() {
-  await actions.setPrefs(props.voice, { hidden: !props.voice.hidden })
-}
-
-async function remove() {
-  const where = props.voice.is_local ? `\n\n${props.voice.folder}` : ''
-  const ok = window.confirm(`移除「${props.voice.shown_name}」？${where}`)
-  if (!ok) return
-  await actions.removeVoice(props.voice)
-}
-
 /** 右键只放详情卡里的管理动作：收藏、播放与开卡在卡上都已各有一颗可点的控件。 */
 /** @param {MouseEvent} event */
 function openMenu(event) {
   openObjectMenu(
     'voice.card',
-    {
-      name: props.voice.shown_name,
-      folder: props.voice.folder || '',
-      isLocal: Boolean(props.voice.is_local),
-      avatarGenerated: Boolean(props.voice.avatar_generated),
-      hidden: Boolean(props.voice.hidden),
-      sampleCount: Number(props.voice.sample_count) || 0,
-      playAll: () => actions.playAllSamples(props.voice),
-      openFolder,
-      pickAvatar,
-      toggleHidden,
-      remove,
-    },
+    voiceMenuContext(props.voice, { open }),
     { event }
   )
 }

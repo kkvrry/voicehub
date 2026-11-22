@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -24,6 +25,7 @@ __all__ = [
     "ass_text",
     "lrc_text",
     "lrc_time",
+    "parse_subtitles",
     "split_cues",
     "split_subtitle_text",
     "srt_text",
@@ -32,6 +34,14 @@ __all__ = [
     "vtt_text",
     "write_subtitles",
 ]
+
+#: 一条时间码行：SRT 用逗号，VTT 用点；两侧允许带 VTT 的 cue 设置。
+_TIME_LINE = re.compile(
+    r"^\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->\s*"
+    r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})"
+)
+#: VTT 的内联标记：``<v 角色>`` / ``<i>`` / 内联时间戳。进正文只会被念出来。
+_VTT_TAG = re.compile(r"<[^>]*>")
 
 #: 一条字幕最多多少字：再长在手机与车机上会溢出。
 SUBTITLE_MAX_CHARS = 32
@@ -120,6 +130,58 @@ def split_cues(
             stop = end if index == len(parts) - 1 else cursor + span
             out.append((cursor, stop, part))
             cursor = stop
+    return out
+
+
+def _seconds(hours: str, minutes: str, seconds: str, millis: str) -> float:
+    # 毫秒位允许 1–3 位：``0:00:01.5`` 在 VTT 里就是 500 毫秒。
+    fraction = int(millis.ljust(3, "0")[:3]) / 1000.0
+    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + fraction
+
+
+def parse_subtitles(text: str) -> list[tuple[float, float, str]]:
+    """SRT / VTT → ``(起, 止, 文本)``。认不出时间码的行留在上一条文本里。
+
+    导入现成字幕是配音项目最常见的起点之一：源片已有字幕时，重新识别一遍
+    只会把已经校对好的断句再打散。这里只管时间码与文本：VTT 的 ``<v 角色>``
+    等内联标记去掉，角色不替用户猜，导入后由用户在行内改。
+    """
+    body = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    lines = body.split("\n")
+    out: list[tuple[float, float, str]] = []
+    current: tuple[float, float, list[str]] | None = None
+
+    def flush() -> None:
+        nonlocal current
+        if current is None:
+            return
+        start, end, parts = current
+        # VTT 的内联标记（<v 角色>、<i>、内联时间戳）与 HTML 实体都不该被念出来。
+        content = html.unescape(_VTT_TAG.sub("", "\n".join(parts))).strip()
+        # VTT 的 NOTE / STYLE / REGION 块没有时间码，会自然落到这里；空文本丢弃。
+        if content and end > start:
+            out.append((start, end, content))
+        current = None
+
+    for line in lines:
+        match = _TIME_LINE.match(line)
+        if match:
+            flush()
+            start = _seconds(*match.group(1, 2, 3, 4))
+            end = _seconds(*match.group(5, 6, 7, 8))
+            current = (start, end, [])
+            continue
+        if current is None:
+            continue
+        if not line.strip():
+            flush()
+            continue
+        parts = current[2]
+        # 序号行不属于正文：只在文本还空着时出现。
+        if not parts and line.strip().isdigit():
+            continue
+        parts.append(line)
+    flush()
     return out
 
 

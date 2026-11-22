@@ -10,7 +10,7 @@ import pytest
 from app.infra import ffmpeg
 from app.infra.sidecar import read_sidecar
 from app.producers.base import ProducerError
-from app.producers.builtin.voiceclean import client
+from app.producers.builtin.audiocpp import tasks as audiocpp_tasks
 from app.producers.builtin.voiceclean.service import VoiceCleanService, _Item, _Job
 from app.producers.builtin.voiceclean.settings import VoiceCleanSettings
 
@@ -440,16 +440,33 @@ class TestClient:
         vocal = base64.b64encode(b"RIFF" + b"\0" * 300).decode()
         other = base64.b64encode(b"RIFF" + b"\1" * 300).decode()
         payload = {"artifacts": [{"kind": "accompaniment", "audio": other}, {"kind": "vocals", "audio": vocal}]}
-        assert client._audio_in(payload) == b"RIFF" + b"\0" * 300
+        assert audiocpp_tasks._audio_in(payload) == b"RIFF" + b"\0" * 300
+
+    def test_named_outputs_keep_vocal_and_accompaniment(self):
+        vocal = base64.b64encode(b"RIFF" + b"\0" * 300).decode()
+        other = base64.b64encode(b"RIFF" + b"\1" * 300).decode()
+        payload = {
+            # 顶层 audio 是其中一路的重复：不能把它当成第三路，否则伴奏会被多算一遍。
+            "audio": vocal,
+            "named_audio_outputs": [
+                {"id": "vocals", "audio": vocal},
+                {"id": "accompaniment", "audio": other},
+            ],
+        }
+        found = audiocpp_tasks.outputs_of(payload)
+        assert list(found) == ["vocals", "accompaniment"]
+        assert audiocpp_tasks.vocal_name(found) == "vocals"
 
     def test_audio_wrapped_result(self):
         raw = base64.b64encode(b"RIFF" + b"\2" * 300).decode()
-        assert client._audio_in({"result": {"audio": f"data:audio/wav;base64,{raw}"}}) == b"RIFF" + b"\2" * 300
+        assert audiocpp_tasks._audio_in(
+            {"result": {"audio": f"data:audio/wav;base64,{raw}"}}
+        ) == b"RIFF" + b"\2" * 300
 
     def test_missing_audio_names_fields(self):
         with pytest.raises(ProducerError, match="没有音频"):
             payload = {"result": {"text": "hi"}}
-            assert client._audio_in(payload) is None
+            assert audiocpp_tasks._audio_in(payload) is None
             raise ProducerError("模型返回里没有音频（响应字段：result）")
 
 

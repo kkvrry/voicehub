@@ -66,6 +66,9 @@ class AssemblyOptions:
 
     fit: bool = True
     max_speed: float = 1.35
+    #: 按每一段自己的 ``end_ms`` 算可用的时隙。有声书按下一段起点算（把段间空隙
+    #: 也算进上一段），配音要按原句的收尾算——不然配音会越过原句、盖住下一句。
+    fit_to_slot: bool = False
     #: 中间件统一 PCM，避免每段各自解码成浮点。
     codec: str = "pcm_s16le"
     #: 拼装输出的采样率与声道数（人声轨恒为单声道，混音阶段再展宽）。
@@ -99,8 +102,14 @@ def _concat_line(path: Path) -> str:
     return "file '" + text.replace("'", "'\\''") + "'"
 
 
-def _slot_end(slots: Sequence[Slot], index: int) -> int:
-    """这一段能用到哪：下一段的起点；最后一段用它自己的 ``end_ms``（0 表示未知）。"""
+def _slot_end(slots: Sequence[Slot], index: int, *, own_end: bool = False) -> int:
+    """这一段能用到哪：下一段的起点；最后一段用它自己的 ``end_ms``（0 表示未知）。
+
+    ``own_end`` 为真时每段都用自己的 ``end_ms``：配音要按原句收尾贴齐，
+    不能把下一句之前的空隙也吃进来。
+    """
+    if own_end and int(slots[index].end_ms) > int(slots[index].start_ms):
+        return max(0, int(slots[index].end_ms))
     if index + 1 < len(slots):
         return max(0, int(slots[index + 1].start_ms))
     return max(0, int(slots[index].end_ms))
@@ -137,6 +146,8 @@ def _silence_file(
         command,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         creationflags=CREATE_NO_WINDOW,
     )
@@ -185,6 +196,8 @@ def _speed_file(
         command,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         creationflags=CREATE_NO_WINDOW,
     )
@@ -252,7 +265,7 @@ def plan_timeline(
             raise AssemblyError(f"第 {slot.ordinal} 段的音频读不出时长：{path.name}")
 
         if opts.fit:
-            space = _slot_end(slots, index) - max(cursor, start)
+            space = _slot_end(slots, index, own_end=opts.fit_to_slot) - max(cursor, start)
             need = duration / (space / 1000) if space > 0 else 0.0
             if MIN_GAIN < need <= max_speed:
                 path = _speed_file(binary, work_dir, slot, path, need, opts)
@@ -328,6 +341,8 @@ def concat_audio(
         command,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         creationflags=CREATE_NO_WINDOW,
     )
@@ -392,6 +407,8 @@ def mix_tracks(
         command,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         creationflags=CREATE_NO_WINDOW,
     )

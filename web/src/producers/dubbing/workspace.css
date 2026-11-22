@@ -1,4 +1,6 @@
-.dub button {
+/* 工作区里的裸按钮退回文字样式；用 :where() 保持零特异性，
+   这样 `.sh-btn` / `.pick-box` / `.rbtn` 自己的外观不会在这里被压掉。 */
+:where(.dub) :where(button) {
   border: 0;
   padding: 0;
   background: none;
@@ -55,4 +57,10 @@
 .dub-mini:hover {
   background: var(--sh-chip);
   color: var(--sh-accent);
+}
+
+/* 拖动分隔条时整页都是"正在调高度"的手型，指针滑出那条缝也不会变回箭头。 */
+body.is-row-resizing {
+  cursor: row-resize;
+  user-select: none;
 }

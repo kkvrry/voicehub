@@ -88,13 +88,21 @@ class DubbingSettings(BaseModel):
         ),
         json_schema_extra=ui_hints("最长段（秒）", widget="number", group=GROUP_SPLIT),
     )
+    speaker_diar: bool = Field(
+        default=False,
+        description=(
+            "转录后按说话人分离给每个说话人建一个角色，段落自动挂到角色上；"
+            "需要 audio.cpp 装了说话人分离模型（diar）并在运行，没有就跳过。"
+        ),
+        json_schema_extra=ui_hints("说话人分离", widget="switch", group=GROUP_SPLIT),
+    )
 
     # ---- 合成与贴齐 -------------------------------------------------------
     fit: bool = Field(
         default=True,
         description=(
-            "长过时隙的段先加速再放，贴得进去就不算顺延。只加速、不拉长："
-            "字幕时隙通常比语音长。"
+            "长过时隙的段先加速再放，贴得进去就不算顺延；超过最大倍率仍贴不进去的"
+            "按原句时隙截断，不越过下一段。关闭后不加速，长段仍会截断。"
         ),
         json_schema_extra=ui_hints("变速贴齐", widget="switch", group=GROUP_SYNTH),
     )

@@ -18,16 +18,23 @@ document.body.appendChild(el)
  *  `voice` 是这条音频属于哪个音色（可空）：带上它，播放条上的「收藏」「指定」
  *  才知道说的是谁；行音频、章节成品、合成结果不属于任何音色，不带。 */
 /**
- * @param {{ url?: string, label?: string, sub?: string, voice?: any }} [item]
- * @returns {{ url: string, label: string, sub: string, voice: any }}
+ * @param {{ url?: string, label?: string, sub?: string, voice?: any, start?: number, end?: number }} [item]
+ * @returns {{ url: string, label: string, sub: string, voice: any, start: number, end: number }}
  */
 function track(item = {}) {
   const url = String(item.url || '')
+  const start = Number(item.start)
+  const end = Number(item.end)
+  const startAt = Number.isFinite(start) && start > 0 ? start : 0
   return {
     url,
     label: item.label || decodeURIComponent(url.split('/').pop() || ''),
     sub: item.sub || '',
     voice: item.voice || null,
+    // 一段曲目可以只放整条音频里的 `[start, end)`：成片试听里的原声段
+    // 就是源音轨的一段，没必要为每一段切一个临时文件。
+    start: startAt,
+    end: Number.isFinite(end) && end > startAt ? end : 0,
   }
 }
 
@@ -51,13 +58,48 @@ function set(patch) {
   Object.assign(store.player, patch)
 }
 
+/** 当前曲目截取的起止（秒）。`end > start` 时只放这一段。 */
+let rangeStart = 0
+let rangeEnd = 0
+/** 段尾已经处理过：高频检查与 `timeupdate` 都会到这里，避免连续跳下一条。 */
+let rangeGuard = false
+/** 截取段的段尾检查。`timeupdate` 约 4Hz，按它停会多放一二百毫秒；
+ *  只在对白段试听时开一个 25ms 的定时器，停得干净。 */
+let rangeTimer = 0
+
+/** 当前曲目。取的是开播那一刻的快照，队列不会被列表重画改掉。 */
+function currentItem() {
+  return store.player.queue[store.player.index]
+}
+
+function unwatchRange() {
+  if (rangeTimer) {
+    window.clearInterval(rangeTimer)
+    rangeTimer = 0
+  }
+}
+
+/** 截取段播放时开一个短周期检查：段尾精确到 25ms 左右，不靠 4Hz 的 timeupdate。 */
+function watchRange() {
+  if (rangeTimer || !(rangeEnd > rangeStart)) return
+  rangeTimer = window.setInterval(() => {
+    if (!store.player.playing) return
+    if (el.currentTime < rangeEnd - 0.01) return
+    if (rangeGuard) return
+    rangeGuard = true
+    el.pause()
+    advance()
+  }, 25)
+}
+
 /** 播放条逐帧绘制用的实时进度（0–1）。
  *  `timeupdate` 只有约 4Hz，直接拿它画整块底色会一段一段往前跳；
  *  这里直接读隐藏 `<audio>` 的当前时间，由组件在每帧取一次。 */
 export function liveFraction() {
-  const duration = Number(el.duration)
+  const start = rangeStart
+  const duration = rangeEnd > start ? rangeEnd - start : Number(el.duration)
   if (!Number.isFinite(duration) || duration <= 0) return 0
-  return Math.min(1, Math.max(0, el.currentTime / duration))
+  return Math.min(1, Math.max(0, (el.currentTime - start) / duration))
 }
 
 /** 起播点（0–1 的比例）：换源那一瞬 `duration` 还是 NaN，换算不成秒，只能挂着
@@ -75,6 +117,10 @@ function load(index, frac = 0) {
     stop()
     return
   }
+  unwatchRange()
+  rangeStart = Number(item.start) || 0
+  rangeEnd = Number(item.end) > rangeStart ? Number(item.end) : 0
+  rangeGuard = false
   set({
     index,
     url: item.url,
@@ -238,6 +284,12 @@ export function togglePlay() {
 export function seek(seconds) {
   const target = Number(seconds)
   if (!Number.isFinite(target)) return
+  if (rangeEnd > rangeStart) {
+    const inside = Math.min(Math.max(target, 0), rangeEnd - rangeStart)
+    el.currentTime = rangeStart + inside
+    set({ position: inside })
+    return
+  }
   el.currentTime = Math.min(Math.max(target, 0), el.duration || target)
   set({ position: el.currentTime })
 }
@@ -248,8 +300,9 @@ export function seek(seconds) {
 export function seekFraction(frac) {
   if (!store.player.url) return
   const ratio = Math.min(Math.max(Number(frac) || 0, 0), 1)
-  if (Number.isFinite(el.duration) && el.duration > 0) {
-    seek(ratio * el.duration)
+  const duration = rangeEnd > rangeStart ? rangeEnd - rangeStart : Number(el.duration)
+  if (Number.isFinite(duration) && duration > 0) {
+    seek(ratio * duration)
     return
   }
   pendingFrac = ratio
@@ -264,24 +317,80 @@ export function prevTrack() {
   if (store.player.index > 0) load(store.player.index - 1)
 }
 
+/** 一条放完（自然结束或到了截取段尾）接到下一条；手动队列停在当前这条。 */
+function advance() {
+  if (store.player.manual) {
+    set({ playing: false, position: store.player.duration || store.player.position })
+    return
+  }
+  if (store.player.index + 1 < store.player.queue.length) {
+    load(store.player.index + 1)
+    return
+  }
+  stop()
+}
+
 /** 关掉播放条：停声、清空队列与标题。不重置 `<audio>.src`——清 src 会触发一次
  *  error 事件，那句"加载失败"会挂在已被关掉的播放条上。 */
 export function stop() {
   el.pause()
+  unwatchRange()
+  rangeStart = 0
+  rangeEnd = 0
+  rangeGuard = false
   set({
     url: '', label: '', sub: '', queue: [], index: 0, manual: false,
     playing: false, position: 0, duration: 0, error: '',
   })
 }
 
-el.addEventListener('play', () => set({ playing: true, error: '' }))
-el.addEventListener('pause', () => set({ playing: false }))
-el.addEventListener('timeupdate', () => set({ position: el.currentTime }))
-el.addEventListener('durationchange', () =>
-  set({ duration: Number.isFinite(el.duration) ? el.duration : 0 })
-)
+el.addEventListener('play', () => {
+  set({ playing: true, error: '' })
+  watchRange()
+})
+el.addEventListener('pause', () => {
+  set({ playing: false })
+  unwatchRange()
+})
+el.addEventListener('timeupdate', () => {
+  const item = currentItem()
+  const start = Number(item?.start) || 0
+  const end = Number(item?.end) || 0
+  if (end > start) {
+    if (el.currentTime >= end - 0.03) {
+      if (!rangeGuard) {
+        rangeGuard = true
+        el.pause()
+        advance()
+      }
+      return
+    }
+    set({ position: Math.max(0, el.currentTime - start) })
+    return
+  }
+  set({ position: el.currentTime })
+})
+el.addEventListener('durationchange', () => {
+  const item = currentItem()
+  const start = Number(item?.start) || 0
+  const end = Number(item?.end) || 0
+  set({
+    duration:
+      end > start ? end - start : Number.isFinite(el.duration) ? el.duration : 0,
+  })
+})
 // 换源时挂着的起播点：元数据到了才知道总长，比例这时才换得成秒。
 el.addEventListener('loadedmetadata', () => {
+  const item = currentItem()
+  const start = Number(item?.start) || 0
+  const end = Number(item?.end) || 0
+  if (end > start) {
+    rangeStart = start
+    rangeEnd = end
+    if (Number.isFinite(el.duration) && el.duration > start) el.currentTime = start
+    set({ duration: end - start, position: 0 })
+    return
+  }
   if (!pendingFrac) return
   const ratio = pendingFrac
   pendingFrac = 0
@@ -289,21 +398,10 @@ el.addEventListener('loadedmetadata', () => {
 })
 // 放完接下一段：这就是「全部试听」的全部实现。
 // 手动队列（头像试听该音色的样例）不续播：停在当前这条，让用户自己点上/下一段。
-el.addEventListener('ended', () => {
-  if (store.player.manual) {
-    set({ playing: false, position: el.duration || store.player.position })
-    return
-  }
-  if (store.player.index + 1 < store.player.queue.length) {
-    load(store.player.index + 1)
-    return
-  }
-  // 最后一段放完就收起播放条：它是悬浮的，放完了还赖在内容上会挡住卡片。
-  // 想再听点一次卡片即可，不需要留一条停在 00:00 的空条。
-  stop()
-})
+el.addEventListener('ended', () => advance())
 el.addEventListener('error', () => {
   // 没有 src 时（stop() 之后）也会走到这里，那不是错误。
   if (!store.player.url) return
+  unwatchRange()
   set({ playing: false, error: '这段音频加载失败（文件被移走或格式不支持）' })
 })

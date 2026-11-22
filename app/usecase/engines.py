@@ -54,6 +54,7 @@ __all__ = [
     "clone_voice",
     "enabled_keys",
     "engine_entries",
+    "engine_identity",
     "engine_settings",
     "engine_voices",
     "is_enabled",
@@ -265,6 +266,29 @@ def _stored(engine: EnginePlugin | AsrEngine) -> dict[str, Any]:
 def settings_for(engine: EnginePlugin) -> BaseModel:
     """这台插件实例的当前配置。认实例不认 key：便于测试注入自定义引擎。"""
     return _tolerant(engine.settings_schema(), _stored(engine))
+
+
+def engine_identity(engine: EnginePlugin | None) -> str:
+    """引擎侧"换了这个就该重做"的身份：插件版本 + 模型 / 后端（有就带上）。
+
+    并发、超时、目录这些设置**不进**身份：它们不改变声音，进去只会让整本书
+    白白重做。字段名是跨引擎的常识名（各家设置模型里叫 model / backend 的那个），
+    拿不到就只按插件版本算。合成缓存键共用这一处，生产方不再各写一份。
+    """
+    if engine is None:
+        return ""
+    try:
+        cfg = settings_for(engine)
+    except Exception:  # noqa: BLE001 - 读不出配置不该挡住生成计划
+        cfg = None
+    model = ""
+    for name in ("model", "model_id", "model_name", "backend"):
+        value = getattr(cfg, name, "") if cfg is not None else ""
+        if isinstance(value, str) and value.strip():
+            model = value.strip()
+            break
+    version = str(getattr(engine, "version", "") or "")
+    return f"{version}|{model}" if model else version
 
 
 def engine_settings(key: str) -> tuple[EnginePlugin, BaseModel]:

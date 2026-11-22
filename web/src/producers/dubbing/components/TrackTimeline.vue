@@ -14,17 +14,27 @@
 
     <div class="tl-lanes" @click="onLaneClick">
       <div class="tl-lane">
-        <span class="tl-label">原声</span>
+        <span class="tl-label">{{ stemReady ? '原声人声' : '原声' }}</span>
         <div class="tl-track">
           <div v-if="originalUrl" class="tl-clip" :class="{ mute: muted }">
-            <span class="tl-note">{{ muted ? '静音（已重配）' : projectLabel }}</span>
+            <span class="tl-note">{{ muted ? '静音' : projectLabel }}</span>
           </div>
           <span v-else class="tl-note is-empty">还没有抽出音轨</span>
         </div>
       </div>
 
+      <!-- 分轨后伴奏是独立一条轨：配音段只静音原声人声，这一条继续走。 -->
+      <div v-if="stemReady" class="tl-lane">
+        <span class="tl-label">伴奏</span>
+        <div class="tl-track">
+          <div class="tl-clip is-bed" :class="{ mute: accompanimentMuted }">
+            <span class="tl-note">{{ accompanimentMuted ? '静音' : '全程保留' }}</span>
+          </div>
+        </div>
+      </div>
+
       <div class="tl-lane">
-        <span class="tl-label">配音</span>
+        <span class="tl-label">段落</span>
         <div class="tl-track" ref="cueLaneEl">
           <canvas ref="canvasEl" class="tl-canvas"></canvas>
           <span v-if="!cues.length" class="tl-note is-empty">未转录</span>
@@ -35,7 +45,9 @@
         <span class="tl-label">成品</span>
         <div class="tl-track">
           <div v-if="mixUrl" class="tl-clip is-mix">
-            <span class="tl-note">已贴齐并混音</span>
+            <span class="tl-note">
+              {{ state.detail?.paths?.mix_current ? '已贴齐并混音' : '上一版混音（有改动）' }}
+            </span>
           </div>
           <span v-else class="tl-note is-empty">未混音</span>
         </div>
@@ -52,6 +64,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { cues, mixReady, project, roleOf, state } from '../store'
 import { mediaUrl } from '../api'
+import { avatarColor } from '../../../composables/avatarColor'
 
 const emit = defineEmits(['seek', 'select'])
 
@@ -68,6 +81,10 @@ const playheadPx = computed(() => {
 const originalUrl = computed(() => (project.value ? mediaUrl(project.value.id, 'original') : ''))
 const mixUrl = computed(() => (mixReady.value ? mediaUrl(project.value.id, 'mix') : ''))
 const muted = computed(() => Number(project.value?.options?.original_gain ?? -60) <= -60)
+const stemReady = computed(() => Boolean(state.detail?.separation?.ready))
+const accompanimentMuted = computed(
+  () => Number(project.value?.options?.accompaniment_gain ?? 0) <= -60
+)
 const projectLabel = computed(() =>
   project.value?.kind === 'video' ? '视频音轨' : project.value?.source_name || '源音频'
 )
@@ -108,18 +125,28 @@ function draw() {
   if (!ctx) return
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, w, h)
-  // canvas 不认 CSS 变量：没有配色的角色退回当前主题的强调色。
-  const fallback =
-    getComputedStyle(canvas).getPropertyValue('--sh-accent').trim() || '#2f7bff'
+  // canvas 不认 CSS 变量：角色色按名字散列（与无封面头像同一份算法），
+  // 取不到角色时退回当前主题的强调色。
+  const styles = getComputedStyle(canvas)
+  const accent = styles.getPropertyValue('--sh-accent').trim() || styles.color
+  // 保留原声的段画成灰：这条色带要一眼看出「哪些位置会被替换」。
+  const quiet = styles.getPropertyValue('--sh-text-4').trim() || styles.color
   const total = duration.value || 1
   const band = Math.max(8, h - 14)
   const top = (h - band) / 2
   for (const cue of cues.value) {
     const x = (cue.start_ms / 1000 / total) * w
     const cw = Math.max(1, ((cue.end_ms - cue.start_ms) / 1000 / total) * w - 0.6)
-    ctx.fillStyle = roleOf(cue)?.color || fallback
+    const role = cue.dub ? roleOf(cue) : null
+    ctx.fillStyle = !cue.dub ? quiet : role ? avatarColor(role.name) : accent
     // 没有产物的段压暗：色带同时表示"这一段是谁"和"有没有配音"。
-    ctx.globalAlpha = cue.state === 'ready' ? 0.82 : cue.state === 'failed' ? 0.35 : 0.45
+    ctx.globalAlpha = cue.dub
+      ? cue.state === 'ready'
+        ? 0.82
+        : cue.state === 'failed'
+          ? 0.35
+          : 0.45
+      : 0.28
     ctx.fillRect(x, top, cw, band)
   }
   ctx.globalAlpha = 1
@@ -173,7 +200,7 @@ function onLaneClick(event) {
   position: absolute;
   top: 0;
   transform: translateX(-50%);
-  font-family: var(--sh-mono, ui-monospace, monospace);
+  font-family: var(--sh-mono);
   font-size: 10px;
   color: var(--sh-text-4);
 }
@@ -237,6 +264,12 @@ function onLaneClick(event) {
   background: var(--sh-ok-soft);
   border-color: transparent;
   color: var(--sh-ok);
+}
+
+.tl-clip.is-bed {
+  background: var(--sh-chip);
+  border-color: var(--sh-line);
+  color: var(--sh-text-3);
 }
 
 .tl-note {

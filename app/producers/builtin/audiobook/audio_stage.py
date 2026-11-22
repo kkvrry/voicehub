@@ -62,26 +62,13 @@ _CANCEL_POLL_S = 0.2
 
 
 def voice_identity(engine: Any) -> str:
-    """引擎侧"换了这个就该重做"的身份：插件版本 + 模型 / 后端（有就带上）。
+    """引擎身份的唯一实现在 :func:`app.usecase.engines.engine_identity`。
 
-    并发、超时、目录这些设置**不进**身份：它们不改变声音，进去只会让整本书白白
-    重做。字段名是跨引擎的常识名（各家设置模型里叫 model / backend 的那个），
-    拿不到就只按插件版本算。
+    创作页与配音共用同一判据：插件版本 + 模型 / 后端，拿不到就只按版本算。
     """
-    from app.usecase import engines as engines_uc
+    from app.usecase.engines import engine_identity
 
-    try:
-        cfg = engines_uc.settings_for(engine)
-    except Exception:  # noqa: BLE001 - 读不出配置不该挡住生成计划
-        cfg = None
-    model = ""
-    for name in ("model", "model_id", "model_name", "backend"):
-        value = getattr(cfg, name, "") if cfg is not None else ""
-        if isinstance(value, str) and value.strip():
-            model = value.strip()
-            break
-    version = str(getattr(engine, "version", "") or "")
-    return f"{version}|{model}" if model else version
+    return engine_identity(engine)
 
 
 def row_key(
