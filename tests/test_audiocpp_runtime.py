@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import socket
 import time
 from pathlib import Path
 from typing import Any
@@ -521,6 +522,47 @@ def test_modelscope_requires_the_python_manager(service: rt.RuntimeService) -> N
 def test_mirror_rejects_unknown(service: rt.RuntimeService) -> None:
     with pytest.raises(ProducerError, match="下载镜像"):
         service.settings(mirror="nope")
+
+
+# --------------------------------------------------------------------------- #
+# 下载器环境：失效的本地代理
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture()
+def _clear_proxies(monkeypatch: pytest.MonkeyPatch):
+    for key in rt._PROXY_KEYS:
+        monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv(key.upper(), raising=False)
+
+
+def _proxy_of(env: dict[str, str], name: str) -> str | None:
+    """Windows 的 ``os.environ`` 会把键规范成大写，取值也不分大小写。"""
+    return next((value for key, value in env.items() if key.lower() == name), None)
+
+
+def test_downloader_drops_a_dead_loopback_proxy(_clear_proxies, monkeypatch) -> None:
+    """Clash 关掉后 http_proxy 还在：下载器连过去就是 10061，必须摘掉。"""
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTPS_PROXY", "127.0.0.1:9")
+    env = rt._download_env()
+    assert _proxy_of(env, "http_proxy") is None
+    assert _proxy_of(env, "https_proxy") is None
+
+
+def test_downloader_keeps_a_live_loopback_proxy(_clear_proxies, monkeypatch) -> None:
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+        monkeypatch.setenv("https_proxy", f"http://127.0.0.1:{port}")
+        assert _proxy_of(rt._download_env(), "https_proxy") == f"http://127.0.0.1:{port}"
+
+
+def test_downloader_keeps_a_remote_proxy(_clear_proxies, monkeypatch) -> None:
+    """远程代理连不上可能只是网络暂时不通，不替用户摘掉。"""
+    monkeypatch.setenv("http_proxy", "http://10.0.0.1:3128")
+    assert _proxy_of(rt._download_env(), "http_proxy") == "http://10.0.0.1:3128"
 
 
 def test_settings_rejects_unknown_backend(service: rt.RuntimeService) -> None:

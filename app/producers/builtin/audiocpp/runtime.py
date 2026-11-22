@@ -21,6 +21,7 @@ import contextlib
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -64,6 +65,19 @@ _MODELSCOPE_REPO = "HereIsMark/audio.cpp-gguf"
 _MANAGER_REL = Path("tools") / "model_manager_v2.py"
 _CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
+#: 下载器子进程继承宿主的环境变量。一条**失效的本地代理**（例如 Clash 关掉后
+#: ``http_proxy`` 还留在环境里）会让 urllib 每次去连那个端口，报
+#: ``WinError 10061``，模型一个字节都下不来。回环地址上的代理必然是本机软件：
+#: 端口没人听就说明它没开，摘掉这几格让下载器直连（ModelScope 国内可直连）。
+#:
+#: 只存小写：Windows 的 ``os.environ`` 大小写不敏感，写进去的键会被规范成大写。
+_PROXY_KEYS = frozenset(
+    {"http_proxy", "https_proxy", "all_proxy"}
+)
+
+#: 代理地址是回环时，判"还在不在"用的连接超时（秒）。
+_PROXY_PROBE_TIMEOUT = 0.3
+
 #: 持久化结构版本。v5：实例改由引擎设置推导，不再存一份写死的端口表。
 _SCHEMA = 5
 #: 扫描到但没人配过端口的模型：从这一段里挑空闲端口，分配结果写进 ``auto_ports``。
@@ -101,6 +115,37 @@ def _port_of_url(url: str) -> int:
         return int(urlparse(url).port or 0)
     except ValueError:
         return 0
+
+
+def _local_proxy_down(raw: str) -> bool:
+    """代理地址是回环、且那个端口没人监听 → ``True``；非回环地址一律当有效。
+
+    只判回环：远程代理连不上可能是网络暂时不通，替用户摘掉会更糟。
+    """
+    try:
+        parsed = urlparse(raw if "://" in raw else f"http://{raw}")
+        host = (parsed.hostname or "").lower()
+        port = parsed.port or 80
+    except ValueError:
+        return False
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        return False
+    try:
+        with socket.create_connection((host, port), timeout=_PROXY_PROBE_TIMEOUT):
+            return False
+    except OSError:
+        return True
+
+
+def _download_env() -> dict[str, str]:
+    """下载器子进程的环境：清掉指向已关闭本地代理的那几格，其余照继承。"""
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    for key in [name for name in env if name.lower() in _PROXY_KEYS]:
+        raw = env[key].strip()
+        if raw and _local_proxy_down(raw):
+            env.pop(key, None)
+            CHANNEL.info(f"下载器忽略失效的本地代理 {key}={raw}", source="audiocpp")
+    return env
 
 
 def _family_for(engine_key: str, known: set[str]) -> str:
@@ -920,7 +965,7 @@ class RuntimeService:
                 errors="replace",
                 bufsize=1,
                 creationflags=_CREATE_NO_WINDOW,
-                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+                env=_download_env(),
             )
         except OSError as exc:
             with self._lock:
