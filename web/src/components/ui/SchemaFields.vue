@@ -336,16 +336,19 @@ watch(channelValue, (value, previous) => {
  */
 function describeField(key, spec, required, current) {
   const secret = Boolean(spec.secret)
+  // 可空字段的 ``type`` / ``minimum`` / ``maximum`` 藏在 ``anyOf`` 的非 null
+  // 那一支里；不取出来，数字格会推断成文本框，范围也丢。
+  const core = coreOf(spec)
   const choices = choicesOf(spec, current)
   let widget = spec.widget || ''
   if (!widget) {
     if (choices.length) widget = 'select'
     else if (secret) widget = 'password'
-    else if (spec.type === 'boolean') widget = 'switch'
-    else if (spec.type === 'integer' || spec.type === 'number') widget = 'number'
+    else if (core.type === 'boolean') widget = 'switch'
+    else if (core.type === 'integer' || core.type === 'number') widget = 'number'
     else widget = 'text'
   }
-  const type = spec.type === 'integer' ? 'number' : spec.type
+  const type = core.type === 'integer' ? 'number' : core.type
   return {
     key,
     // 标签顺序：插件声明的说法 → pydantic 生成的标题 → 字段名本身（兜底）。
@@ -355,8 +358,8 @@ function describeField(key, spec, required, current) {
     secret,
     required,
     type,
-    min: spec.minimum,
-    max: spec.maximum,
+    min: core.minimum,
+    max: core.maximum,
     step: type === 'number' ? 'any' : undefined,
     choices,
     dependsOn: spec.depends_on || '',
@@ -368,6 +371,22 @@ function describeField(key, spec, required, current) {
     // 长文本与模型下拉独占一行：挤在半栏里读不全候选名。
     wide: widget === 'textarea' || widget === 'llm_model',
   }
+}
+
+/**
+ * 一个字段声明里真正描述取值的那一层：自身带 ``type`` 就是它，
+ * 否则取 ``anyOf`` 里第一个非 null 的分支（pydantic 的 ``X | None``）。
+ *
+ * @param {any} spec
+ */
+function coreOf(spec) {
+  if (spec.type) return spec
+  const branches = Array.isArray(spec.anyOf) ? spec.anyOf : []
+  return (
+    branches.find(
+      /** @param {any} branch */ (branch) => branch && branch.type && branch.type !== 'null'
+    ) || spec
+  )
 }
 
 /**

@@ -18,6 +18,9 @@ from app.llm.base import ChatMessage, ChatRequest, LlmError
 from app.llm.builtin.deepseek.client import endpoint, read_error
 from app.llm.builtin.deepseek.plugin import DeepseekProvider
 from app.llm.builtin.deepseek.settings import DeepseekSettings
+from app.llm.builtin.lmstudio.client import read_error as lmstudio_read_error
+from app.llm.builtin.lmstudio.plugin import LmStudioProvider
+from app.llm.builtin.lmstudio.settings import FOLLOW_LM_STUDIO, LmStudioSettings
 from app.llm.registry import detect_provider, list_providers
 from app.usecase.llm import LlmConfigError, _request, require_provider
 
@@ -333,6 +336,126 @@ def test_error_mapping_separates_auth_from_quota() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# LM Studio（本机，OpenAI 兼容，模型默认留空）
+# --------------------------------------------------------------------------- #
+
+
+def test_builtin_lmstudio_is_discovered() -> None:
+    providers = list_providers()
+    assert "lmstudio" in providers
+    assert providers["lmstudio"].label == "LM Studio"
+
+
+def test_lmstudio_defaults_to_the_loaded_model() -> None:
+    """``model`` 默认不填：本机模型随用户下载变化，写死一个名字只会得到 404。"""
+    settings = LmStudioSettings()
+    assert settings.model == ""
+    data = LmStudioProvider().describe(settings)
+    assert data["kind"] == "local"
+    assert data["capabilities"]["model_listing"] is True
+    assert data["capabilities"]["json_schema"] is True
+    assert data["settings_schema"]["properties"]["model"]["default"] == ""
+    assert data["settings_schema"]["properties"]["model"]["placeholder"] == (
+        "留空 = 当前已加载的模型"
+    )
+
+
+def test_lmstudio_root_accepts_site_root_or_v1() -> None:
+    assert LmStudioSettings().root == "http://127.0.0.1:1234/v1"
+    assert LmStudioSettings(base_url="http://127.0.0.1:1234").root == (
+        "http://127.0.0.1:1234/v1"
+    )
+    assert LmStudioSettings(base_url="http://127.0.0.1:1234/v1/").root == (
+        "http://127.0.0.1:1234/v1"
+    )
+    assert LmStudioSettings(base_url="127.0.0.1:1234").root == "http://127.0.0.1:1234/v1"
+
+
+def test_lmstudio_body_keeps_schema_and_tools() -> None:
+    """字段级 Schema 包成 OpenAI 整包；工具按原样下发，没写 tool_choice 时交给模型。"""
+    tool = {"type": "function", "function": {"name": "search_web"}}
+    req = _req(
+        tools=(tool,),
+        json_schema={"type": "object", "properties": {"rows": {"type": "array"}}},
+    )
+    body, notes = LmStudioProvider().build_body(LmStudioSettings(), req, "qwen3-8b")
+    assert body["model"] == "qwen3-8b"
+    assert body["response_format"]["type"] == "json_schema"
+    assert body["response_format"]["json_schema"]["schema"]["type"] == "object"
+    assert body["tools"] == [tool]
+    assert body["tool_choice"] == "auto"
+    assert notes == []
+
+
+def test_lmstudio_accepts_a_complete_response_format() -> None:
+    """已经是 OpenAI 同形的整包时不再套一层。"""
+    wrapper = {
+        "type": "json_schema",
+        "json_schema": {"name": "rows", "strict": True, "schema": {"type": "object"}},
+    }
+    body, _ = LmStudioProvider().build_body(
+        LmStudioSettings(), _req(json_schema=wrapper), "qwen3-8b"
+    )
+    assert body["response_format"] == wrapper
+
+
+def test_lmstudio_temperature_zero_is_respected() -> None:
+    body, _ = LmStudioProvider().build_body(
+        LmStudioSettings(temperature=0.7), _req(temperature=0.0), "qwen3-8b"
+    )
+    assert body["temperature"] == 0.0
+
+
+def test_lmstudio_sampling_params_are_opted_in() -> None:
+    """采样参数留空**不发这个键**：跟着 LM Studio 给该模型调好的那套走。"""
+    provider = LmStudioProvider()
+    body, _ = provider.build_body(LmStudioSettings(), _req(), "qwen3-8b")
+    assert not {
+        "top_p",
+        "top_k",
+        "repeat_penalty",
+        "presence_penalty",
+        "frequency_penalty",
+        "seed",
+    } & set(body)
+
+    tuned = LmStudioSettings(
+        top_p=0.9,
+        top_k=40,
+        repeat_penalty=1.05,
+        presence_penalty=0.2,
+        frequency_penalty=-0.1,
+        seed=7,
+    )
+    body, _ = provider.build_body(tuned, _req(), "qwen3-8b")
+    assert body["top_p"] == 0.9
+    assert body["top_k"] == 40
+    assert body["repeat_penalty"] == 1.05
+    assert body["presence_penalty"] == 0.2
+    assert body["frequency_penalty"] == -0.1
+    assert body["seed"] == 7
+
+
+def test_lmstudio_sampling_fields_say_what_empty_means() -> None:
+    """空白的采样格要说清自己代表什么；默认必须是"不发"。"""
+    props = LmStudioProvider().describe(LmStudioSettings())["settings_schema"]["properties"]
+    for key in ("top_p", "top_k", "repeat_penalty", "presence_penalty", "frequency_penalty"):
+        assert props[key]["default"] is None
+        assert props[key]["placeholder"] == FOLLOW_LM_STUDIO
+        assert props[key]["group"] == "采样"
+    assert props["seed"]["default"] is None
+    assert props["seed"]["group"] == "采样"
+
+
+def test_lmstudio_error_mapping() -> None:
+    assert "API Token" in lmstudio_read_error(401, "").reason
+    assert "模型" in lmstudio_read_error(404, "").reason
+    assert lmstudio_read_error(429, "").retryable is True
+    assert lmstudio_read_error(503, "").retryable is True
+    assert lmstudio_read_error(400, "").retryable is False
+
+
+# --------------------------------------------------------------------------- #
 # 走 HTTP：MockTransport
 # --------------------------------------------------------------------------- #
 
@@ -511,6 +634,146 @@ def test_web_search_reply_carries_citations(monkeypatch: pytest.MonkeyPatch) -> 
     assert out.usage["server_tool_use"]["tool_search"] == 1
 
 
+def _lm_reply(text: str = "可用", *, model: str = "qwen3-8b", finish: str = "stop") -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "id": "chatcmpl-local",
+            "object": "chat.completion",
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text},
+                    "finish_reason": finish,
+                }
+            ],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+        },
+    )
+
+
+def test_lmstudio_blank_model_uses_the_loaded_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    """没填模型时不发空 ``model``：先问清单，跳过向量模型，优先已加载的那条。"""
+    sent_models: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/models":
+            return httpx.Response(
+                200,
+                json={
+                    "models": [
+                        {"key": "nomic-embed-text-v1.5", "type": "embedding"},
+                        {
+                            "key": "qwen3-8b",
+                            "type": "llm",
+                            "loaded_instances": [{"id": "qwen3-8b"}],
+                        },
+                    ]
+                },
+            )
+        if request.url.path.endswith("/models"):
+            raise AssertionError(f"不该再走 OpenAI 清单：{request.url.path}")
+        sent_models.append(json.loads(request.content)["model"])
+        return _lm_reply()
+
+    _patch_transport(monkeypatch, handler)
+    out = asyncio.run(LmStudioProvider().chat(LmStudioSettings(), _req()))
+
+    assert sent_models == ["qwen3-8b"]
+    assert out.text == "可用"
+    assert out.model == "qwen3-8b"
+    assert out.usage["total_tokens"] == 5
+
+
+def test_lmstudio_without_a_model_explains_what_to_do(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_transport(monkeypatch, lambda request: httpx.Response(200, json={"data": []}))
+    with pytest.raises(LlmError, match="加载"):
+        asyncio.run(LmStudioProvider().chat(LmStudioSettings(), _req()))
+
+
+def test_lmstudio_token_is_optional_and_sent_when_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """默认不带 ``Authorization``；填了令牌才带上——空 key 拼非法头的问题在云端那边。"""
+    seen = _patch_transport(monkeypatch, lambda request: _lm_reply())
+
+    asyncio.run(LmStudioProvider().chat(LmStudioSettings(model="qwen3-8b"), _req()))
+    assert "authorization" not in seen[0].headers
+
+    asyncio.run(
+        LmStudioProvider().chat(
+            LmStudioSettings(model="qwen3-8b", api_key="lm-token"), _req()
+        )
+    )
+    assert seen[1].headers["Authorization"] == "Bearer lm-token"
+
+
+def test_lmstudio_truncated_empty_reply_is_not_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """思考型模型可能把额度全用在思考上：正文为空但连通正常，不报"空回复"。"""
+    _patch_transport(monkeypatch, lambda request: _lm_reply("", finish="length"))
+    out = asyncio.run(
+        LmStudioProvider().chat(LmStudioSettings(model="qwen3-8b"), _req())
+    )
+    assert out.text == ""
+    assert any("max_tokens" in note for note in out.notes)
+
+
+def test_lmstudio_model_list_skips_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """REST 清单里有向量模型与上下文：向量不列，上下文照它给。"""
+    _patch_transport(
+        monkeypatch,
+        lambda request: httpx.Response(
+            200,
+            json={
+                "models": [
+                    {
+                        "key": "qwen3-8b",
+                        "type": "llm",
+                        "display_name": "Qwen3 8B",
+                        "max_context_length": 32768,
+                        "capabilities": {"vision": False, "reasoning": {"default": "on"}},
+                    },
+                    {"key": "nomic-embed-text-v1.5", "type": "embedding"},
+                ]
+            },
+        ),
+    )
+    listing = asyncio.run(LmStudioProvider().list_models(LmStudioSettings()))
+    assert [item.id for item in listing.items] == ["qwen3-8b"]
+    assert listing.items[0].label == "Qwen3 8B"
+    assert listing.items[0].context == 32768
+    assert listing.items[0].abilities == ("text", "reasoning")
+
+
+def test_lmstudio_falls_back_to_the_openai_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """旧版本没有 REST 清单时不报错：/v1/models 的 id 也够解析与列出。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/api/"):
+            return httpx.Response(404, json={"error": "not found"})
+        return httpx.Response(200, json={"data": [{"id": "qwen3-8b"}]})
+
+    _patch_transport(monkeypatch, handler)
+    listing = asyncio.run(LmStudioProvider().list_models(LmStudioSettings()))
+    assert [item.id for item in listing.items] == ["qwen3-8b"]
+
+
+def test_lmstudio_unreachable_service_says_where_to_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    _patch_transport(monkeypatch, handler)
+    with pytest.raises(LlmError, match="本地服务"):
+        asyncio.run(LmStudioProvider().chat(LmStudioSettings(model="qwen3-8b"), _req()))
+
+
 # --------------------------------------------------------------------------- #
 # API 形状
 # --------------------------------------------------------------------------- #
@@ -549,7 +812,11 @@ def test_clear_removes_the_secret(client) -> None:
 
 
 def test_chat_without_key_is_refused_with_reason(client) -> None:
-    resp = client.post("/api/v1/llm/chat", json={"messages": [{"role": "user", "content": "hi"}]})
+    # 指名 DeepSeek：LM Studio 不需要密钥，会接管"没指定 provider"的默认位。
+    resp = client.post(
+        "/api/v1/llm/chat",
+        json={"provider": "deepseek", "messages": [{"role": "user", "content": "hi"}]},
+    )
     assert resp.status_code == 400
     error = resp.json()["error"]
     assert error["code"] == "llm_not_configured"
@@ -642,6 +909,41 @@ def test_test_endpoint_reports_failure_as_business_result(client, monkeypatch: p
 def test_default_provider_round_trip(client) -> None:
     body = client.put("/api/v1/llm/default", json={"key": "deepseek"}).json()
     assert body["key"] == "deepseek"
+
+
+def test_lmstudio_settings_keep_the_model_blank(client) -> None:
+    payload = client.get("/api/v1/llm/providers/lmstudio").json()
+    assert payload["values"]["model"] == ""
+    assert payload["defaults"]["model"] == ""
+    assert payload["ready"] is True
+
+
+def test_lmstudio_chat_resolves_the_loaded_model(client, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/models":
+            return httpx.Response(
+                200,
+                json={
+                    "models": [
+                        {"key": "qwen3-8b", "type": "llm", "loaded_instances": []}
+                    ]
+                },
+            )
+        sent.append(json.loads(request.content))
+        return _lm_reply("已经可用")
+
+    _patch_transport(monkeypatch, handler)
+    resp = client.post(
+        "/api/v1/llm/chat",
+        json={"provider": "lmstudio", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["model"] == "qwen3-8b"
+    assert body["text"] == "已经可用"
+    assert sent[0]["model"] == "qwen3-8b"
 
 
 class TestReplyParsing:

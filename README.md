@@ -192,7 +192,7 @@ app/                 FastAPI 后端（同时托管前端构建产物）
   usecase/           用例：音色库、引擎、合成中转
   infra/             文件系统 / SQLite / 配置 / 时长与 ffmpeg
   engines/           TTS 与 ASR 插件（builtin/<key>/ 一台引擎一个目录）
-  llm/               对话模型通道（内置 DeepSeek）
+  llm/               对话模型通道（内置 DeepSeek 与 LM Studio）
   producers/         生产方插件（audiobook：分章 → 拆句 → 分析 → 生成 → 合并；
                      dubbing：抽音轨 → 转录 → 配音 → 贴齐 → 导出）
   api/               HTTP 层
@@ -209,7 +209,7 @@ data/                config.json、hub.db、项目库、缓存、录音
 ## 使用边界
 
 音色克隆与复刻只用于自有声音或已获得授权的声音；接入平台时遵守其条款，产物与用途由使用者负责。
-仓库内的引擎图标除 DeepSeek 外均为自绘，DeepSeek 图标是其官方标识，仅用于标识对应服务。
+仓库内的引擎图标除 DeepSeek 与 LM Studio 外均为自绘；DeepSeek 与 LM Studio 的图标是其官方标识，仅用于标识对应服务。
 
 ## 贡献
 

@@ -85,6 +85,7 @@
     :min="field.min"
     :max="field.max"
     :step="field.step"
+    :placeholder="field.placeholder"
     :aria-label="field.label"
     :disabled="disabled"
   />

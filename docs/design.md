@@ -229,7 +229,9 @@ FastAPI（单进程）
 
 ## 8. 对话模型
 
-对话模型独立于 TTS 引擎：请求为消息数组，返回消息与用量。内置 `deepseek`：
+对话模型独立于 TTS 引擎：请求为消息数组，返回消息与用量。内置两家。
+
+`deepseek`（云端）：
 
 | 项 | 取值 |
 |---|---|
@@ -239,6 +241,13 @@ FastAPI（单进程）
 | 视觉 | Flash 支持内容块（图片/文件），Pro 仅文本 |
 | JSON | `response_format: json_object`；字段级 Schema 降级并在 `notes` 中说明 |
 | 错误 | 401 / 402 / 404 / 422 / 429 / 5xx 分别报出 |
+
+`lmstudio`（本机）：OpenAI 兼容服务，默认 `http://127.0.0.1:1234/v1`；没有密钥也能用。
+
+- 模型清单由本机服务返回；`model` 默认留空 = 用当前已加载的模型——请求前先查本机清单（`/api/v1/models`，旧版本 `/api/v0/models`，再回落 `/v1/models`），优先已加载的、跳过向量模型，也可填固定 id。
+- API Token 只在本机开启「需要认证」时填；默认请求不带 `Authorization`。
+- `response_format` 同时支持 `json_object` 与字段级 `json_schema`；工具按 OpenAI 形状透传。不提供联网搜索与思考力度。
+- 采样参数只发填了的那几项：`top_p`、`top_k`、`repeat_penalty`、`presence_penalty`、`frequency_penalty`、`seed` 默认空着，空着就不进请求体——沿用 LM Studio 给该模型调好的那套，插件不拿自己的默认值覆盖它。上下文长度不在请求里：那是加载模型时定的，清单里逐条读出展示。
 
 插件不支持的能力不硬发：降级与截断原因写入 `ChatResult.notes`，随响应返回。自检与模型清单的失败返回 `200 + ok:false`；补全失败返回 400。
 

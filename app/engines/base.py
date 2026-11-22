@@ -185,7 +185,7 @@ KINDS: tuple[str, ...] = (KIND_CLOUD, KIND_LOCAL)
 #: 形态的显示名与一句话说明（界面直接用它，不在前端再写一份中文）。
 KIND_LABELS: dict[str, tuple[str, str]] = {
     KIND_CLOUD: ("云端", "云端服务，需要密钥，按量计费"),
-    KIND_LOCAL: ("本地", "本地推理，音色与推理均在本机"),
+    KIND_LOCAL: ("本地", "本地服务，推理在本机运行"),
 }
 
 #: **插件已经不在了**的来源（库里还留着它的音色）在界面上怎么念。
