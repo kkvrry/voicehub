@@ -1,6 +1,7 @@
 """音色处理插件：目标解析、替换、时长校验与响应解析。"""
 
 import base64
+import os
 import time
 import wave
 from pathlib import Path
@@ -795,6 +796,10 @@ class TestModels:
         assert voiceclean_models.builtin_downloaded(root, "tiny") is True
         assert voiceclean_models.builtin_digest_path(root, "tiny").is_file()
         target.write_bytes(b"hellx")
+        # Windows 只在系统时钟 tick（约 15.6 ms）更新 LastWriteTime：同一 tick 内两次写入的
+        # st_mtime_ns 完全相同，旁证会认下这份同尺寸改写。真实替换发生在下载之后，这里推后一格。
+        stat = target.stat()
+        os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
         assert voiceclean_models.builtin_downloaded(root, "tiny") is False
 
     def test_downloaded_builtin_loads_on_prepare(
