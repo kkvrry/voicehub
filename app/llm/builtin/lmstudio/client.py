@@ -23,15 +23,14 @@ OpenAI 兼容的 ``/v1/models`` 只有 id。REST 不可用时回落到 ``/v1/mod
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any
 
 import httpx
 
-from app.infra.netenv import normalize_no_proxy_env
 from app.llm.base import LlmError, ModelList, ModelMeta
 from app.llm.builtin.lmstudio.settings import LmStudioSettings
+from app.llm.http import client, endpoint, request_json
 
 __all__ = [
     "chat",
@@ -50,30 +49,6 @@ REST_MODELS_PATHS = ("/api/v1/models", "/api/v0/models")
 
 #: 非对话模型：清单里不列，自动挑选时也跳过。REST v0 写 ``embeddings``，v1 写 ``embedding``。
 _SKIP_TYPES = {"embedding", "embeddings", "decision"}
-
-#: 复用连接：在 Windows 上新建 AsyncClient 要两秒多。
-#: 按事件循环分开缓存——测试每次 ``asyncio.run`` 都是新循环，不能拿到上一个循环的客户端。
-_CLIENT: httpx.AsyncClient | None = None
-_CLIENT_LOOP: asyncio.AbstractEventLoop | None = None
-
-
-def _client() -> httpx.AsyncClient:
-    global _CLIENT, _CLIENT_LOOP
-    loop = asyncio.get_running_loop()
-    if _CLIENT is None or _CLIENT.is_closed or _CLIENT_LOOP is not loop:
-        normalize_no_proxy_env()
-        _CLIENT = httpx.AsyncClient()
-        _CLIENT_LOOP = loop
-    return _CLIENT
-
-
-def endpoint(root: str, path: str) -> str:
-    """根 + 路径。已经写到具体端点的不再重复拼。"""
-    base = (root or "").strip().rstrip("/")
-    if base.endswith(path):
-        return base
-    return f"{base}{path}"
-
 
 def _timeout(cfg: LmStudioSettings) -> httpx.Timeout:
     # 连接单独给 10 秒：本机服务没起来要快死；读给足——生成本来就慢。
@@ -143,22 +118,17 @@ def _transport_reason(error: Exception, root: str) -> LlmError:
 
 async def chat(cfg: LmStudioSettings, payload: dict[str, Any]) -> dict[str, Any]:
     """发一次 ``chat/completions``，返回原始 JSON（解析在插件里做）。"""
-    url = endpoint(cfg.root, CHAT_PATH)
-    try:
-        response = await _client().post(
-            url, json=payload, headers=_headers(cfg), timeout=_timeout(cfg)
-        )
-    except httpx.HTTPError as exc:
-        raise _transport_reason(exc, cfg.root) from exc
-    if response.status_code >= 400:
-        raise read_error(response.status_code, response.text)
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise LlmError(f"LM Studio 的响应不是 JSON：{response.text[:200]}") from exc
-    if not isinstance(data, dict):
-        raise LlmError("LM Studio 的响应不是 JSON 对象。")
-    return data
+    return await request_json(
+        "POST",
+        cfg.root,
+        CHAT_PATH,
+        label="LM Studio",
+        headers=_headers(cfg),
+        timeout=_timeout(cfg),
+        payload=payload,
+        error_reader=read_error,
+        transport_hint="确认 LM Studio 已启动本地服务（开发者 → 本地服务），地址与端口一致",
+    )
 
 
 def _host_root(cfg: LmStudioSettings) -> str:
@@ -169,7 +139,7 @@ def _host_root(cfg: LmStudioSettings) -> str:
 async def _rows_at(cfg: LmStudioSettings, url: str) -> list[dict[str, Any]] | None:
     """拉一次清单；这一条路径不可用（404 / 非 JSON）时返回 ``None``，交给下一条。"""
     try:
-        response = await _client().get(url, headers=_headers(cfg), timeout=_list_timeout())
+        response = await client().get(url, headers=_headers(cfg), timeout=_list_timeout())
     except httpx.HTTPError as exc:
         # 连不上是定论：换一条路径也是同一个端口，别把"服务没起来"埋成"清单读不出来"。
         raise _transport_reason(exc, cfg.root) from exc

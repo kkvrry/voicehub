@@ -373,6 +373,24 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
   const dirtyCount = computed(() => dirtyOf().count)
 
   const blurPx = computed(() => Math.round(4 + (appearance.glass / 100) * 22))
+
+  /** 左栏三档的派生：`railTree` = 目录树那一列在不在，`railCards` = 音色卡片列在不在。
+   *  壳、生成页、创作页都只读这一份，不在各自模板前再推一遍。 */
+  const railTree = computed(() => appearance.railVisibility === 'both')
+  const railCards = computed(() => appearance.railVisibility !== 'none')
+
+  /** 再点当前页的导航图标时的档位循环：有音色卡片列的页走三档；
+   *  没有这一列的页只在树的有无之间切——不写 `none`，否则在音色库收起树，
+   *  回到生成页会把音色栏也一起收掉。 */
+  function cycleRails(withCards: boolean) {
+    const state = appearance.railVisibility
+    if (!withCards) {
+      appearance.railVisibility = state === 'both' ? 'cards' : 'both'
+      return
+    }
+    appearance.railVisibility = state === 'both' ? 'cards' : state === 'cards' ? 'none' : 'both'
+  }
+
   /** 原色、纸墨与素瓷都没有玻璃与圆角可调：模糊归零，圆角按各自的材质下发。
    *  必须在这里按风格算——样式表覆盖不了元素上的 style。 */
   const shellStyle = computed(() => {
@@ -784,6 +802,9 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     dirtyCount,
     dirtySections,
     blurPx,
+    railTree,
+    railCards,
+    cycleRails,
     shellStyle,
     hydrate,
     loadRemote,

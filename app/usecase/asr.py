@@ -245,6 +245,21 @@ def available() -> bool:
     return not unavailable_reason()
 
 
+def is_local() -> bool:
+    """当前识别引擎是否本地 / 局域网推理。
+
+    云端识别按整段计费：流式通道的「部分结果」每次都重听整段，不能替用户
+    做这个决定。读不到能力时按本地处理——那只是少一条优化，不会多计费。
+    """
+    key = current_key()
+    if not key:
+        return True
+    try:
+        return bool(engine_of(key).capabilities().local)
+    except AsrError:
+        return True
+
+
 def reachable() -> tuple[bool, str]:
     """问一次当前引擎的服务在不在（与设置里的「测试连接」同一个调用）。
 

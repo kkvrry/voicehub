@@ -30,7 +30,6 @@
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 from typing import Any
 
@@ -50,12 +49,10 @@ from app.engines.base import (
 from app.engines.builtin.dots_tts import client
 from app.engines.builtin.dots_tts.settings import DotsTtsSettings
 from app.engines.mapping import EngineMapping, ParamMapping, apply_mapping
+from app.engines.seed import resolve_seed as _resolve_seed
 from app.infra.loghub import CHANNEL
 
 __all__ = ["DotsTtsEngine", "resolve_seed"]
-
-#: 种子上限（audio.cpp 的 seed 是 uint32）。
-SEED_CEILING = 2**32 - 1
 
 #: 统一参数 → DotTTS 请求体。落点名字来自 audio.cpp 的 ``model_specs/dots_tts.json``。
 #:
@@ -139,27 +136,11 @@ _INSTRUCT_TEMPLATES = ("instruction_tts", "edit")
 
 
 def resolve_seed(value: Any) -> tuple[int, str]:
-    """定这一次真正发出去的种子——返回 ``（值, 对用户说的一句话）``。
-
-    负数（约定写作 ``-1``）= 随机：**抽一个无符号数、发出去、把抽到的数报回来**。
-    界面只留 ``seed=…`` 这一句；"为什么抽、怎么复现"写进日志。
-
-    与 BreezeTTS 2 同一条道理：引擎自己不收负数，且省略 seed 时引擎用定值
-    （这家是 42）——"每次都不一样"必须由插件抽出来，不能靠不传。
-    """
-    try:
-        seed = int(value)
-    except (TypeError, ValueError):
-        raise EngineError(f"种子「{value}」不是整数。") from None
-    if seed >= 0:
-        return min(seed, SEED_CEILING), f"seed={seed}"
-    drawn = random.randrange(0, SEED_CEILING + 1)
-    CHANNEL.info(
-        f"种子写的是 {seed}（= 随机），抽取结果 {drawn}（可用它复现）",
-        source="engine",
-        engine="dots_tts",
-    )
-    return drawn, f"seed={drawn}"
+    """定这一次真正发出去的种子（负数 = 随机，抽到的数报回来）。"""
+    seed, note = _resolve_seed(value, engine="dots_tts")
+    if seed is None:
+        raise EngineError("种子缺失。")
+    return seed, note
 
 
 def _provided(value: Any) -> bool:

@@ -89,6 +89,7 @@ export class AsrStream {
         audio: { echoCancellation: true, noiseSuppression: true },
       })
       this._mic = mic
+      this._checkOpen()
       // 请求 16k 是为了让服务端少干活；浏览器不理这个请求也没关系——
       // 把实际采样率报给服务端，它统一重采样。
       const ctx = new AudioContext({ sampleRate: 16000 })
@@ -99,7 +100,9 @@ export class AsrStream {
       } finally {
         URL.revokeObjectURL(url)
       }
+      this._checkOpen()
       await ctx.resume()
+      this._checkOpen()
       const source = ctx.createMediaStreamSource(mic)
       const tap = new AudioWorkletNode(ctx, 'pcm-tap')
       this._tap = tap
@@ -112,6 +115,7 @@ export class AsrStream {
       mute.connect(ctx.destination)
 
       await this._connect()
+      this._checkOpen()
       tap.port.onmessage = (event) => {
         if (this._ws?.readyState === WebSocket.OPEN) {
           this._ws.send(/** @type {Int16Array} */ (event.data).buffer)
@@ -120,7 +124,11 @@ export class AsrStream {
     } catch (error) {
       // 麦克风已拿到、音频图已建好时连接失败：不收拾就会留下一路开着的
       // 麦克风与一个没人关的 AudioContext。
+      const stopped = this._closed
       this._finish()
+      // 不是失败，是用户在连接过程中点了停止 / 离开了页面：原样收摊，
+      // 不再把"已停止"当成错误弹到界面上。
+      if (stopped) return
       throw error
     }
   }
@@ -160,6 +168,7 @@ export class AsrStream {
       ws.onerror = fail
       ws.onclose = fail
     })
+    this._checkOpen()
     ws.onmessage = (event) => {
       if (typeof event.data !== 'string') return
       let payload
@@ -184,12 +193,31 @@ export class AsrStream {
     )
   }
 
+  /**
+   * 每个 await 之后都问一次：连接途中被 stop / abort / 卸载打断的，立刻收摊。
+   * @throws {Error} 已关闭
+   */
+  _checkOpen() {
+    if (!this._closed) return
+    this._teardown()
+    throw new Error('连接已停止。')
+  }
+
   /** 幂等收摊：先到的 onclose / stop / abort 负责清理，后来者不再重复回调。 */
   _finish() {
-    if (this._closed) return
-    this._closed = true
+    if (!this._closed) {
+      this._closed = true
+      this._handlers.onClosed?.()
+    }
+    // 关闭可能发生在 start 的 await 之间；那时清理必须再做一次，
+    // 否则刚拿到的麦克风 / AudioContext 会留在后台。
+    this._teardown()
+  }
+
+  /** 释放已经拿到的资源；可以重复调用。 */
+  _teardown() {
     try {
-      if (this._ws?.readyState === WebSocket.OPEN) this._ws.close()
+      if (this._ws && this._ws.readyState <= WebSocket.OPEN) this._ws.close()
     } catch {
       /* 已经断就算了 */
     }
@@ -203,6 +231,5 @@ export class AsrStream {
     this._ctx = null
     this._onDone?.()
     this._onDone = null
-    this._handlers.onClosed?.()
   }
 }

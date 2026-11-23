@@ -81,7 +81,7 @@
          收起后这一颗仍留着（正筛着某个标签时写那个标签名），点它展开。 -->
     <button
       type="button"
-      class="tagbar-toggle"
+      class="tag-chip tagbar-toggle"
       :class="{ active: collapsed && store.filters.tag }"
       :aria-expanded="!collapsed"
       :aria-label="

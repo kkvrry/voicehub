@@ -19,6 +19,7 @@ def ui_hints(
     choices: tuple[tuple[str, str], ...] = (),
     depends_on: str = "",
     group: str = "",
+    step: str = "",
     placeholder: str = "",
     enabled_when: tuple[str, str | tuple[str, ...]] | None = None,
 ) -> dict[str, Any]:
@@ -31,6 +32,7 @@ def ui_hints(
     :param choices: ``select`` 的候选，``(值, 说法)``。
     :param depends_on: 动态候选依赖哪个字段（如模型依赖通道）。
     :param group: 设置页的卡片分组；同一组画进一张卡片，空 = 归入「其他」。
+    :param step: 生产方流水线的步骤 key；工作区把字段画进对应步骤卡，空 = 不归步骤。
     :param placeholder: 输入框的占位文案（留空即用默认值这类说明）。
     :param enabled_when: ``(字段名, 取值)``；取值给元组表示任一命中即可。
         前端据此置灰并说明，不把无效的格子画成"改了有用"。
@@ -46,6 +48,8 @@ def ui_hints(
         hints["depends_on"] = depends_on
     if group:
         hints["group"] = group
+    if step:
+        hints["step"] = step
     if placeholder:
         hints["placeholder"] = placeholder
     if enabled_when:

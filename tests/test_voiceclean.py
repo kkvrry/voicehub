@@ -430,6 +430,9 @@ class TestSave:
         updated = scanned.get_voice(voice.id)
         assert saved_file in {row.file for row in updated.samples}
         assert sample.file in {row.file for row in updated.samples}
+        # 入库不能把同目录其它样例的逐字稿/情绪清空（它们来自 .txt，不在 sidecar）。
+        assert next(row for row in updated.samples if row.file == sample.file).text == sample.text
+        assert next(row for row in updated.samples if row.file == saved_file).text == sample.text
         side = read_sidecar(folder)
         assert side.samples[saved_file]["params"]["来源"] == "音色处理"
         assert side.samples[saved_file]["params"]["处理"]
@@ -767,7 +770,36 @@ class TestModels:
         assert candidate["downloaded"] is True
         assert candidate["ready"] is True
 
-    def test_downloaded_builtin_loads_on_prepare(self, tmp_path: Path):
+    def test_builtin_weights_are_hash_checked_not_just_sized(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        import hashlib
+
+        digest = hashlib.sha256(b"hello").hexdigest()
+        monkeypatch.setitem(
+            voiceclean_models._UTILITIES,
+            "tiny",
+            {
+                "label": "Tiny",
+                "note": "测试用",
+                "prep": (48000, 1),
+                "file": "tiny/tiny.bin",
+                "bytes": 5,
+                "sha256": digest,
+            },
+        )
+        root = tmp_path / "models"
+        target = voiceclean_models.builtin_path(root, "tiny")
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"hello")
+        assert voiceclean_models.builtin_downloaded(root, "tiny") is True
+        assert voiceclean_models.builtin_digest_path(root, "tiny").is_file()
+        target.write_bytes(b"hellx")
+        assert voiceclean_models.builtin_downloaded(root, "tiny") is False
+
+    def test_downloaded_builtin_loads_on_prepare(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         runtime = _FakeRuntime(tmp_path)
         service = VoiceCleanService(
             tmp_path / "vc",
@@ -776,8 +808,11 @@ class TestModels:
         )
         target = voiceclean_models.builtin_path(service._builtin_root, "zipenhancer")
         target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("wb") as handle:
-            handle.truncate(8236256)
+        target.write_bytes(b"weights")
+        # 这个用例验的是"已下载 -> 自动加载"；哈希校验本身另有单独用例。
+        monkeypatch.setattr(
+            voiceclean_models, "builtin_downloaded", lambda root, utility: True
+        )
         service.prepare_model("denoise", "zipenhancer")
         job = self._wait_job(service, "builtin:zipenhancer")
         assert job and job["state"] == "done"

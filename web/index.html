@@ -12,10 +12,21 @@
   </head>
   <body>
     <div id="app"></div>
-    <!-- 首屏就定主题，避免亮色一闪（HTML 先于模块脚本绘制）。与 store/shell.js 的 initTheme 同口径：
-         先认 vh-theme-mode（light/dark/system），再回落旧的 vh-theme。 -->
+    <!-- 首屏就定主题与外观，避免刷新时先画一套再跳过去（HTML 先于模块脚本绘制）。
+         主题与 store/shell.js 的 initTheme 同口径：先认 vh-theme-mode（light/dark/system），
+         再回落旧的 vh-theme。外观取 store/settings.ts 落盘的 vh-settings-v1 快照里的
+         appearance.look（读不到按 classic）：stage 这类整页换材质的皮肤晚一帧才上，
+         就是一次白闪。 -->
     <script>
       ;(function () {
+        var LOOKS = ['classic', 'glass', 'paper', 'celadon', 'stage']
+        var root = document.documentElement
+        var settings = null
+        try {
+          settings = JSON.parse(localStorage.getItem('vh-settings-v1') || 'null')
+        } catch (e) {
+          settings = null
+        }
         try {
           var mode = localStorage.getItem('vh-theme-mode')
           var saved = localStorage.getItem('vh-theme')
@@ -23,10 +34,13 @@
           if (mode === 'dark' || mode === 'light') dark = mode === 'dark'
           else if (!mode && (saved === 'dark' || saved === 'light')) dark = saved === 'dark'
           else dark = window.matchMedia('(prefers-color-scheme: dark)').matches
-          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+          root.dataset.theme = dark ? 'dark' : 'light'
         } catch (e) {
           /* 隐私模式下 localStorage 会抛——忽略，用默认浅色 */
         }
+        // 存了不认识的值时回到 classic，与设置页的兜底一致。
+        var look = settings && settings.appearance ? settings.appearance.look : ''
+        root.dataset.look = LOOKS.indexOf(look) >= 0 ? look : 'classic'
       })()
     </script>
     <script type="module" src="/src/main.ts"></script>

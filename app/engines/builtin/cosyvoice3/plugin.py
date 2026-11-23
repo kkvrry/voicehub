@@ -49,7 +49,6 @@
 
 from __future__ import annotations
 
-import random
 import re
 from pathlib import Path
 from typing import Any
@@ -71,6 +70,7 @@ from app.engines.base import (
 from app.engines.builtin.cosyvoice3 import client
 from app.engines.builtin.cosyvoice3.settings import CosyVoice3Settings
 from app.engines.mapping import EngineMapping, ParamMapping, apply_mapping
+from app.engines.seed import resolve_seed as _resolve_seed
 from app.infra.loghub import CHANNEL
 
 __all__ = ["MAPPING", "RANDOM_SEED", "TEMPLATES", "CosyVoice3Engine", "resolve_seed"]
@@ -373,24 +373,11 @@ def _provided(value: Any) -> bool:
 
 
 def resolve_seed(value: Any) -> tuple[int, str]:
-    """这一次发出去的种子——返回 ``（值, 对用户说的一句话）``。
-
-    负数（约定 ``-1``）= 随机：抽一个、发出去、把抽到的数报回来。这一家省略种子时
-    用定值 1986，所以"随机"只能显式抽。
-    """
-    try:
-        seed = int(value)
-    except (TypeError, ValueError):
-        raise EngineError(f"种子「{value}」不是整数。") from None
-    if seed >= 0:
-        return seed, f"seed={seed}"
-    drawn = random.randrange(0, 2**31)
-    CHANNEL.info(
-        f"种子写的是 {seed}（= 随机），抽取结果 {drawn}（可用它复现）",
-        source="engine",
-        engine="cosyvoice3",
-    )
-    return drawn, f"seed={drawn}"
+    """这一次发出去的种子（负数 = 随机，抽到的数报回来）。"""
+    seed, note = _resolve_seed(value, engine="cosyvoice3", ceiling=2**31 - 1)
+    if seed is None:
+        raise EngineError("种子缺失。")
+    return seed, note
 
 
 class CosyVoice3Engine(EnginePlugin):

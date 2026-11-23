@@ -184,7 +184,9 @@ def status(settings: Any) -> dict[str, Any]:
                 "provider": "",
                 "provider_label": "",
                 "model": "",
-                "note": "还没有可用的对话模型：先在设置里配置一家。",
+                "note": "还没有默认对话模型：到「引擎 → 对话模型」选一家。",
+                "search": False,
+                "search_note": "当前通道不支持联网搜索。",
             }
         payload = llm_uc.settings_payload(key)
         values = payload.get("values") or {}

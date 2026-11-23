@@ -90,15 +90,18 @@
               <div class="flow-bar"><i :style="{ width: progressWidth }"></i></div>
             </div>
 
-            <div v-if="actionOf(step.key) || step.key === 'transcribe' || hasParams(step.key)" class="flow-actions">
+            <div
+              v-if="stepActions[step.key] || step.key === 'transcribe' || hasParams(step.key)"
+              class="flow-actions"
+            >
               <button
-                v-if="actionOf(step.key)"
+                v-if="stepActions[step.key]"
                 class="sh-btn is-sm is-soft"
                 type="button"
-                :disabled="Boolean(state.busy) || actionOf(step.key)?.disabled"
-                :title="actionOf(step.key)?.title"
-                @click="actionOf(step.key)?.run()"
-              >{{ actionOf(step.key)?.label }}</button>
+                :disabled="stepActions[step.key]?.disabled"
+                :title="stepActions[step.key]?.title"
+                @click="stepActions[step.key]?.run()"
+              >{{ stepActions[step.key]?.label }}</button>
               <button
                 v-if="step.key === 'transcribe'"
                 type="button"
@@ -131,8 +134,7 @@
             </div>
 
             <StepParams
-              v-if="hasParams(step.key)"
-              v-show="openParams === step.key"
+              v-if="hasParams(step.key) && openParams === step.key"
               :step-key="step.key"
               :step-label="step.label"
               @saved="onParamsSaved"
@@ -613,16 +615,18 @@ async function onSubtitleFile(event) {
   if (file) await importSubtitles(file)
 }
 
-/** 每一步能不能点、点了做什么；没有动作的步骤返回 null。 */
-/** @param {string} key */
-function actionOf(key) {
-  const busyNow = Boolean(state.busy) || running.value
-  if (key === 'extract') {
+/** 每一步能不能点、点了做什么：一次算成按 step.key 索引的表，
+ *  模板只取 `stepActions[step.key]`。没有动作的步骤不出现在表里。 */
+const stepActions = computed(() => {
+  /** @type {Record<string, { label: string, disabled: boolean, title: string, run: () => void }>} */
+  const map = {}
+  const busyNow = busy.value
+
+  {
     const hasAudio = Boolean(state.detail?.paths?.original)
     const hasSource = state.detail?.source_ok !== false
-    return {
-      label:
-        state.busy === 'extract' ? '抽取中…' : hasAudio ? '重新抽取' : '抽音轨',
+    map.extract = {
+      label: state.busy === 'extract' ? '抽取中…' : hasAudio ? '重新抽取' : '抽音轨',
       disabled: busyNow || !hasSource,
       title: hasSource
         ? hasAudio
@@ -632,25 +636,28 @@ function actionOf(key) {
       run: () => void extractAudio(),
     }
   }
-  if (key === 'separate') {
+
+  {
     const hasModels = stemModels.value.length > 0
     // 没有模型时按钮点了也只报同一句话：把位置留给摘要里的原因。
-    if (!hasModels && !separation.value.ready) return null
-    return {
-      label: separation.value.ready ? '重新分轨' : '开始分轨',
-      disabled: busyNow || !hasModels,
-      title: hasModels
-        ? separation.value.ready
-          ? '按当前选择的模型重新分出人声与伴奏'
-          : '按原音轨分出人声与伴奏，后台任务'
-        : separation.value.note || '没有正在运行的分离模型',
-      run: () => void onSeparate(),
+    if (hasModels || separation.value.ready) {
+      map.separate = {
+        label: separation.value.ready ? '重新分轨' : '开始分轨',
+        disabled: busyNow || !hasModels,
+        title: hasModels
+          ? separation.value.ready
+            ? '按当前选择的模型重新分出人声与伴奏'
+            : '按原音轨分出人声与伴奏，后台任务'
+          : separation.value.note || '没有正在运行的分离模型',
+        run: () => void onSeparate(),
+      }
     }
   }
-  if (key === 'transcribe') {
+
+  {
     // 取消只留在任务条上：同一步里再放一枚「取消」，两处按钮做同一件事。
     const ready = state.detail?.asr?.ready
-    return {
+    map.transcribe = {
       // 已经有段落时这一下会整批替换：说清是"重新"，不让人以为是补几段。
       label: (state.detail?.stats?.total || 0) > 0 ? '重新转录' : '转录',
       disabled: busyNow || !project.value || !ready,
@@ -658,7 +665,8 @@ function actionOf(key) {
       run: () => transcribe(),
     }
   }
-  if (key === 'synth') {
+
+  {
     const stats = state.detail?.stats || {
       total: 0,
       dubbed: 0,
@@ -671,7 +679,7 @@ function actionOf(key) {
     }
     const todo = Number(stats.stale) + Number(stats.failed) + Number(stats.pending)
     const allReady = stats.dubbed > 0 && stats.ready >= stats.dubbed
-    return {
+    map.synth = {
       label: !stats.dubbed
         ? '无需配音'
         : allReady
@@ -690,17 +698,19 @@ function actionOf(key) {
       run: () => synthAll(),
     }
   }
-  if (key === 'align') {
+
+  {
     const ready = state.detail?.stats?.ready || 0
-    return {
+    map.align = {
       label: '贴齐',
       disabled: busyNow || ready <= 0,
       title: ready ? '按时间码补静音、加速贴齐并混音' : '先合成至少一段配音',
       run: () => assemble(),
     }
   }
-  return null
-}
+
+  return map
+})
 
 /** 重新抽音轨：入口只在这里，成功后刷新详情。 */
 async function extractAudio() {

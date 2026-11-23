@@ -58,10 +58,22 @@ _RAW = "https://raw.githubusercontent.com/0xShug0/audio.cpp/main/model_specs"
 _TIMEOUT = 20.0
 
 
+#: 同一份清单在一次界面轮询里会被问十几次；按路径 + mtime/大小缓存。
+_READ_CACHE: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+
+
 def _read(path: Path) -> dict[str, Any]:
+    key = str(path)
     try:
+        stat = path.stat()
+        stamp = (stat.st_mtime_ns, stat.st_size)
+        cached = _READ_CACHE.get(key)
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
         payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload if isinstance(payload, dict) else {}
+        value = payload if isinstance(payload, dict) else {}
+        _READ_CACHE[key] = (stamp, value)
+        return value
     except (OSError, ValueError):
         return {}
 

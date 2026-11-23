@@ -16,6 +16,8 @@ import ipaddress
 import logging
 from pathlib import Path
 
+from app.infra.atomic import write_bytes
+
 __all__ = ["CertError", "ensure_cert"]
 
 LOG = logging.getLogger("voicehub.tls")
@@ -32,7 +34,10 @@ class CertError(RuntimeError):
 
 def _san_names(hosts: list[str]) -> tuple[list[str], list[ipaddress._BaseAddress]]:
     dns: list[str] = ["localhost"]
-    ips: list[ipaddress._BaseAddress] = [ipaddress.ip_address("127.0.0.1"), ipaddress.ip_address("::1")]
+    ips: list[ipaddress._BaseAddress] = [
+        ipaddress.ip_address("127.0.0.1"),
+        ipaddress.ip_address("::1"),
+    ]
     for raw in hosts:
         text = str(raw or "").strip()
         if not text:
@@ -45,8 +50,11 @@ def _san_names(hosts: list[str]) -> tuple[list[str], list[ipaddress._BaseAddress
     return dns, ips
 
 
-def _valid_for(path: Path) -> bool:
-    """现有证书还能用吗：看得见、没快到期的就复用，不为每次启动重签。"""
+def _valid_for(path: Path, hosts: list[str]) -> bool:
+    """现有证书还能用吗：看得见、没快到期、SAN 覆盖当前地址。
+
+    只看到期会在换 IP 后继续发旧证书：浏览器报名称不匹配，用户以为服务坏了。
+    """
     try:
         from cryptography import x509
     except ImportError:  # pragma: no cover - cryptography 不在时走 ensure_cert 的报错
@@ -55,17 +63,56 @@ def _valid_for(path: Path) -> bool:
         cert = x509.load_pem_x509_certificate(path.read_bytes())
     except (OSError, ValueError):
         return False
-    return cert.not_valid_after_utc - dt.datetime.now(dt.UTC) > dt.timedelta(days=RENEW_WITHIN)
+    if cert.not_valid_after_utc - dt.datetime.now(dt.UTC) <= dt.timedelta(days=RENEW_WITHIN):
+        return False
+    try:
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    except x509.ExtensionNotFound:
+        return False
+    dns, ips = _san_names(hosts)
+    have_dns = set(san.get_values_for_type(x509.DNSName))
+    have_ips = set(san.get_values_for_type(x509.IPAddress))
+    return set(dns) <= have_dns and set(ips) <= have_ips
+
+
+def _pair_ok(cert_path: Path, key_path: Path) -> bool:
+    """证书与私钥是不是同一对；上次写盘写到一半时这里会拦住。"""
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import serialization
+    except ImportError:  # pragma: no cover
+        return False
+    try:
+        cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
+        key = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
+        return (
+            cert.public_key().public_bytes(
+                serialization.Encoding.DER,
+                serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+            == key.public_key().public_bytes(
+                serialization.Encoding.DER,
+                serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+        )
+    except (OSError, ValueError, TypeError):
+        return False
 
 
 def ensure_cert(root: Path, hosts: list[str]) -> tuple[Path, Path]:
     """保证 `root` 下有一张对 `hosts` 有效的自签证书，返回 (cert, key)。
 
-    已有且没过期就复用；签不出来时抛 :class:`CertError`，调用方回落到 http。
+    已有且没过期、SAN 覆盖当前地址、且证书与私钥成对就复用；否则重签。
+    签不出来时抛 :class:`CertError`，调用方回落到 http。
     """
     cert_path = Path(root) / "server.crt"
     key_path = Path(root) / "server.key"
-    if cert_path.is_file() and key_path.is_file() and _valid_for(cert_path):
+    if (
+        cert_path.is_file()
+        and key_path.is_file()
+        and _valid_for(cert_path, hosts)
+        and _pair_ok(cert_path, key_path)
+    ):
         return cert_path, key_path
 
     try:
@@ -74,7 +121,9 @@ def ensure_cert(root: Path, hosts: list[str]) -> tuple[Path, Path]:
         from cryptography.hazmat.primitives.asymmetric import rsa
         from cryptography.x509.oid import NameOID
     except ImportError as exc:  # pragma: no cover - 依赖缺了才走这里
-        raise CertError("没有 cryptography，签不了自签证书：先 pip install cryptography。") from exc
+        raise CertError(
+            "没有 cryptography，签不了自签证书：先 pip install cryptography。"
+        ) from exc
 
     dns, ips = _san_names(hosts)
     now = dt.datetime.now(dt.UTC)
@@ -104,29 +153,25 @@ def ensure_cert(root: Path, hosts: list[str]) -> tuple[Path, Path]:
     )
     cert = builder.sign(key, hashes.SHA256())
 
+    key_bytes = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    cert_bytes = cert.public_bytes(serialization.Encoding.PEM)
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
-    # 证书与私钥不是"可续写"的文件：整份写好再改名，半截私钥等于没有。
-    tmp_key = key_path.with_suffix(f".key.{id(key)}.tmp")
-    tmp_cert = cert_path.with_suffix(f".crt.{id(cert)}.tmp")
+    # 两个文件各写各的，必然有一小段"新 key + 旧 cert"的窗口。下次启动由
+    # _pair_ok 认出这种半对证书并重签；写盘本身用 atomic 的唯一临时名与退避。
     try:
-        tmp_key.write_bytes(
-            key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.TraditionalOpenSSL,
-                encryption_algorithm=serialization.NoEncryption(),
-            )
-        )
-        tmp_cert.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
-        tmp_key.replace(key_path)
-        tmp_cert.replace(cert_path)
+        write_bytes(key_path, key_bytes)
+        write_bytes(cert_path, cert_bytes)
     except OSError as exc:
-        for leftover in (tmp_key, tmp_cert):
-            try:
-                leftover.unlink()
-            except OSError:
-                pass
         raise CertError(f"证书写不进数据目录：{exc}") from exc
 
-    LOG.info("已签发自签证书：%s（%s）", cert_path, ", ".join(dns + [str(ip) for ip in ips]))
+    LOG.info(
+        "已签发自签证书：%s（%s）",
+        cert_path,
+        ", ".join(dns + [str(ip) for ip in ips]),
+    )
     return cert_path, key_path

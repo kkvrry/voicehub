@@ -28,7 +28,6 @@ audio.cpp 插件的运行实例里取。未下载的模型可在卡片内下载�
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -42,12 +41,11 @@ from typing import Any
 
 import httpx
 
-from app.infra import atomic, audioprobe, ffmpeg
+from app.infra import atomic, audioprobe, download, ffmpeg
 from app.infra.config import data_dir
 from app.infra.db import HubDB
 from app.producers.base import ProducerError
 from app.producers.builtin.audiocpp import runtimes as audiocpp_runtimes
-from app.producers.builtin.audiocpp.manager import client as audiocpp_client
 from app.producers.builtin.voiceclean import client, models
 from app.usecase.library import LibraryError, LibraryService
 
@@ -215,6 +213,9 @@ class _Item:
     trimmed: bool = False
     origin_seconds: float = 0.0
     result_seconds: float = 0.0
+    #: 入库时才需要的高采样率结果：记下源文件与采样率，替换路径不必多编一次。
+    native_rate: int = 0
+    native_source: str = ""
     state: str = "pending"  # pending / running / done / applied / saved / failed / skipped
     error: str = ""
     replaceable: bool = False
@@ -297,6 +298,8 @@ class VoiceCleanService:
         self._models_cache: list[dict[str, Any]] | None = None
         #: 下载与自动加载任务：key 与候选模型的 ``models.candidate_key`` 一致。
         self._model_jobs: dict[str, dict[str, Any]] = {}
+        #: 官方包报「下载完成」但目录里还没看到的时刻；只用来给一个短暂的索引宽限。
+        self._package_done_at: dict[str, float] = {}
         #: 内置工具权重目录；与 audio.cpp 的官方模型目录分开。
         self._builtin_root = self._root / "models" / _BUILTIN_DIR
         self._root.mkdir(parents=True, exist_ok=True)
@@ -483,13 +486,18 @@ class VoiceCleanService:
 
     def _steps_view(self, running: list[dict[str, Any]], runtime: Any | None) -> list[dict[str, Any]]:
         installed = self._installed(runtime)
-        jobs = self._model_jobs_view(runtime)
         catalog_root = getattr(runtime, "root", None) if runtime is not None else None
         rows: list[dict[str, Any]] = []
         for step in models.STEPS:
             candidates = models.candidates_for(
                 step, running, installed, self._builtin_root, catalog_root
             )
+            for candidate in candidates:
+                # 官方包的进度来自 runtime；页面轮询到「下载完成」时在这里补一次加载，
+                # 不再为每个下载常驻一条两小时的监视线程。
+                if candidate.get("source") == "package" and not candidate.get("ready"):
+                    self._reconcile_package(candidate, runtime)
+            jobs = self._model_jobs_view(runtime)
             for candidate in candidates:
                 job = jobs.get(models.candidate_key(candidate))
                 if job is not None:
@@ -554,23 +562,81 @@ class VoiceCleanService:
         if job is not None and job.get("state") in _ACTIVE_JOB_STATES:
             return self.state()
         if candidate["downloaded"]:
-            self._set_job(key, state="loading", progress=100, message="加载中")
-            threading.Thread(
-                target=self._load_in_background,
-                args=(candidate, runtime),
-                name=f"voiceclean-load-{key}",
-                daemon=True,
-            ).start()
+            self._start_load(candidate, runtime)
             return self.state()
         if candidate["source"] == "builtin":
             self._start_builtin(candidate)
             return self.state()
+        package = str(candidate["package"])
+        try:
+            current = runtime.download_jobs().get(package)
+        except Exception:  # noqa: BLE001 - 实例忙时照旧发起，下一次 state 再看
+            current = None
+        if current and str(current.get("state") or "") in _ACTIVE_JOB_STATES:
+            return self.state()
         runtime.ensure_family_instance(
             str(candidate["family"]), str(candidate["label"])
         )
-        runtime.install_model(str(candidate["package"]))
-        self._start_package_watch(candidate, runtime)
+        runtime.install_model(package)
         return self.state()
+
+    def _start_load(self, candidate: dict[str, Any], runtime: Any) -> None:
+        """已下载的候选：起一条加载线程；同一候选只起一条。"""
+        key = models.candidate_key(candidate)
+        with self._lock:
+            existing = self._model_jobs.get(key)
+        if existing is not None and existing.get("state") in {
+            "loading",
+            "done",
+            "queued",
+            "downloading",
+        }:
+            return
+        self._set_job(key, state="loading", progress=100, message="加载中")
+        threading.Thread(
+            target=self._load_in_background,
+            args=(candidate, runtime),
+            name=f"voiceclean-load-{key}",
+            daemon=True,
+        ).start()
+
+    def _reconcile_package(self, candidate: dict[str, Any], runtime: Any | None) -> None:
+        """官方包下载完成后补加载；不再为每个下载常驻一条监视线程。"""
+        if runtime is None:
+            return
+        package = str(candidate.get("package") or "")
+        if not package:
+            return
+        key = models.candidate_key(candidate)
+        try:
+            job = runtime.download_jobs().get(package)
+        except Exception:  # noqa: BLE001 - 实例切换时下一次轮询再读
+            return
+        view = self._job_view(job) or {}
+        state = str(view.get("state") or "")
+        if state in _ACTIVE_JOB_STATES:
+            return
+        if state in {"failed", "error", "cancelled", "canceled"}:
+            self._package_done_at.pop(key, None)
+            self._set_job(
+                key,
+                state="failed",
+                message=str(view.get("message") or "下载失败"),
+            )
+            return
+        if package in self._installed(runtime):
+            self._package_done_at.pop(key, None)
+            self._start_load(candidate, runtime)
+            return
+        if state == "done":
+            first = self._package_done_at.setdefault(key, time.monotonic())
+            if time.monotonic() - first > 15:
+                self._package_done_at.pop(key, None)
+                self._set_job(
+                    key,
+                    state="failed",
+                    message="下载完成但模型目录里没有这个包；检查 audio.cpp 的模型目录。",
+                )
 
     def _load_candidate(self, candidate: dict[str, Any], runtime: Any) -> None:
         if not candidate.get("downloaded"):
@@ -633,110 +699,32 @@ class VoiceCleanService:
         if asset is None:
             raise ProducerError("这个内置工具没有下载清单。")
         target = models.builtin_path(self._builtin_root, utility)
-        target.parent.mkdir(parents=True, exist_ok=True)
         key = models.candidate_key(candidate)
-        part = target.with_name(f"{target.name}.part-{uuid.uuid4().hex[:8]}")
-        last: Exception | None = None
+
+        def progress(written: int, total: int) -> None:
+            ratio = (written / total * 100) if total else 0
+            self._set_job(
+                key,
+                state="downloading",
+                progress=ratio,
+                message=f"{written / 1048576:.1f} MB",
+            )
+
         try:
-            for prefix in audiocpp_runtimes.mirror_order():
-                digest = hashlib.sha256()
-                try:
-                    with (
-                        audiocpp_client().stream(
-                            "GET",
-                            f"{prefix}{asset['url']}",
-                            timeout=httpx.Timeout(60.0, connect=15.0),
-                            headers={"User-Agent": "VoiceHub/voiceclean"},
-                        ) as response,
-                        part.open("wb") as handle,
-                    ):
-                        response.raise_for_status()
-                        total = int(response.headers.get("content-length") or asset["bytes"])
-                        written = 0
-                        for chunk in response.iter_bytes(512 * 1024):
-                            if not chunk:
-                                continue
-                            handle.write(chunk)
-                            digest.update(chunk)
-                            written += len(chunk)
-                            ratio = (written / total * 100) if total else 0
-                            self._set_job(
-                                key,
-                                state="downloading",
-                                progress=ratio,
-                                message=f"{written / 1048576:.1f} MB",
-                            )
-                    if int(asset["bytes"]) and part.stat().st_size != int(asset["bytes"]):
-                        raise ProducerError("下载的文件大小不对，已丢弃。")
-                    if digest.hexdigest().lower() != str(asset["sha256"]).lower():
-                        raise ProducerError("校验和不匹配，文件已丢弃。")
-                    os.replace(part, target)
-                    return
-                except (httpx.HTTPError, OSError, ProducerError) as exc:
-                    last = exc
-                    part.unlink(missing_ok=True)
-            raise ProducerError(f"下载失败：{_brief(last) if last else '没有可用的地址'}")
-        finally:
-            part.unlink(missing_ok=True)
-
-    def _start_package_watch(self, candidate: dict[str, Any], runtime: Any) -> None:
-        key = models.candidate_key(candidate)
-        self._set_job(key, state="queued", message="等待下载")
-        threading.Thread(
-            target=self._watch_package,
-            args=(candidate, runtime),
-            name=f"voiceclean-package-{candidate['id']}",
-            daemon=True,
-        ).start()
-
-    def _watch_package(self, candidate: dict[str, Any], runtime: Any) -> None:
-        package = str(candidate["package"])
-        key = models.candidate_key(candidate)
-        deadline = time.monotonic() + 2 * 60 * 60
-        idle = 0
-        while time.monotonic() < deadline:
-            job: dict[str, Any] | None = None
-            try:
-                job = runtime.download_jobs().get(package)
-            except Exception:  # noqa: BLE001 - 实例切换时下一轮再读
-                job = None
-            if job:
-                view = self._job_view(job) or {}
-                state = str(view.get("state") or "")
-                self._set_job(
-                    key,
-                    state=state or "downloading",
-                    progress=float(view.get("progress") or 0),
-                    message=str(view.get("message") or ""),
-                )
-                if state in _ACTIVE_JOB_STATES:
-                    time.sleep(1.2)
-                    continue
-                if state in {"failed", "error", "cancelled", "canceled"}:
-                    self._set_job(
-                        key,
-                        state="failed",
-                        message=str(view.get("message") or "下载失败"),
-                    )
-                    return
-            if package in self._installed(runtime):
-                try:
-                    candidate["downloaded"] = True
-                    self._set_job(key, state="loading", progress=100, message="加载中")
-                    self._load_candidate(candidate, runtime)
-                except Exception as exc:  # noqa: BLE001
-                    self._set_job(key, state="failed", message=_brief(exc))
-                return
-            idle = idle + 1 if not job else 0
-            if idle > 60:
-                self._set_job(
-                    key,
-                    state="failed",
-                    message="下载没有开始：检查 audio.cpp 的模型管理是否可用。",
-                )
-                return
-            time.sleep(1.2)
-        self._set_job(key, state="failed", message="下载超时。")
+            download.fetch_with_mirrors(
+                str(asset["url"]),
+                target,
+                mirrors=audiocpp_runtimes.mirror_order(),
+                sha256=str(asset["sha256"]),
+                size=int(asset["bytes"]),
+                timeout=60.0,
+                headers={"User-Agent": "VoiceHub/voiceclean"},
+                on_progress=progress,
+                on_mirror=audiocpp_runtimes.remember_mirror,
+            )
+        except (httpx.HTTPError, OSError, ValueError) as exc:
+            raise ProducerError(f"下载失败：{_brief(exc)}") from exc
+        models.record_builtin_hash(self._builtin_root, utility, str(asset["sha256"]))
 
     def job_view(self) -> dict[str, Any] | None:
         with self._lock:
@@ -1086,34 +1074,33 @@ class VoiceCleanService:
             current = self._run_step(job, item, step, current, work)
 
         result = work / "result.wav"
+        model_ran = current is not origin
         # 回库的结果按原样例采样率落盘：模型输入率是模型的要求（分离 44.1 kHz、
         # 小工具 16 kHz），不能因此把库里的样例也改低。文件目标保留模型原生输出。
         target_rate = origin_rate if job.scope.get("kind") != "file" else 0
         if job.normalize:
+            # 原声与模型输出用同一套收尾；先做原声，再按是否需要模型结果决定
+            # 是否还要编一遍。
+            finished = work / "origin-finished.wav"
+            ffmpeg.normalize(origin, finished, highpass=_HIGHPASS, peak=_PEAK)
+            os.replace(finished, origin)
+        if not model_ran:
+            # 没有模型步骤：结果就是处理过的原声，不必再跑一次同一串滤镜。
+            shutil.copyfile(origin, result)
+        elif job.normalize:
             ffmpeg.normalize(
                 current, result, rate=target_rate, highpass=_HIGHPASS, peak=_PEAK
             )
         elif target_rate:
-            # 收尾关掉时同样只统一单声道，不做高通与限峰。
             ffmpeg.normalize(current, result, rate=target_rate, peak=0)
         else:
             shutil.copyfile(current, result)
         # 入库用：模型输出比原样例高时才保留原生采样率，带宽扩展补出的高频不会被
-        # 降回去；低于原样例时仍按原样例落盘，不把库里的采样率改低。
-        native_rate = origin_rate if current is origin else audioprobe.probe_stream(current)[1]
+        # 降回去；低于原样例时仍按原样例落盘。真正编码推迟到用户点「入库」。
+        native_rate = origin_rate if not model_ran else audioprobe.probe_stream(current)[1]
         if target_rate and native_rate > target_rate:
-            native = work / "result-native.wav"
-            if job.normalize:
-                ffmpeg.normalize(
-                    current, native, rate=native_rate, highpass=_HIGHPASS, peak=_PEAK
-                )
-            else:
-                ffmpeg.normalize(current, native, rate=native_rate, peak=0)
-        # 收尾对原声副本也做一次：两边同一套参数，试听差异只来自模型。
-        if job.normalize:
-            finished = work / "origin-finished.wav"
-            ffmpeg.normalize(origin, finished, highpass=_HIGHPASS, peak=_PEAK)
-            os.replace(finished, origin)
+            item.native_rate = native_rate
+            item.native_source = str(current)
         item.origin_seconds = audioprobe.probe_duration(origin)
         item.result_seconds = audioprobe.probe_duration(result)
         if job.scope.get("kind") == "file":
@@ -1264,6 +1251,15 @@ class VoiceCleanService:
                 continue
             work = job.folder / f"{item.index:04d}"
             native = work / "result-native.wav"
+            if item.native_rate > 0 and item.native_source and not native.is_file():
+                # 只有入库才需要这份原生采样率结果；替换不付这次编码。
+                ffmpeg.normalize(
+                    Path(item.native_source),
+                    native,
+                    rate=item.native_rate,
+                    highpass=_HIGHPASS if job.normalize else 0,
+                    peak=_PEAK if job.normalize else 0,
+                )
             source = native if native.is_file() else work / "result.wav"
             if not source.is_file():
                 failures.append({"index": item.index, "reason": "处理结果不在了"})

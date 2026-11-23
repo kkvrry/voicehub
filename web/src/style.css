@@ -266,17 +266,22 @@ input, select, textarea { font: inherit; color: inherit; }
   padding: 0 var(--sh-gutter) 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
 }
 .tagbar-label { font-size: 12px; color: var(--sh-text-4); margin-right: 2px; }
-.tag-chip, .tagbar-toggle {
+.tag-chip {
   display: inline-flex; align-items: center; gap: 5px;
   border: 1px solid var(--sh-line); background: var(--sh-glass-soft); color: var(--sh-text-2);
   border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer;
   transition: color var(--sh-t-fast) var(--sh-ease), background var(--sh-t) var(--sh-ease),
     border-color var(--sh-t) var(--sh-ease);
 }
-.tag-chip:hover, .tagbar-toggle:hover { border-color: var(--sh-accent); color: var(--sh-accent); }
-.tag-chip.active, .tagbar-toggle.active { background: var(--sh-accent); border-color: var(--sh-accent); color: #fff; }
+.tag-chip:hover { border-color: var(--sh-accent); color: var(--sh-accent); }
+.tag-chip.active {
+  background: var(--sh-accent); border-color: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+}
 .tag-count { color: var(--sh-text-4); font-size: 11px; }
-.tag-chip.active .tag-count { color: rgba(255, 255, 255, 0.75); }
+.tag-chip.active .tag-count {
+  color: color-mix(in srgb, var(--sh-accent-contrast) 75%, transparent);
+}
 /* 「全部」是这一排里的"回到不筛"，与后面的具体标签用一道竖线分开；
    选中时用浅蓝底而不是实心蓝——它在每一页都出现，实心会把这一行压成色块。 */
 .tagbar-divider {
@@ -287,7 +292,9 @@ input, select, textarea { font: inherit; color: inherit; }
   background: var(--sh-accent-soft); border-color: transparent; color: var(--sh-accent);
 }
 /* 标签条的总开关：标签太多时收成一行，平板不再被标签墙占掉半屏。
-   收起后这一颗写着"标签"（正筛着某个标签时写那个标签名），点它展开。 */
+   收起后这一颗写着"标签"（正筛着某个标签时写那个标签名），点它展开。
+   样式复用 `.tag-chip`（模板上两个类一起挂），这里只补差异：不吃 flex
+   收缩、字重更重、字名过长时省略。 */
 .tagbar-toggle { flex: none; font-weight: 600; }
 .tagbar-toggle-label {
   max-width: 10em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

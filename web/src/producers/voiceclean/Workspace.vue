@@ -130,7 +130,7 @@
                 <span
                   v-if="stepJob(step)"
                   class="vc-step-note"
-                  :class="{ 'is-warn': jobFailed(stepJob(step)) }"
+                  :class="{ 'is-warn': isFailedModelJob(stepJob(step)) }"
                 >
                   {{ jobLabel(stepJob(step)) }}
                 </span>
@@ -194,10 +194,10 @@
                       <span class="vc-model-note">{{ model.note }}</span>
                     </button>
                     <div class="vc-model-side">
-                      <template v-if="model.job && jobActive(model.job)">
+                      <template v-if="isActiveModelJob(model.job)">
                         <span class="vc-model-job">{{ jobLabel(model.job) }}</span>
                       </template>
-                      <template v-else-if="jobFailed(model.job)">
+                      <template v-else-if="isFailedModelJob(model.job)">
                         <span
                           class="vc-model-job is-error"
                           :title="model.job.message"
@@ -208,7 +208,7 @@
                           v-if="!model.downloaded"
                           type="button"
                           class="sh-btn is-soft vc-model-download"
-                          :disabled="Boolean(state.modelBusy) || lockedEdit"
+                          :disabled="modelActive || lockedEdit"
                           @click="downloadModel(activeStep, model)"
                         >
                           <Download :size="12" :stroke-width="1.8" />
@@ -220,7 +220,7 @@
                           v-if="!model.downloaded"
                           type="button"
                           class="sh-btn is-soft vc-model-download"
-                          :disabled="Boolean(state.modelBusy) || lockedEdit"
+                          :disabled="modelActive || lockedEdit"
                           @click="downloadModel(activeStep, model)"
                         >
                           <Download :size="12" :stroke-width="1.8" />
@@ -695,6 +695,8 @@ import {
   downloadResult,
   enabledSteps as enabledStepNames,
   hasSelection,
+  isActiveModelJob,
+  isFailedModelJob,
   isFileTarget,
   isLocalVoice,
   isRunning,
@@ -704,6 +706,7 @@ import {
   keepSelection,
   keptSeconds,
   loadTarget,
+  modelActive,
   onlyThis,
   pickOf,
   play,
@@ -976,18 +979,6 @@ function noteOf(step) {
 }
 
 /** @param {any} job */
-function jobActive(job) {
-  return ['queued', 'running', 'cancelling', 'downloading', 'loading'].includes(
-    String(job?.state || '')
-  )
-}
-
-/** @param {any} job */
-function jobFailed(job) {
-  return ['failed', 'error', 'cancelled', 'canceled'].includes(String(job?.state || ''))
-}
-
-/** @param {any} job */
 function jobLabel(job) {
   const state = String(job?.state || '')
   if (state === 'downloading') {
@@ -996,7 +987,7 @@ function jobLabel(job) {
   }
   if (state === 'queued') return '等待下载'
   if (state === 'loading') return '加载中'
-  if (jobFailed(job)) return String(job?.message || '失败')
+  if (isFailedModelJob(job)) return String(job?.message || '失败')
   return '已就绪'
 }
 
@@ -1004,11 +995,11 @@ function jobLabel(job) {
 /** @param {any} step */
 function stepJob(step) {
   const chosen = currentModel(step)
-  if (chosen?.job && (jobActive(chosen.job) || jobFailed(chosen.job))) {
+  if (chosen?.job && (isActiveModelJob(chosen.job) || isFailedModelJob(chosen.job))) {
     return chosen.job
   }
   for (const model of step.models || []) {
-    if (jobActive(model.job)) return model.job
+    if (isActiveModelJob(model.job)) return model.job
   }
   return null
 }
@@ -1017,7 +1008,7 @@ function stepJob(step) {
 function stepState(step) {
   if (!step.models?.length) return '无模型'
   if (!hasReady(step)) {
-    return (step.models || []).some((/** @type {any} */ row) => jobActive(row.job))
+    return (step.models || []).some((/** @type {any} */ row) => isActiveModelJob(row.job))
       ? '下载中'
       : '待下载'
   }

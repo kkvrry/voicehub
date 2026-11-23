@@ -171,6 +171,7 @@ class TestStreamEndpoint:
         """把识别与 VAD 都换成假的：引擎已就绪、VAD 按脚本吐概率。"""
         monkeypatch.setattr(asr, "unavailable_reason", lambda: "")
         monkeypatch.setattr(asr_stream, "vad_unavailable_reason", lambda: "")
+        monkeypatch.setattr(asr, "is_local", lambda: True)
         heard: list[Any] = []
 
         def fake_transcribe(path):
@@ -216,17 +217,46 @@ class TestStreamEndpoint:
             assert "start / stop" in event["message"]
 
     def test_speaking_emits_partial_transcripts(self, client, wired, monkeypatch):
-        """说得够久（≥1.2s）就有 partial 事件；说完了 segment 收尾，partial 在它前面。"""
-        # stop 会先等在途的部分识别收尾再冲尾段，顺序因此是确定的。
+        """说得够久（≥0.8s）就有 partial 事件；它出现在收尾段之前。"""
+
         def long_session(on_speech=None):
-            script = [0.1] * 4 + [0.9] * 45 + [0.1] * 30
+            script = [0.1] * 4 + [0.9] * 90 + [0.1] * 30
             return asr_stream.StreamSession(scorer=ScriptedScorer(script), on_speech=on_speech)
 
         monkeypatch.setattr(asr_stream, "new_session", long_session)
         with client.websocket_connect("/api/v1/asr/stream") as ws:
             ws.send_json({"type": "start", "sample_rate": 16000})
             assert ws.receive_json()["type"] == "ready"
-            for _ in range(50):
+            for _ in range(90):
+                ws.send_bytes(_frame())
+            kinds = []
+            while "partial" not in kinds:
+                event = ws.receive_json()
+                kinds.append(event["type"])
+                assert len(kinds) < 10, f"等不到部分识别：{kinds}"
+            ws.send_json({"type": "stop"})
+            while True:
+                event = ws.receive_json()
+                kinds.append(event["type"])
+                if event["type"] == "done":
+                    break
+            assert kinds.index("speech") < kinds.index("partial") < kinds.index("segment")
+
+    def test_cloud_engine_never_emits_partials(self, client, wired, monkeypatch):
+        """云端识别按整段计费：部分结果不能自动开启。"""
+        monkeypatch.setattr(asr, "is_local", lambda: False)
+
+        def long_session(on_speech=None):
+            return asr_stream.StreamSession(
+                scorer=ScriptedScorer([0.1] * 4 + [0.9] * 90 + [0.1] * 30),
+                on_speech=on_speech,
+            )
+
+        monkeypatch.setattr(asr_stream, "new_session", long_session)
+        with client.websocket_connect("/api/v1/asr/stream") as ws:
+            ws.send_json({"type": "start", "sample_rate": 16000})
+            assert ws.receive_json()["type"] == "ready"
+            for _ in range(90):
                 ws.send_bytes(_frame())
             ws.send_json({"type": "stop"})
             kinds = []
@@ -235,8 +265,8 @@ class TestStreamEndpoint:
                 kinds.append(event["type"])
                 if event["type"] == "done":
                     break
-            assert "partial" in kinds, "说话满 1.2s 必须推出部分识别"
-            assert kinds.index("speech") < kinds.index("partial") < kinds.index("segment")
+            assert "partial" not in kinds
+            assert "segment" in kinds
 
     def test_a_blink_never_produces_partials(self, client, wired, monkeypatch):
         """碎音（不足最短说话时长）连段都不成，更不该有 partial 刷屏。"""

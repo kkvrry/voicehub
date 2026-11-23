@@ -348,10 +348,10 @@ import WaveBars from './ui/WaveBars.vue'
 
 const settings = useSettingsStore()
 
-/** 音色卡片列只在 `none` 那一档收起；`cards` 是"只有它"。 */
-const showCards = computed(() => settings.appearance.railVisibility !== 'none')
+/** 音色卡片列与目录树的显隐只读 settings store 那一份派生。 */
+const showCards = computed(() => settings.railCards)
 /** 目录树收起后，这一页要把原本让给树的左边距还回来。 */
-const treeHidden = computed(() => settings.appearance.railVisibility !== 'both')
+const treeHidden = computed(() => !settings.railTree)
 
 /** 勾选的那几台引擎——"认不认这条指令""这一格有哪些候选"都从它们身上问。 */
 const pickedEngines = computed(() =>

@@ -46,7 +46,6 @@
 
 from __future__ import annotations
 
-import random
 import re
 import uuid
 from collections.abc import Mapping
@@ -76,6 +75,7 @@ from app.engines.builtin.breeze_tts.settings import (
     BreezeTtsSettings,
 )
 from app.engines.mapping import EngineMapping, apply_mapping
+from app.engines.seed import resolve_seed as _resolve_seed
 from app.infra.loghub import CHANNEL
 
 __all__ = [
@@ -201,22 +201,11 @@ def resolve_guidance_scale(
 
 
 def resolve_seed(value: Any) -> tuple[int, str]:
-    """定这一次真正发出去的种子——返回 ``（值, 对用户说的一句话）``。
-
-    负数（约定写作 ``-1``）= 随机：**抽一个、发出去、把抽到的数报回来**。
-    界面只留 ``seed=…`` 这一句；"为什么抽、怎么复现"写进日志。
-    """
-    seed = int(value)
-    if seed >= 0:
-        # 固定种子也报出来：结果是可复现的，界面上要看得到用的是哪一号。
-        return seed, f"seed={seed}"
-    drawn = random.randrange(0, 2**31)
-    CHANNEL.info(
-        f"种子写的是 {seed}（= 随机），抽取结果 {drawn}（可用它复现）",
-        source="engine",
-        engine="breeze_tts",
-    )
-    return drawn, f"seed={drawn}"
+    """定这一次真正发出去的种子（负数 = 随机，抽到的数报回来）。"""
+    seed, note = _resolve_seed(value, engine="breeze_tts", ceiling=2**31 - 1)
+    if seed is None:
+        raise EngineError("种子缺失。")
+    return seed, note
 
 
 def _guard(reference_audio: str, reference_text: str, instruction: str) -> None:

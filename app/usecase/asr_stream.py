@@ -68,13 +68,13 @@ PAD_MS = 60
 #: 一直不停地说也硬切（识别引擎吃不下无限长的段）。
 MAX_SEGMENT_MS = 30_000
 
+#: 说得太短不值得跑部分识别——识别引擎对不足一秒的碎音给不出有意义的结果。
+PARTIAL_MIN_MS = 800
 #: 说话中的部分识别（"边说边出字"）：第一次在说满 PARTIAL_MS 时跑，之后
 #: 每跑一次间隔翻倍，最多 PARTIAL_MAX_MS。重识别的是整段话，间隔不涨的话
 #: 一段 30 秒的独白要额外跑二十多次整段推理。
-PARTIAL_MS = 1200
+PARTIAL_MS = PARTIAL_MIN_MS
 PARTIAL_MAX_MS = 8000
-#: 说得太短不值得跑部分识别——识别引擎对不足一秒的碎音给不出有意义的结果。
-PARTIAL_MIN_MS = 800
 
 #: 逐段识别互斥：识别服务通常一次只跑一条（见 usecase.asr 的串行约定）。
 _TRANSCRIBE_LOCK = threading.Lock()
@@ -160,7 +160,9 @@ class StreamSession:
         self._silence_frames = 0
         self._speech: list[np.ndarray] = []
         self._speech_samples = 0
-        self._pad: deque[np.ndarray] = deque(maxlen=max(1, PAD_MS // _FRAME_MS))
+        self._pad: deque[np.ndarray] = deque(
+            maxlen=max(1, -(-PAD_MS // _FRAME_MS))
+        )
 
     def reset(self) -> None:
         """回到初始状态（同一连接复用会话时用；当前端点是"一连接一会话"，留着以防万一）。"""
@@ -183,13 +185,18 @@ class StreamSession:
             return 0
         return self._speech_samples * 1000 // TARGET_RATE
 
+    @property
+    def speaking(self) -> bool:
+        """此刻仍在出声（与 ``in_speech`` 的区别：段尾静音计数期间也算 in_speech）。"""
+        return self._in_speech and self._silence_frames == 0
+
     def partial(self) -> bytes | None:
         """说话中的快照：已积累的整段 PCM（16k int16 bytes），用于"说到哪了"的部分识别。
 
         快照是拷贝——喂帧协程继续往缓冲里追加也不会串进这份结果。说话太短
-        （不足 :data:`PARTIAL_MIN_MS`）返回 None，不值得跑一次识别。
+        （不足 :data:`PARTIAL_MIN_MS`）或已经进入段尾静音时返回 None。
         """
-        if not self._in_speech or self.speech_ms < PARTIAL_MIN_MS:
+        if not self.speaking or self.speech_ms < PARTIAL_MIN_MS:
             return None
         return np.concatenate(self._speech).tobytes()
 
@@ -255,7 +262,7 @@ class StreamSession:
 
     def _take_segment(self) -> bytes | None:
         """收段：去掉多余的结尾静音（只留 :data:`PAD_MS`），不足最短说话时长丢弃。"""
-        keep_frames = max(1, PAD_MS // _FRAME_MS)
+        keep_frames = max(1, -(-PAD_MS // _FRAME_MS))
         drop = max(0, self._silence_frames - keep_frames)
         self._in_speech = False
         self._silence_frames = 0

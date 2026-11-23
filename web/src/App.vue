@@ -8,7 +8,7 @@
     :active="activeNav"
     :show-rail="showShellRail"
     :show-search="showVoiceSearch"
-    :rail-cards="railCards"
+    :rail-cards="pageRailCards"
     v-model:query="searchQuery"
     :placeholder="searchPlaceholder"
     :hint="isSettings ? searchHint : ''"
@@ -246,15 +246,15 @@ const railMode = computed(() => {
 
 /** 这一页有没有音色卡片列：生成页有，带音色栏的生产方工作区也有。
  *  三档切换只在有这一列时成立；没有这一列的页只切目录树。 */
-const railCards = computed(
+const pageRailCards = computed(
   () => store.view === 'synth' || (store.view === 'producer' && showProducerRail.value)
 )
 
-/** 音色卡片列只在 `none` 那一档收起；`cards` 是"只有它"。 */
-const showCards = computed(() => settings.appearance.railVisibility !== 'none')
+/** 音色卡片列与目录树的显隐只认 settings store 那一份派生。 */
+const showCards = computed(() => settings.railCards)
 
 /** 目录树收起（`cards` / `none`）后，工作区要把原本让给树的左边距还回来。 */
-const treeHidden = computed(() => settings.appearance.railVisibility !== 'both')
+const treeHidden = computed(() => !settings.railTree)
 
 /** 工具型工作区（不要音色栏）也不显示音色结构树与音色搜索：这一页不归音色库管。 */
 const showShellRail = computed(

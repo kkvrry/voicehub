@@ -218,7 +218,7 @@ FastAPI（单进程）
 - **识别插件 `sense_asr`**：连接一台 SenseVoice-Small 服务（audio.cpp 的 `sense_asr` 族，默认 `http://127.0.0.1:18102`）。与 Qwen3-ASR 共用 OpenAI 兼容客户端；注意 offline 的 `sense_asr` 需要 Silero VAD 资产，默认用 streaming 的 `sense-asr`。
 - **输入**：非 WAV 音频先由 ffmpeg 转为 16 kHz 单声道 WAV，再以 multipart 上传。单段识别不使用引擎的流式接口。
 - **流式识别**（`/api/v1/asr/stream`，WebSocket）：用于麦克风常开的连续对话。客户端先发文本 `{"type":"start","sample_rate":...}`（浏览器 `AudioContext` 的实际采样率，服务端统一重采样到 16 kHz），之后发二进制 int16 单声道 PCM，收尾发 `{"type":"stop"}`；服务端推 `ready` / `speech` / `partial` / `segment` / `error` / `done`。分段由核心的 Silero VAD 状态机完成（`usecase/asr_stream.py`）：静音 700 ms 判说完、段上限 30 s、起音回填 60 ms、不足 250 ms 的碎段丢弃；切出的每一段仍走 `asr.transcribe_file`，识别插件不感知流式。
-- **部分结果**不等于引擎流式：说话中把已积累的整段音频重新识别一遍，推 `partial` 供界面实时展示。它只作展示，`segment` 才是定稿；同一时刻只跑一条，间隔随说话时长从 1.2 s 翻倍到 8 s，整段一切出在途结果即作废。这样不会把识别队列排在收尾段前面，也不要求任何一台引擎支持流式返回。
+- **部分结果**不等于引擎流式：说话中把已积累的整段音频重新识别一遍，推 `partial` 供界面实时展示。它只作展示，`segment` 才是定稿；同一时刻只跑一条，间隔随说话时长从 0.8 s 翻倍到 8 s，整段一切出在途结果即作废；当前引擎声明为云端时这一路整体关闭（每次部分结果都是一次整段计费）。这样不会把识别队列排在收尾段前面，也不要求任何一台引擎支持流式返回。
 - **为什么不用 audio.cpp 的 `/v1/audio/transcriptions/live`**：那条原生流式入口可用，但当前默认的 `sense-asr` 是缓冲式实例——实测整段音频收完才回一条 delta（`ttft_ms` 等于整段时长），换过去反而没有“边说边出字”。接 cache-aware 流式模型（如 Nemotron、Voxtral realtime）时，可在 `usecase/asr_stream` 里加一条旁路，插件契约仍不必改。
 - **流式依赖**：`silero-vad`（TorchScript 模型）与 `torch` 是可选项，缺失时端点回一句“请安装 silero-vad”而不是 traceback；VAD 模型按连接加载，推理在工作线程，识别另起协程按序听，收帧不被识别卡住。
 - **能力**：文本恒有；语种检测可选。情感、声音事件、逐词时间轴不声明，界面如实列出「不支持」（SenseVoice 模型带事件/情感标签，但当前 HTTP 结果不返回）。

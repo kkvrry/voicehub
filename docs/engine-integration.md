@@ -399,7 +399,7 @@ POST /api/v1/synthesize
 
 ## 8. 配置与机密
 
-- 表单由 `settings_schema().model_json_schema()` 渲染；字段的 `label` / `group` / `widget` / `choices` / `secret` 由 `ui_hints` 提供。
+- 表单由 `settings_schema().model_json_schema()` 渲染；字段的 `label` / `group` / `step` / `widget` / `choices` / `secret` 由 `ui_hints` 提供。
 - 机密存 Windows DPAPI 加密后的 `config.json`；读接口掩码为空串并另给 `secrets_set`。
 - 空串表示「不修改」；真正清空用 `{"_clear": ["api_key"]}`；恢复默认用 `{"_reset": true}`，机密保留。
 - 保存时只校验本次提交的字段；旧版本留下的非法值不妨碍修改其他字段。

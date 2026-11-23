@@ -26,7 +26,6 @@
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 from typing import Any
 
@@ -51,12 +50,9 @@ from app.engines.mapping import (
     register_transform,
 )
 from app.engines.presets import load_presets
-from app.infra.loghub import CHANNEL
+from app.engines.seed import resolve_seed as _resolve_seed
 
 __all__ = ["PRESETS_PATH", "IndexTts2Engine", "resolve_seed"]
-
-#: 种子上限（audio.cpp 的 seed 是 uint32）。
-SEED_CEILING = 2**32 - 1
 
 #: 「引导指令」的现成说法：与 mimo 同一个数据文件形状（改文案不用动 Python）。
 PRESETS_PATH = Path(__file__).resolve().parent / "instructions.json"
@@ -141,22 +137,7 @@ _TABLE_ONLY: dict[str, str] = {
 
 def resolve_seed(value: Any) -> tuple[int | None, str]:
     """这一次发出去的种子：``-1`` 抽一个、其他原样、空着不发（引擎自己随机）。"""
-    if value is None or (isinstance(value, str) and not value.strip()):
-        return None, ""
-    try:
-        seed = int(value)
-    except (TypeError, ValueError):
-        raise EngineError(f"种子「{value}」不是整数。") from None
-    if seed >= 0:
-        value = min(seed, SEED_CEILING)
-        return value, f"seed={value}"
-    drawn = random.randrange(0, SEED_CEILING + 1)
-    CHANNEL.info(
-        f"种子写的是 {seed}（= 随机），抽取结果 {drawn}（可用它复现）",
-        source="engine",
-        engine="indextts2",
-    )
-    return drawn, f"seed={drawn}"
+    return _resolve_seed(value, engine="indextts2")
 
 
 def _provided(value: Any) -> bool:

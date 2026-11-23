@@ -151,6 +151,13 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
             await ws.close()
             return
 
+        # 云端识别按整段计费：部分结果每次都要重听整段，不能替用户决定花这笔钱。
+        partial_ok = True
+        try:
+            partial_ok = await asyncio.to_thread(asr.is_local)
+        except Exception:  # noqa: BLE001 - 能力读不到就按本地处理，不额外计费
+            partial_ok = True
+
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         # 切出来的段进这条队列，由单独的识别协程按序听：收帧循环只做 VAD，
         # 不等识别。识别慢的时候帧会压在 WebSocket 里，但顺序与内容都不丢。
@@ -281,11 +288,11 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
                             continue
                         emit({"type": "ready"})
                     elif command == "stop":
-                        # 在途的部分识别等它做完：stop 之后前端还等着收尾事件，
-                        # 让它先说话，收尾段再跟上，顺序才不会乱。
+                        # 在途的部分结果注定被收尾段取代：作废并直接丢掉，不再
+                        # 等它跑完再推给界面（那只会让 stop 变慢）。
                         if partial_task is not None:
-                            with contextlib.suppress(Exception):
-                                await partial_task
+                            partial_seq += 1
+                            partial_task.cancel()
                             partial_task = None
                         if session is not None:
                             tail = session.flush()
@@ -312,8 +319,9 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
                 for segment in segments:
                     enqueue_segment(segment)
                 if (
-                    session is not None
-                    and session.in_speech
+                    partial_ok
+                    and session is not None
+                    and session.speaking
                     and session.speech_ms - partial_mark >= partial_gap
                     and (partial_task is None or partial_task.done())
                 ):

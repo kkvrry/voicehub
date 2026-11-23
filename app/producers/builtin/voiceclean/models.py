@@ -18,22 +18,28 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from app.infra import atomic
 
 __all__ = [
     "CORE_STEP",
     "STEPS",
     "Step",
     "builtin_asset",
+    "builtin_digest_path",
     "builtin_downloaded",
     "builtin_path",
     "candidate_key",
     "candidates_for",
     "family_note",
     "find_candidate",
+    "record_builtin_hash",
     "running_of",
     "step_of",
 ]
@@ -54,14 +60,6 @@ _PREFERENCE: dict[str, tuple[str, ...]] = {
         "sidon",
         "reuse",
         "realtime_reuse",
-        "mossformer2_sr",
-        "deepfilternet2",
-        "zipenhancer",
-        "rnnoise",
-        "gtcrn_dns3",
-        "gtcrn_vctk",
-        "gtcrn_streaming",
-        "flashsr",
     ),
 }
 
@@ -107,7 +105,8 @@ _PREP_BY_FAMILY: dict[str, tuple[int, int]] = {
 #: 同一个族里按步骤挑包：MossFormer2 的 ss / se / sr 是三个不同模型。
 _PACKAGE_HINTS: dict[str, tuple[str, ...]] = {
     "sep": ("ss_", "_ss"),
-    "s2s": ("se_", "_se", "sr_", "_sr"),
+    # 带宽扩展只收 FlashSR（内置工具）；官方 SR 包不进降噪卡，也不在这里列。
+    "s2s": ("se_", "_se"),
 }
 
 #: 内置工具的权重：固定到 audio.cpp 的发布标签，不跟 main 漂移。文件名、大小与
@@ -298,14 +297,66 @@ def builtin_path(root: Path, utility: str) -> Path:
     return root / utility / Path(str(meta["file"])).name
 
 
+def builtin_digest_path(root: Path, utility: str) -> Path:
+    """权重旁边那份 sha256 旁证；下载完成时写，之后只读它。"""
+    path = builtin_path(root, utility)
+    return path.with_name(f"{path.name}.sha256")
+
+
+def record_builtin_hash(root: Path, utility: str, digest: str) -> None:
+    """把刚校验过的哈希与文件指纹写进旁证；写不进去下次会重算，不影响加载。"""
+    path = builtin_path(root, utility)
+    try:
+        stat = path.stat()
+        payload = json.dumps(
+            {"sha256": digest.lower(), "mtime_ns": stat.st_mtime_ns, "size": stat.st_size}
+        )
+        atomic.write_bytes(builtin_digest_path(root, utility), payload.encode("utf-8"))
+    except OSError:
+        pass
+
+
+def _sidecar_hash(side: Path, target: Path, expected: str) -> bool:
+    """旁证与清单、当前文件指纹三样都对才认；任何一样变了都重算。"""
+    try:
+        payload = json.loads(side.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    try:
+        stat = target.stat()
+    except OSError:
+        return False
+    return (
+        str(payload.get("sha256") or "").lower() == expected
+        and int(payload.get("mtime_ns") or 0) == stat.st_mtime_ns
+        and int(payload.get("size") or 0) == stat.st_size
+    )
+
+
 def builtin_downloaded(root: Path, utility: str) -> bool:
-    """按文件大小判断是否已下载；哈希只在下载完成时校验一次。"""
+    """文件大小对、且 sha256 对，才算已下载。
+
+    旁证记的是「哈希 + mtime + 大小」：文件被替换但大小没变，mtime 也会变，
+    这里会重算哈希并判成未下载。老版本没有旁证时第一次见到就补写。
+    """
     meta = _UTILITIES.get(utility)
     if meta is None:
         return False
     path = builtin_path(root, utility)
     try:
-        return path.is_file() and path.stat().st_size == int(meta["bytes"])
+        if not path.is_file() or path.stat().st_size != int(meta["bytes"]):
+            return False
+        expected = str(meta["sha256"]).lower()
+        if _sidecar_hash(builtin_digest_path(root, utility), path, expected):
+            return True
+        with path.open("rb") as handle:
+            actual = hashlib.file_digest(handle, "sha256").hexdigest()
+        if actual != expected:
+            return False
+        record_builtin_hash(root, utility, expected)
+        return True
     except OSError:
         return False
 

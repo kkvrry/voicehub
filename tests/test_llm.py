@@ -44,6 +44,7 @@ def test_unknown_provider_is_explained() -> None:
 
 def test_client_creation_survives_bracketed_ipv6_no_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
     """DeepSeek 客户端读系统代理；``[::1]`` 不能把分析打成 500。"""
+    from app.llm import http as llm_http
     from app.llm.builtin.deepseek import client as deepseek_client
 
     value = "localhost,127.0.0.1,[::1],::1"
@@ -51,7 +52,7 @@ def test_client_creation_survives_bracketed_ipv6_no_proxy(monkeypatch: pytest.Mo
     monkeypatch.setenv("no_proxy", value)
 
     async def run() -> bool:
-        client = deepseek_client._client()
+        client = deepseek_client.client()
         try:
             return client.is_closed
         finally:
@@ -60,7 +61,8 @@ def test_client_creation_survives_bracketed_ipv6_no_proxy(monkeypatch: pytest.Mo
     try:
         assert asyncio.run(run()) is False
     finally:
-        deepseek_client._CLIENT = None
+        llm_http._CLIENT = None
+        llm_http._CLIENT_LOOP = None
         deepseek_client._CLIENT_LOOP = None
     assert os.environ["NO_PROXY"] == "localhost,127.0.0.1,::1,::1"
 
@@ -812,7 +814,7 @@ def test_clear_removes_the_secret(client) -> None:
 
 
 def test_chat_without_key_is_refused_with_reason(client) -> None:
-    # 指名 DeepSeek：LM Studio 不需要密钥，会接管"没指定 provider"的默认位。
+    # 指名 DeepSeek：默认通道不再按"谁不需要密钥"来挑本机服务。
     resp = client.post(
         "/api/v1/llm/chat",
         json={"provider": "deepseek", "messages": [{"role": "user", "content": "hi"}]},
@@ -909,6 +911,24 @@ def test_test_endpoint_reports_failure_as_business_result(client, monkeypatch: p
 def test_default_provider_round_trip(client) -> None:
     body = client.put("/api/v1/llm/default", json={"key": "deepseek"}).json()
     assert body["key"] == "deepseek"
+
+
+def test_default_provider_is_empty_until_the_user_chooses(client) -> None:
+    """本机服务不需要密钥，不能因为"就绪"就接管默认位。"""
+    from app.usecase.llm import default_provider
+
+    assert default_provider() == ""
+
+
+def test_default_provider_uses_the_provider_with_saved_settings(client) -> None:
+    """保存过设置就是明确选择：这时本机服务可以做默认。"""
+    from app.usecase.llm import default_provider
+
+    client.put(
+        "/api/v1/llm/providers/lmstudio/settings",
+        json={"base_url": "http://127.0.0.1:1234/v1"},
+    )
+    assert default_provider() == "lmstudio"
 
 
 def test_lmstudio_settings_keep_the_model_blank(client) -> None:

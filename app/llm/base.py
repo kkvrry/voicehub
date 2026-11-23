@@ -29,7 +29,7 @@ from typing import Any
 from pydantic import BaseModel
 
 # 形态词表与界面提示只在 engines 那一处定义：这里借用，不复制第二份。
-from app.engines.base import KIND_CLOUD, KIND_LABELS, ui_hints
+from app.engines.base import KIND_CLOUD, KIND_LABELS, KIND_LOCAL, ui_hints
 
 __all__ = [
     "ABILITY_LABELS",
@@ -296,6 +296,9 @@ class LlmProvider(ABC):
         """
         caps = self.capabilities()
         kind_label, kind_note = KIND_LABELS.get(caps.kind, (caps.kind, ""))
+        if caps.kind == KIND_LOCAL:
+            # 对话模型没有"音色"，共用的本地说明对它不成立。
+            kind_note = "本地服务，推理在本机运行"
         return {
             "key": self.key,
             "label": self.label,

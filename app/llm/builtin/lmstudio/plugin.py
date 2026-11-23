@@ -103,8 +103,9 @@ class LmStudioProvider(LlmProvider):
         if req.stop:
             body["stop"] = list(req.stop)
 
-        # 采样参数只在填了的时候发：空着交给 LM Studio 自己的模型设置，
-        # 不拿插件里的默认值覆盖用户在那一侧调好的东西。
+        # 温度与回复上限属于插件的必填配置，始终按面板值发；其余采样参数只在
+        # 填了的时候发：空着交给 LM Studio 自己的模型设置，不拿默认值覆盖用户
+        # 在那一侧调好的东西。
         for key in _SAMPLING_KEYS:
             value = getattr(cfg, key)
             if value is not None:

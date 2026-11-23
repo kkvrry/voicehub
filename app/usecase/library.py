@@ -103,6 +103,31 @@ def _category_nodes(rels: list[str]) -> list[dict[str, Any]]:
     return emit(tree, "")
 
 
+def _sidecar_with_sample(
+    side: Sidecar,
+    entries: dict[str, dict[str, Any]],
+    file: str,
+    entry: dict[str, Any],
+) -> Sidecar:
+    """在一份 sidecar 里改写一条样例，其余字段原样保留。
+
+    替换与入库都走这一个装配点：以后加 sidecar 字段只改这里。
+    """
+    return Sidecar(
+        gender=side.gender,
+        age=side.age,
+        language=side.language,
+        tags=side.tags,
+        description=side.description,
+        display=side.display,
+        main_sample=side.main_sample,
+        favorite=side.favorite,
+        hidden=side.hidden,
+        samples={**entries, file: entry},
+        origin=side.origin,
+    )
+
+
 def _audio_files(folder: Path) -> list[Path]:
     """一个音色文件夹里的音频，新的在前（文件名是 ``时间戳-序号``）。读不动当空。"""
     try:
@@ -1211,10 +1236,11 @@ class LibraryService:
             )
 
         # 临时名不带音频后缀：扫描器只认音频扩展名，半份文件不会被认成一条样例。
-        staged = folder / f".{file}.incoming"
+        staged = folder / f".{file}.{uuid.uuid4().hex[:8]}.incoming"
         try:
             shutil.copyfile(source, staged)
         except OSError as exc:
+            staged.unlink(missing_ok=True)
             raise LibraryError(
                 f"写入处理结果失败：{exc}。", code="invalid_operation", status=500
             ) from exc
@@ -1250,23 +1276,7 @@ class LibraryService:
         if params:
             merged.update({str(key): str(value) for key, value in params.items() if str(value)})
             entry["params"] = merged
-        entries[file] = entry
-        write_sidecar(
-            folder,
-            Sidecar(
-                gender=side.gender,
-                age=side.age,
-                language=side.language,
-                tags=side.tags,
-                description=side.description,
-                display=side.display,
-                main_sample=side.main_sample,
-                favorite=side.favorite,
-                hidden=side.hidden,
-                samples=entries,
-                origin=side.origin,
-            ),
-        )
+        write_sidecar(folder, _sidecar_with_sample(side, entries, file, entry))
         samples = tuple(
             replace(
                 sample,
@@ -1379,23 +1389,7 @@ class LibraryService:
         if params:
             merged.update({str(key): str(value) for key, value in params.items() if str(value)})
             entry["params"] = merged
-        entries[target.name] = entry
-        write_sidecar(
-            folder,
-            Sidecar(
-                gender=side.gender,
-                age=side.age,
-                language=side.language,
-                tags=side.tags,
-                description=side.description,
-                display=side.display,
-                main_sample=side.main_sample,
-                favorite=side.favorite,
-                hidden=side.hidden,
-                samples=entries,
-                origin=side.origin,
-            ),
-        )
+        write_sidecar(folder, _sidecar_with_sample(side, entries, target.name, entry))
         updated = self.sync_local_folder(folder)
         saved = (
             next((row for row in updated.samples if row.file == target.name), None)

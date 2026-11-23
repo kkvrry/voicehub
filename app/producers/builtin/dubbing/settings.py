@@ -57,7 +57,7 @@ SETTINGS_PAGE_GROUPS: tuple[str, ...] = (GROUP_PROJECT,)
 def _at(step: str, label: str, **kwargs: Any) -> dict[str, Any]:
     """字段归属的流水线步骤：工作区按 ``step`` 把参数画进对应步骤卡，
     不再另抄一份分组表。步骤 key 与 ``service.STEP_MANIFEST`` 一致。"""
-    return {**ui_hints(label, **kwargs), "step": step}
+    return ui_hints(label, step=step, **kwargs)
 
 
 class DubbingSettings(BaseModel):

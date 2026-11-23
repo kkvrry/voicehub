@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import platform as sys_platform
 import shutil
@@ -20,6 +19,7 @@ from typing import Any
 
 import httpx
 
+from app.infra import download
 from app.producers.base import ProducerError
 from app.producers.builtin.audiocpp.manager import client
 
@@ -113,6 +113,11 @@ def mirror_order() -> tuple[str, ...]:
 def _remember(prefix: str) -> None:
     with _LOCK:
         _HINT["prefix"] = prefix
+
+
+def remember_mirror(prefix: str) -> None:
+    """记下这次成功的镜像；给同进程里别的下载器复用。"""
+    _remember(prefix)
 
 
 class Installer:
@@ -221,45 +226,25 @@ class Installer:
         return exe
 
     def _fetch(self, part: Path, url: str, checksum: str, index: int, count: int) -> None:
-        last: Exception | None = None
-        for prefix in mirror_order():
-            try:
-                self._stream(part, f"{prefix}{url}", checksum, index, count, prefix)
-                _remember(prefix)
-                return
-            except (httpx.HTTPError, OSError, ProducerError) as exc:
-                last = exc
-                part.unlink(missing_ok=True)
-        raise ProducerError(f"运行包下载失败：{last}") from last
+        def progress(written: int, total: int) -> None:
+            ratio = (index + (written / total if total else 0)) / count * 100
+            self._sink("downloading", ratio, f"{written / 1048576:.1f} MB")
 
-    def _stream(
-        self, part: Path, url: str, checksum: str, index: int, count: int, prefix: str
-    ) -> None:
-        digest = hashlib.sha256()
-        mirror = prefix.split("//")[-1].split("/")[0] if prefix else ""
-        with (
-            client().stream(
-                "GET",
+        try:
+            download.fetch_with_mirrors(
                 url,
+                part,
+                mirrors=mirror_order(),
+                sha256=checksum,
                 timeout=httpx.Timeout(60.0, connect=15.0),
                 headers={"User-Agent": "VoiceHub/audiocpp-runtime"},
-            ) as response,
-            part.open("wb") as handle,
-        ):
-            response.raise_for_status()
-            total = int(response.headers.get("content-length") or 0)
-            written = 0
-            for chunk in response.iter_bytes(512 * 1024):
-                if not chunk:
-                    continue
-                handle.write(chunk)
-                digest.update(chunk)
-                written += len(chunk)
-                ratio = (index + (written / total if total else 0)) / count * 100
-                note = f"{written / 1048576:.1f} MB"
-                self._sink("downloading", ratio, f"{note} · 镜像 {mirror}" if mirror else note)
-        if digest.hexdigest().lower() != checksum.strip().lower():
-            raise ProducerError("校验和不匹配，文件已丢弃。")
+                on_progress=progress,
+                on_mirror=_remember,
+                client=client(),
+            )
+        except (httpx.HTTPError, OSError, ValueError) as exc:
+            part.unlink(missing_ok=True)
+            raise ProducerError(f"运行包下载失败：{exc}") from exc
 
     def _unpack(self, part: Path, archive: str = "zip") -> None:
         if archive == "tar.gz":

@@ -1389,16 +1389,12 @@ class RuntimeService:
             for package_id, row in self._job_rows(conn).items()
         }
 
-    def ensure_family_instance(self, family: str, label: str = "") -> Instance:
-        """保证这个模型族有一行可启动的实例；没有就补一行手动实例。
-
-        安装模型前需要一台能开模型管理的服务，但新用户可能既没配引擎、也没装过
-        这个族——不能要求他先去 audio.cpp 页手加一行。
-        """
-        rows = [item for item in self.instances() if item.family == family]
-        if rows:
-            return rows[0]
+    def _add_instance(self, *, model: str, label: str, family: str) -> Instance:
+        """在锁内补一行手动实例；同族已存在就返回现有行。"""
         with self._lock:
+            rows = [item for item in self.instances() if item.family == family]
+            if rows:
+                return rows[0]
             saved = [
                 dict(item)
                 for item in (self._cfg.get("instances") or [])
@@ -1413,14 +1409,24 @@ class RuntimeService:
             saved.append(
                 {
                     "port": port,
-                    "model": family,
-                    "label": label or family,
+                    "model": model,
+                    "label": label,
                     "family": family,
                 }
             )
             self._cfg["instances"] = saved
             self._write_state()
-        return Instance(port, family, label or family, family)
+        return Instance(port, model, label, family)
+
+    def ensure_family_instance(self, family: str, label: str = "") -> Instance:
+        """保证这个模型族有一行可启动的实例；没有就补一行手动实例。
+
+        安装模型前需要一台能开模型管理的服务，但新用户可能既没配引擎、也没装过
+        这个族——不能要求他先去 audio.cpp 页手加一行。
+        """
+        return self._add_instance(
+            model=family, label=label or family, family=family
+        )
 
     def ensure_management(self) -> manager.Connection:
         """拿到一台开放模型管理的服务；没有就按现有实例拉一台。
@@ -1449,30 +1455,10 @@ class RuntimeService:
             conn = self.connection()
             if conn is not None and conn.management:
                 return conn
+            break
         # 现有实例都不可用：起一台不带模型的专用服务，只做模型管理。
-        with self._lock:
-            saved = [
-                dict(item)
-                for item in (self._cfg.get("instances") or [])
-                if isinstance(item, dict)
-            ]
-            if len(saved) >= 8:
-                raise ProducerError("手动实例已经有 8 条，先到 audio.cpp 页删一条。")
-            used = {item.port for item in self.instances()}
-            port = self._free_port(used)
-            if port is None:
-                raise ProducerError("没有空闲端口启动 audio.cpp 服务。")
-            saved.append(
-                {
-                    "port": port,
-                    "model": "audio-tools",
-                    "label": "音频处理",
-                    "family": "",
-                }
-            )
-            self._cfg["instances"] = saved
-            self._write_state()
-        self.start(port)
+        instance = self._add_instance(model="audio-tools", label="音频处理", family="")
+        self.start(instance.port)
         conn = self.connection()
         if conn is not None and conn.management:
             return conn

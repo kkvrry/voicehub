@@ -115,15 +115,27 @@ def _defaults(provider: LlmProvider) -> dict[str, Any]:
 
 
 def default_provider() -> str:
-    """当前默认模型：配置里那家 → 第一家就绪的 → 第一家。空表返回空串。"""
+    """当前默认模型：显式默认 → 已配置过的 → 填了密钥的；都没有就是空串。
+
+    不按 ``readiness`` 挑：本机服务（LM Studio）不需要密钥，永远"就绪"，
+    会抢走从没点过「设为默认」的现有配置，把默认通道改到一台可能没在跑的
+    本机服务上。用户在面板里保存过设置、或配过任一密钥，才算表明要用它。
+    """
     providers = list_providers()
     configured = (load_config().llm_default or "").strip()
     if configured in providers:
         return configured
     for key, provider in providers.items():
-        if not provider.readiness(settings_for(provider)):
+        if _stored(provider):
             return key
-    return next(iter(providers), "")
+    for key, provider in providers.items():
+        secrets = provider.secret_fields()
+        if not secrets:
+            continue
+        cfg = settings_for(provider)
+        if any(str(getattr(cfg, name, "") or "").strip() for name in secrets):
+            return key
+    return ""
 
 
 def settings_payload(key: str) -> dict[str, Any]:
@@ -298,7 +310,7 @@ async def chat(body: Mapping[str, Any]) -> dict[str, Any]:
     """发一次补全。``provider`` 留空就用默认那家。"""
     wanted = str(body.get("provider") or "").strip() or default_provider()
     if not wanted:
-        raise LlmConfigError("没有可用的对话模型：先装一家插件。")
+        raise LlmConfigError("没有默认对话模型：到「引擎 → 对话模型」选一家。")
     provider = require_provider(wanted)
     cfg = settings_for(provider)
     note = provider.readiness(cfg)

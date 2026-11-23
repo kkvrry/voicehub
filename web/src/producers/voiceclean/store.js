@@ -4,7 +4,7 @@
 // 处理序列就是行表：每条样例按「音色 + 文件名」记一次，往序列里加别的音色不会顶掉
 // 已有的行。音色目标仍来自左栏的选中（`store.pick`）：点卡替换序列，「添加」追加整张卡。
 // 文件目标存在 `state.fileTarget`，只产出可下载的结果，不写回音色库。
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { actions, say, store } from '../../store'
 import { invalidateWaveform } from '../../composables/waveform'
 import * as api from './api'
@@ -17,8 +17,6 @@ export const state = reactive({
   loaded: false,
   error: '',
   busy: '',
-  /** 正在下载/加载哪个候选模型（`step:model`）。 */
-  modelBusy: '',
   /** 已取回的音色详情：voiceId → detail（samples 带时长与试听地址） */
   /** @type {Record<string, any>} */
   cards: {},
@@ -62,8 +60,14 @@ let timer = 0
 let modelTimer = 0
 let loading = false
 let coreInited = false
-/** 刚点过下载的模型：下载完成后优先选中它。 */
-let pendingModel = /** @type {{ step: string, model: string } | null} */ (null)
+/** 模型状态轮询的间隔：1.2s 起，逐次放宽到 5s；没有活跃 job 时停表。 */
+const MODEL_POLL_START = 1200
+const MODEL_POLL_MAX = 5000
+let modelDelay = MODEL_POLL_START
+/** 刚点过下载的模型（``step\0model``）：下载完成后优先选中它。
+ *  用集合而不是单槽：排队中的下载可能不止一个，后来的不该把前一个顶掉。 */
+/** @type {Set<string>} */
+const pendingModels = new Set()
 /** @type {HTMLAudioElement|null} */
 let previewAudio = null
 let previewTimer = 0
@@ -84,6 +88,30 @@ function fail(error) {
   const text = error instanceof Error ? error.message : String(error)
   state.error = text
   say(text, { kind: 'error' })
+}
+
+/** 候选模型的下载 / 加载任务是否还在进行中。
+ *  词表与后端 `app/producers/builtin/voiceclean/service.py` 的 `_ACTIVE_JOB_STATES` 对齐；
+ *  前端只此一份，store 的轮询与工作区的禁用位都从这里取。 */
+/** @param {any} job */
+export function isActiveModelJob(job) {
+  return ['queued', 'running', 'cancelling', 'downloading', 'loading'].includes(
+    String(job?.state || '')
+  )
+}
+
+/** 模型任务是否已经失败（取消也算，才该出现「重试」）。 */
+/** @param {any} job */
+export function isFailedModelJob(job) {
+  return ['failed', 'error', 'cancelled', 'canceled'].includes(String(job?.state || ''))
+}
+
+/** 有模型任务在跑：下载互斥与按钮禁用都读这一位，不读请求期间那个瞬时标记。 */
+export const modelActive = computed(() => hasActiveModelJob())
+
+/** @param {string} step @param {string} model */
+function pendingKey(step, model) {
+  return `${step}\u0000${model}`
 }
 
 /** 勾选状态：第一次见到某一步时用后端给的默认值，之后记住用户的选择。
@@ -109,14 +137,17 @@ function mergePicks(steps) {
       if (!known.model) known.enabled = false
     }
     const pick = state.picks[step.key]
-    if (
-      pendingModel &&
-      pendingModel.step === step.key &&
-      ready.some((/** @type {any} */ row) => row.id === pendingModel?.model)
-    ) {
-      pick.model = pendingModel.model
-      pick.enabled = true
-      pendingModel = null
+    for (const model of models) {
+      const key = pendingKey(step.key, model.id)
+      if (!pendingModels.has(key)) continue
+      if (model.downloaded) {
+        pendingModels.delete(key)
+        pick.model = model.id
+        pick.enabled = true
+      } else if (isFailedModelJob(model.job)) {
+        // 下载失败 / 取消：待选记号没有意义了，别留着等下一次成功。
+        pendingModels.delete(key)
+      }
     }
   }
 }
@@ -136,24 +167,30 @@ export async function refresh() {
   if (loading) return
   loading = true
   try {
-    const payload = await api.state()
-    state.data = payload
-    state.job = payload.job || null
-    state.loaded = true
-    state.error = ''
-    if (!coreInited) {
-      coreInited = true
-      state.normalize = payload.core?.default !== false
-    }
-    mergePicks(payload.steps)
-    if (hasActiveModelJob()) startModelPolling()
-    else stopModelPolling()
+    await fetchState()
     if (state.job?.state === 'running') startPolling()
   } catch (error) {
     fail(error)
   } finally {
     loading = false
+    // 失败也按最后一次已知状态决定要不要继续轮询：一次瞬时错误不该让下载进度停表。
+    syncModelPolling()
   }
+}
+
+/** 取一次插件状态并合进本地。不碰轮询：轮询的起停由 refresh 与 pollModels 各自安排，
+ *  否则轮询里再调 refresh 会重复排表。 */
+async function fetchState() {
+  const payload = await api.state()
+  state.data = payload
+  state.job = payload.job || null
+  state.loaded = true
+  state.error = ''
+  if (!coreInited) {
+    coreInited = true
+    state.normalize = payload.core?.default !== false
+  }
+  mergePicks(payload.steps)
 }
 
 /** 当前是不是在处理一份电脑文件。 */
@@ -855,6 +892,7 @@ export function currentModel(step) {
   return (step.models || []).find((/** @type {any} */ row) => row.id === id) || null
 }
 
+/** 选了模型就把这一步打开：换模型是个明确的"用它"动作。 */
 /** @param {any} step @param {any} model */
 export function selectModel(step, model) {
   if (isRunning() || !model?.downloaded) return
@@ -869,23 +907,22 @@ export function selectModel(step, model) {
  * @param {any} model
  */
 export async function downloadModel(step, model) {
-  if (isRunning() || state.modelBusy) return
+  // 互斥位看模型自己的 job：请求返回后任务仍在排队 / 下载时，这里照样挡住第二次。
+  if (isRunning() || modelActive.value) return
   if (model?.downloaded) {
     selectModel(step, model)
     return
   }
-  pendingModel = { step: step.key, model: model.id }
-  state.modelBusy = `${step.key}:${model.id}`
+  const key = pendingKey(step.key, model.id)
+  pendingModels.add(key)
   try {
     const payload = await api.downloadModel(step.key, model.id)
     state.data = payload
     mergePicks(payload.steps)
-    startModelPolling()
+    syncModelPolling()
   } catch (error) {
-    pendingModel = null
+    pendingModels.delete(key)
     fail(error)
-  } finally {
-    state.modelBusy = ''
   }
 }
 
@@ -899,19 +936,6 @@ export function toggleStep(step) {
     pick.model = ready[0].id
   }
   pick.enabled = !pick.enabled
-}
-
-/** 选了模型就把这一步打开：换模型是个明确的"用它"动作。 */
-/** @param {any} step */
-export function enableStep(step) {
-  const ready = readyModels(step)
-  if (isRunning() || !ready.length) return
-  const pick = pickOf(step)
-  if (!pick.model) {
-    if (ready.length !== 1) return
-    pick.model = ready[0].id
-  }
-  pick.enabled = true
 }
 
 /** 收尾可以跳过：不勾就不做高通与限峰，服务端仍统一单声道。 */
@@ -1172,27 +1196,46 @@ function stopPolling() {
 
 function hasActiveModelJob() {
   return (state.data?.steps || []).some((/** @type {any} */ step) =>
-    (step.models || []).some((/** @type {any} */ model) => {
-      const jobState = String(model?.job?.state || '')
-      return ['queued', 'running', 'cancelling', 'downloading', 'loading'].includes(jobState)
-    })
+    (step.models || []).some((/** @type {any} */ model) => isActiveModelJob(model?.job))
   )
+}
+
+/** 有活跃 job 才起表；没有就停表，间隔收回 1.2s。 */
+function syncModelPolling() {
+  if (hasActiveModelJob()) startModelPolling()
+  else stopModelPolling()
 }
 
 function startModelPolling() {
   if (modelTimer) return
-  modelTimer = window.setInterval(pollModels, 1200)
+  modelTimer = window.setTimeout(pollModels, modelDelay)
 }
 
 function stopModelPolling() {
-  if (!modelTimer) return
-  window.clearInterval(modelTimer)
+  if (modelTimer) window.clearTimeout(modelTimer)
   modelTimer = 0
+  modelDelay = MODEL_POLL_START
 }
 
 async function pollModels() {
-  await refresh()
-  if (!hasActiveModelJob()) stopModelPolling()
+  modelTimer = 0
+  // 上一份状态还在路上：它收尾时会重新排表，这里不并发发第二枪。
+  if (loading) return
+  loading = true
+  try {
+    await fetchState()
+  } catch {
+    // 轮询失败不弹提示：下一轮再试；服务确实停了时，开始处理那一步会报。
+  } finally {
+    loading = false
+  }
+  if (!hasActiveModelJob()) {
+    modelDelay = MODEL_POLL_START
+    return
+  }
+  // 逐次放宽到 5s：下载进度不需要秒级刷新，长下载也不必一直打服务。
+  modelDelay = Math.min(MODEL_POLL_MAX, Math.round(modelDelay * 1.5))
+  startModelPolling()
 }
 
 export async function poll() {
@@ -1419,8 +1462,7 @@ export function play(index, side) {
 export function reset() {
   stopPolling()
   stopModelPolling()
-  pendingModel = null
-  state.modelBusy = ''
+  pendingModels.clear()
   stopPreview()
 }
 

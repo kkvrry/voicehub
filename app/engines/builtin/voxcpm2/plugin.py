@@ -32,7 +32,6 @@
 
 from __future__ import annotations
 
-import random
 import re
 import uuid
 from pathlib import Path
@@ -57,6 +56,7 @@ from app.engines.base import (
 from app.engines.builtin.voxcpm2 import client
 from app.engines.builtin.voxcpm2.settings import VoxCpm2Settings
 from app.engines.mapping import EngineMapping, ParamMapping, apply_mapping, register_transform
+from app.engines.seed import resolve_seed as _resolve_seed
 from app.infra.loghub import CHANNEL
 
 __all__ = [
@@ -246,24 +246,11 @@ def emotion_style(emotion: str, text: str) -> str:
 
 
 def resolve_seed(value: Any) -> tuple[int, str]:
-    """这一次发出去的种子——返回 ``（值, 对用户说的一句话）``。
-
-    负数（约定 ``-1``）= 随机：抽一个、发出去、把抽到的数报回来。这一家省略种子时
-    用定值 1234，所以"随机"只能显式抽。
-    """
-    try:
-        seed = int(value)
-    except (TypeError, ValueError):
-        raise EngineError(f"种子「{value}」不是整数。") from None
-    if seed >= 0:
-        return seed, f"seed={seed}"
-    drawn = random.randrange(0, 2**31)
-    CHANNEL.info(
-        f"种子写的是 {seed}（= 随机），抽取结果 {drawn}（可用它复现）",
-        source="engine",
-        engine="voxcpm2",
-    )
-    return drawn, f"seed={drawn}"
+    """这一次发出去的种子（负数 = 随机，抽到的数报回来）。"""
+    seed, note = _resolve_seed(value, engine="voxcpm2", ceiling=2**31 - 1)
+    if seed is None:
+        raise EngineError("种子缺失。")
+    return seed, note
 
 
 def _provided(value: Any) -> bool:

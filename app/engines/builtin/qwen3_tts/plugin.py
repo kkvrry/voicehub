@@ -23,7 +23,6 @@ TTS 通用选项，落点与 CosyVoice3 / BreezeTTS 2 / DotTTS 同一层。
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 from typing import Any
 
@@ -43,15 +42,12 @@ from app.engines.base import (
 from app.engines.builtin.qwen3_tts import client
 from app.engines.builtin.qwen3_tts.settings import Qwen3TtsSettings
 from app.engines.mapping import EngineMapping, ParamMapping, apply_mapping
-from app.infra.loghub import CHANNEL
+from app.engines.seed import resolve_seed as _resolve_seed
 
 __all__ = ["MAPPING", "RANDOM_SEED", "SUPPORTED_LANGUAGES", "Qwen3TtsEngine", "resolve_seed"]
 
 #: 种子写成负数（约定 ``-1``）= 随机：由插件抽一个再发出去。
 RANDOM_SEED = -1
-
-#: 种子上限（audio.cpp 的 seed 是 uint32）。
-SEED_CEILING = 2**32 - 1
 
 #: 官方声明的 10 种语言。与 ``LANGUAGE_CHOICES`` 同代码，界面说法在那里。
 SUPPORTED_LANGUAGES: tuple[str, ...] = (
@@ -80,12 +76,6 @@ MAPPING = EngineMapping(
             "reference_audio",
             "voice_ref",
             note="参考音频；本机绝对路径，WAV。",
-            warning=True,
-        ),
-        ParamMapping(
-            "reference_text",
-            "reference_text",
-            note="参考音频的逐字稿；Base 按 in-context 模式使用，缺了音色更粗。",
             warning=True,
         ),
         ParamMapping(
@@ -140,24 +130,11 @@ _TABLE_ONLY: dict[str, str] = {
 
 
 def resolve_seed(value: Any) -> tuple[int, str]:
-    """定这一次真正发出去的种子——返回 ``（值, 对用户说的一句话）``。
-
-    负数（约定写作 ``-1``）= 随机：抽一个、发出去、把抽到的数报回来。这一家的
-    规格里种子省略就是随机，抽出来只是为了让这一次能复现；不抽也能跑。
-    """
-    try:
-        seed = int(value)
-    except (TypeError, ValueError):
-        raise EngineError(f"种子「{value}」不是整数。") from None
-    if seed >= 0:
-        return min(seed, SEED_CEILING), f"seed={seed}"
-    drawn = random.randrange(0, SEED_CEILING + 1)
-    CHANNEL.info(
-        f"种子写的是 {seed}（= 随机），抽取结果 {drawn}（可用它复现）",
-        source="engine",
-        engine="qwen3_tts",
-    )
-    return drawn, f"seed={drawn}"
+    """定这一次真正发出去的种子（负数 = 随机，抽到的数报回来）。"""
+    seed, note = _resolve_seed(value, engine="qwen3_tts")
+    if seed is None:
+        raise EngineError("种子缺失。")
+    return seed, note
 
 
 def _provided(value: Any) -> bool:
@@ -211,6 +188,49 @@ class Qwen3TtsEngine(EnginePlugin):
             # 参考音频取 3–30 秒是这一家的常见区间，过长会挤占生成预算；
             # 下限不设，短样例照收。核心按这个区间截取并重听逐字稿。
             reference_duration=(0.0, 30.0),
+            # 这几格同时也是设置表单；补上中文 title，参数映射页才不出现英文键。
+            extra_schema={
+                "type": "object",
+                "properties": {
+                    "temperature": {
+                        "type": "number",
+                        "title": "采样温度",
+                        "default": 0.9,
+                        "exclusiveMinimum": 0,
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "title": "采样候选数",
+                        "default": 50,
+                        "minimum": 0,
+                    },
+                    "top_p": {
+                        "type": "number",
+                        "title": "累积概率",
+                        "default": 1.0,
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "repetition_penalty": {
+                        "type": "number",
+                        "title": "重复惩罚",
+                        "default": 1.05,
+                        "exclusiveMinimum": 0,
+                    },
+                    "max_tokens": {
+                        "type": "integer",
+                        "title": "每块生成上限",
+                        "default": 2048,
+                        "minimum": 0,
+                    },
+                    "text_chunk_size": {
+                        "type": "integer",
+                        "title": "分块字数",
+                        "default": 8192,
+                        "minimum": 0,
+                    },
+                },
+            },
         )
 
     def mapping(self) -> EngineMapping:
@@ -264,7 +284,8 @@ class Qwen3TtsEngine(EnginePlugin):
         body["voice_ref"] = str(source)
 
         # ---- 逐字稿：in-context 克隆的前提，不给就直接报，不替用户降级 ----
-        transcript = str(body.get("reference_text") or "").strip()
+        # 它不是 SPEC_FIELDS 的映射项（不进参数映射表），随请求字段直接带出。
+        transcript = str(values.get("reference_text") or "").strip()
         if not transcript:
             raise EngineError(
                 "Qwen3-TTS 需要参考音频的逐字稿：请给这条音色的样例补上说话内容。"
