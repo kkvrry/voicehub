@@ -237,6 +237,14 @@ def _file_time(path: Path, *, precise: bool = False) -> str:
         return ""
 
 
+def _newest_first(path: Path) -> tuple[int, str]:
+    """成片排序用：修改时间取到纳秒，同一秒导出的两份也分得出先后。"""
+    try:
+        return (path.stat().st_mtime_ns, path.name)
+    except OSError:
+        return (0, path.name)
+
+
 def _stamp(path: Path) -> str:
     """源文件的指纹：切出来的试听片段按它命名，换源或改切分后不复用旧片段。"""
     try:
@@ -558,7 +566,7 @@ class DubbingService:
             and path.suffix.lower() not in _SUBTITLE_SUFFIXES
         ]
         if exports:
-            latest = max(exports, key=lambda path: (path.stat().st_mtime, path.name))
+            latest = max(exports, key=_newest_first)
             return latest.stem
         project = self._project(project_id)
         return safe_segment(project["name"], "字幕")
@@ -1004,20 +1012,19 @@ class DubbingService:
             if not stem_rows
             else ""
         )
-        export_meta = sorted(
+        export_files = sorted(
             (
-                {
-                    "name": item.name,
-                    "size": item.stat().st_size,
-                    "at": _file_time(item),
-                }
+                item
                 for item in files
                 if item.name not in skip and item.suffix.lower() not in subtitle_suffixes
             ),
-            # 同一秒导出的两份按名字兜底排序：-2 在原名之后，仍是最新的一份在前。
-            key=lambda item: (item["at"], item["name"]),
+            key=_newest_first,
             reverse=True,
         )
+        export_meta = [
+            {"name": item.name, "size": item.stat().st_size, "at": _file_time(item)}
+            for item in export_files
+        ]
         exports = [item["name"] for item in export_meta]
         subtitles = sorted(
             (item.name for item in files if item.suffix.lower() in subtitle_suffixes),
