@@ -536,6 +536,8 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
                 emotion=body.emotion,
                 format=body.format,
                 extra=body.extra,
+                sample_file=body.sample_file,
+                match_emotion=body.match_emotion,
             )
             if not result.audio:
                 raise ApiError(

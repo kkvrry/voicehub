@@ -117,6 +117,9 @@ export const store = reactive({
   // 宿主不认识"角色"这件事，只负责把用户点的那条音色递过去。
   /** @type {any} */
   assignVoice: null,
+  //: 这次是「指定给已有目标」还是「用这条音色新建角色」：由音色栏的 `rail_mode` 决定，
+  //: 插件的浮层读它分流。播放条那条始终是 assign。
+  assignMode: 'assign',
   //: 「指定给…」里的目标：角色 / 某一章。由生产方读到项目后写入，宿主只管显示。
   assignTarget: '角色',
   // 「拾取」：声明 `rail_mode = pick` 的生产方工作区用它——点卡即选中音色并替换序列，

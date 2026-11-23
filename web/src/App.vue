@@ -59,6 +59,9 @@
           <SynthVoiceRail
             :pickable="railMode === 'pick'"
             :assignable="railMode !== 'pick'"
+            :assign-mode="railMode === 'create' ? 'create' : 'assign'"
+            :assign-label="railMode === 'create' ? '创建' : '指定'"
+            :assign-title="railMode === 'create' ? '用这条音色新建角色' : ''"
             :target="railMode === 'pick' ? 'pick' : 'synth'"
           />
         </aside>
@@ -238,10 +241,11 @@ const showProducerRail = computed(() => {
 })
 
 /** 音色栏怎么用：`pick` = 点卡即选中（处理型工作区），`assign` = 卡右「指定」
- *  （创作型）。缺省按指定——老插件没这个字段。 */
+ *  （创作型），`create` = 卡右「创建」用这条音色新建角色（角色对话）。
+ *  缺省按指定——老插件没这个字段。 */
 const railMode = computed(() => {
   const entry = store.producers.find((item) => item.key === store.producer.key)
-  return entry?.rail_mode === 'pick' ? 'pick' : 'assign'
+  return entry?.rail_mode === 'pick' || entry?.rail_mode === 'create' ? entry.rail_mode : 'assign'
 })
 
 /** 这一页有没有音色卡片列：生成页有，带音色栏的生产方工作区也有。

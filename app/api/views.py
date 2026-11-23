@@ -249,6 +249,10 @@ class SynthesizeIn(BaseModel):
     format: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
     persist: Literal["none", "cache", "sample"] = "none"
+    #: 本地音色用哪一条样例：``sample_file`` 钉死一条；``match_emotion`` 按情绪匹配。
+    #: 平台音色没有样例，两项都不生效；固定样例文件不在时网关会回落主样例。
+    sample_file: str = ""
+    match_emotion: bool = False
 
     @field_validator("extra")
     @classmethod

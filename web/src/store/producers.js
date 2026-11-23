@@ -78,9 +78,14 @@ export async function openProducer(key) {
   await module.store.open()
 }
 
-/** 左侧音色卡「指定」：把这条音色交给当前生产方的工作区去选角色。 */
-/** @param {any} voice */
-export function requestAssign(voice) {
+/** 左侧音色卡的「指定 / 创建」：把这条音色交给当前生产方的工作区。
+ *  `mode` 由栏的用法决定——`create` = 用这条音色新建一个角色，`assign` = 指定给已有目标。 */
+/**
+ * @param {any} voice
+ * @param {string} [mode]
+ */
+export function requestAssign(voice, mode = 'assign') {
+  store.assignMode = mode === 'create' ? 'create' : 'assign'
   store.assignVoice = voice
 }
 

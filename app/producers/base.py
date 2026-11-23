@@ -74,7 +74,8 @@ class ProducerPlugin(ABC):
     #: 工作区左侧是否需要宿主那条音色栏。工具型插件（如 audio.cpp）不需要。
     voice_rail: ClassVar[bool] = True
     #: 音色栏的用法：``assign`` = 卡片右端「指定」把音色交给工作区（创作型），
-    #: ``pick`` = 点卡即选中、卡右「选样例」挑一条（处理型）。
+    #: ``pick`` = 点卡即选中、卡右「选样例」挑一条（处理型），
+    #: ``create`` = 卡右「创建」用这条音色新建一个角色（角色对话）。
     #: 宿主只按这个字段摆栏，不认识具体插件。
     rail_mode: ClassVar[str] = "assign"
 

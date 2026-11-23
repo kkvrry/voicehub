@@ -1,0 +1,6 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="角色对话">
+  <!-- 设计稿里的那一枚：一只对话气泡，没有别的零件。 -->
+  <g fill="none" stroke="#000" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
+  </g>
+</svg>

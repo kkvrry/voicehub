@@ -222,10 +222,10 @@
           v-if="assignable"
           type="button"
           class="rail-assign"
-          :title="`指定给${store.assignTarget || '角色'}`"
+          :title="assignTitle || `指定给${store.assignTarget || '角色'}`"
           @click.stop="assign(voice)"
         >
-          指定
+          {{ assignLabel || '指定' }}
         </button>
         <button
           v-else-if="pickable"
@@ -283,6 +283,13 @@ const props = defineProps({
   target: { type: String, default: 'synth' },
   /** 创作页：卡片右上角是「指定」而不是收藏。 */
   assignable: { type: Boolean, default: false },
+  /** 卡片右端那颗键做什么：`assign` = 指定给已有目标，`create` = 用这条音色新建角色。
+   *  中文说法由宿主按插件声明的 `rail_mode` 传进来，这里不认识具体插件。 */
+  assignMode: { type: String, default: 'assign' },
+  /** 那颗键的字面；空 = 「指定」。 */
+  assignLabel: { type: String, default: '' },
+  /** 那颗键的悬停；空 = 按目标拼「指定给…」。 */
+  assignTitle: { type: String, default: '' },
   /** 生成页：列头摆一颗「录一段」（录下的就是这次的参考音频）。 */
   recordable: { type: Boolean, default: false },
 })
@@ -402,12 +409,13 @@ function play(voice) {
 }
 
 /**
- * 指定：交给当前生产方的工作区去问"给哪个角色"。
+ * 指定 / 创建：交给当前生产方的工作区——`assign` 问"给哪个角色"，
+ * `create` 直接用这条音色新建一个角色。
  *
  * @param {any} voice
  */
 function assign(voice) {
-  actions.requestAssign(voice)
+  actions.requestAssign(voice, props.assignMode)
 }
 
 /**
