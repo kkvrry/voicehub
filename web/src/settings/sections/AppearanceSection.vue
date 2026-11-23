@@ -4,13 +4,13 @@
 
     <SettingCard
       title="风格与主题"
-      keywords="风格 纸墨 素瓷 青釉 瓷 玻璃 扁平 简约 视觉语言 主题 浅色 深色 跟随系统 强调色 背景 动效"
+      keywords="风格 纸墨 素瓷 青釉 瓷 玻璃 舞台 扁平 简约 视觉语言 主题 浅色 深色 跟随系统 强调色 背景 动效"
     >
       <template #icon><SunMoon :size="16" :stroke-width="1.8" /></template>
 
       <SettingRow
         title="视觉语言"
-        keywords="原色 经典 基础 扁平 简约 纸墨 素瓷 青釉 瓷 玻璃 视觉语言"
+        keywords="原色 经典 基础 扁平 简约 纸墨 素瓷 青釉 瓷 玻璃 舞台 暖灯 衬线 视觉语言"
       >
         <SegmentedControl v-model="look" :options="lookOptions" label="界面风格" />
       </SettingRow>
@@ -310,13 +310,17 @@ const look = computed<Look>({
 const isClassic = computed(() => store.appearance.look === 'classic')
 const isPaper = computed(() => store.appearance.look === 'paper')
 const isCeladon = computed(() => store.appearance.look === 'celadon')
-const fixedLook = computed(() => isClassic.value || isPaper.value || isCeladon.value)
+const isStage = computed(() => store.appearance.look === 'stage')
+const fixedLook = computed(() => isClassic.value || isPaper.value || isCeladon.value || isStage.value)
 const lookHint = computed(() => {
   if (isClassic.value) {
     return '原色固定冰蓝强调色，关闭背景光与模糊；强调色、玻璃强度与卡片圆角已收起，界面密度仍然可用。'
   }
   if (isPaper.value) {
     return '纸墨风格固定朱砂强调色、关闭背景光与模糊；强调色、玻璃强度与卡片圆角已收起，界面密度仍然可用。'
+  }
+  if (isStage.value) {
+    return '舞台固定暖灯强调色与衬线标题，深浅两场各有一套材质；强调色、背景光、玻璃强度与卡片圆角已收起，界面密度仍然可用。'
   }
   return '素瓷风格固定青釉强调色、关闭背景光与模糊；强调色、玻璃强度与卡片圆角已收起，界面密度仍然可用。'
 })

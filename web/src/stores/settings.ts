@@ -420,8 +420,8 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     }
     if (appearance.look === 'stage') {
       return {
-        '--sh-blur': `${blurPx.value + 4}px`,
-        '--sh-blur-strong': `${blurPx.value + 12}px`,
+        '--sh-blur': '20px',
+        '--sh-blur-strong': '32px',
         '--sh-radius-card': '14px',
         '--sh-radius-inner': '9px',
       }

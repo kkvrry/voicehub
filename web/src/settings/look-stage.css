@@ -1,20 +1,107 @@
-/* 舞台：设计稿《一间房 / 台本》那一套。暗的屋子、暖的光、衬线的名字。
+/* ============================================================================
+ * 舞台（data-look="stage"）
  *
- * 与前四套的关系：它不是"浅色主题的变体"，而是**一套独立的暗色材质**——
- * 令牌直接挂在 `.app-shell` 上，深浅色切到哪一边都还是这一套（否则切到浅色
- * 就散架）。顶栏与导航取设计稿里那条压在画面上的半透明带。 */
+ * 设计稿《台本 / 一间房》那一套：暖的灯、衬线的名字、压在画面上的一层玻璃。
+ * 它不是"玻璃的换色"，而是一套独立的材质；夜场是设计稿那一屏，日场把同一盏灯
+ * 落在暖纸上。令牌跟其它外观一样写成两层：
+ *
+ *   :root[data-look='stage']                    日场（暖纸、墨字、琥珀灯）
+ *   :root[data-look='stage'][data-theme='dark'] 夜场（设计稿那一屏）
+ *
+ * 令牌必须落在 :root 上，不能只挂在 .app-shell：弹层、Toast、原生控件与
+ * 媒体区都不在壳里，只覆盖壳会得到"半张脸是浅色、半张脸是深色"。
+ * 组件层只收回材质（顶栏/导航的玻璃、品牌那一格、卡片、输入），
+ * 颜色一律走 --sh-*，深浅两场共用同一份规则。
+ * 结构尺寸（--sh-nav-w / --sh-rail-w / --sh-gutter）归 theme.css 的响应式，
+ * 这里不许写死——写死会压过断点，窄屏就不跟着收了。
+ *
+ * 选择器统一带 `:root[data-look='stage'] .app-shell` 前缀：Vue scoped 样式是
+ * 「类 + data-v」两票，前缀三票才能稳定压过它们。
+ * ==========================================================================*/
 
-:root[data-look='stage'] .app-shell {
+/* ------------------------------------------------------------ 日场 · 暖纸 -- */
+:root[data-look='stage'] {
+  --sh-canvas: #f2e9da;
+  --sh-panel: #fffdf8;
+  --sh-chip: #efe6d7;
+  --sh-mask: rgba(38, 27, 16, 0.28);
+  --sh-mask-strong: rgba(38, 27, 16, 0.42);
+  --sh-scrim: rgba(30, 21, 12, 0.34);
+  --sh-scrim-on: rgba(30, 21, 12, 0.52);
+  --sh-toast-bg: #2a2118;
+  --sh-toast-text: #fdf6ea;
+
+  --sh-text: #221a12;
+  --sh-text-2: #4c3f31;
+  --sh-text-3: #665645;
+  --sh-text-4: #6f5c48;
+
+  /* 设计稿的灯：日场要压深才能落在纸面上，夜场用原值。 */
+  --sh-accent: #96551c;
+  --sh-accent-2: #a25f24;
+  --sh-accent-soft: rgba(150, 85, 28, 0.12);
+  --sh-accent-soft-2: rgba(150, 85, 28, 0.2);
+  --sh-accent-ring: rgba(150, 85, 28, 0.3);
+  --sh-accent-contrast: #fff8ef;
+
+  --sh-ok: #256d54;
+  --sh-ok-soft: rgba(37, 109, 84, 0.12);
+  --sh-warn: #8a5e0e;
+  --sh-warn-soft: rgba(138, 94, 14, 0.12);
+  --sh-danger: #b0432f;
+  --sh-danger-soft: rgba(176, 67, 47, 0.1);
+
+  --sh-line: rgba(92, 68, 42, 0.16);
+  --sh-line-soft: rgba(92, 68, 42, 0.09);
+  --sh-line-strong: rgba(92, 68, 42, 0.28);
+  --sh-tree-line: rgba(176, 106, 46, 0.26);
+  --sh-folder: #a9713a;
+  --sh-hover: rgba(92, 68, 42, 0.05);
+  --sh-track: rgba(122, 96, 64, 0.2);
+
+  --sh-glass: rgba(255, 252, 245, 0.74);
+  --sh-glass-soft: rgba(255, 252, 245, 0.5);
+  --sh-glass-strong: rgba(255, 253, 249, 0.92);
+  --sh-glass-border: rgba(255, 255, 255, 0.9);
+  --sh-field: #fcf7ee;
+  --sh-field-focus: #fffdf9;
+
+  --sh-hit: #ffd23e;
+  --sh-hit-text: #3d2c00;
+
+  /* 媒体面（配音预览、字幕、走带）在日场也保持暗面：那是一块屏幕，不是纸。 */
+  --sh-media-bg: #0b0d10;
+  --sh-media-text: #ffffff;
+  --sh-media-sub: #e7cfae;
+  --sh-media-scrim: rgba(8, 6, 4, 0.72);
+  --sh-media-track: rgba(255, 255, 255, 0.24);
+
+  --sh-shadow-1: 0 1px 2px rgba(56, 38, 20, 0.06), 0 16px 36px -28px rgba(56, 38, 20, 0.45);
+  --sh-shadow-2: 0 26px 60px -36px rgba(56, 38, 20, 0.42);
+  --sh-shadow-pop: 0 10px 26px -16px rgba(56, 38, 20, 0.3);
+  --sh-inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
+  --sh-font-serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Songti SC',
+    'Source Han Serif SC', 'STSong', serif;
+}
+
+/* ------------------------------------------------------------ 夜场 · 设计稿 -- */
+:root[data-look='stage'][data-theme='dark'] {
   --sh-canvas: #06090e;
   --sh-panel: #0d1219;
   --sh-chip: #141c26;
+  --sh-mask: rgba(3, 6, 10, 0.6);
+  --sh-mask-strong: rgba(3, 6, 10, 0.74);
+  --sh-scrim: rgba(5, 8, 12, 0.4);
+  --sh-scrim-on: rgba(5, 8, 12, 0.6);
+  --sh-toast-bg: #1b1a18;
+  --sh-toast-text: #f7efe3;
 
   --sh-text: #f4f6fa;
   --sh-text-2: #c6cfdc;
   --sh-text-3: #94a0b1;
   --sh-text-4: #6f7a89;
 
-  /* 强调色取设计稿的暖灯：它出现在主操作、当前选中与正在说的话上。 */
   --sh-accent: #f0a76b;
   --sh-accent-2: #e08a4e;
   --sh-accent-soft: rgba(240, 167, 107, 0.14);
@@ -22,7 +109,6 @@
   --sh-accent-ring: rgba(240, 167, 107, 0.36);
   --sh-accent-contrast: #21150a;
 
-  /* 状态色取深色档：舞台本身是暗面，浅色那三档在暗底上对比不足。 */
   --sh-ok: #39d3a4;
   --sh-ok-soft: rgba(57, 211, 164, 0.14);
   --sh-warn: #f0b162;
@@ -33,46 +119,58 @@
   --sh-line: rgba(255, 255, 255, 0.12);
   --sh-line-soft: rgba(255, 255, 255, 0.07);
   --sh-line-strong: rgba(255, 255, 255, 0.2);
+  --sh-tree-line: rgba(240, 167, 107, 0.26);
+  --sh-folder: #d79a63;
   --sh-hover: rgba(255, 255, 255, 0.06);
+  --sh-track: rgba(255, 255, 255, 0.16);
 
   --sh-glass: rgba(10, 14, 20, 0.62);
   --sh-glass-soft: rgba(10, 14, 20, 0.42);
   --sh-glass-strong: rgba(12, 18, 26, 0.88);
   --sh-glass-border: rgba(255, 255, 255, 0.16);
-
-  --sh-scrim: rgba(5, 8, 12, 0.4);
-  --sh-scrim-on: rgba(5, 8, 12, 0.6);
+  --sh-field: rgba(255, 255, 255, 0.05);
+  --sh-field-focus: rgba(255, 255, 255, 0.08);
 
   --sh-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 18px 40px -28px rgba(0, 0, 0, 0.95);
   --sh-shadow-2: 0 30px 70px -36px rgba(0, 0, 0, 1);
   --sh-shadow-pop: 0 10px 28px -16px rgba(0, 0, 0, 0.85);
+  --sh-inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
 
-  --sh-font-serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Songti SC',
-    'Source Han Serif SC', 'STSong', serif;
+/* ------------------------------------------------------------- 画布与壳 -- */
 
+/* 舞台自带一层暖光，不叠玻璃那三块蓝紫环境光。 */
+:root[data-look='stage'] .app-shell {
   background-color: var(--sh-canvas);
+  background-image: radial-gradient(
+    1200px 760px at 62% -8%,
+    color-mix(in srgb, var(--sh-accent) 10%, transparent),
+    transparent 68%
+  );
   color: var(--sh-text);
 }
 
-:root[data-look='stage'] .app-shell {
-  --sh-nav-w: 80px;
-  --sh-rail-w: 220px;
+:root[data-look='stage'] .app-shell .sh-ambient {
+  display: none;
 }
 
 /* ------------------------------------------------------------------ 顶栏 -- */
-/* 数值取自设计稿 b.html：64px 高、0 22 内边距、底边 rgba(255,255,255,.07)、
-   渐变 180deg rgba(6,9,14,.52)→.14、模糊 20。 */
+
 :root[data-look='stage'] .app-shell .sh-topbar {
   height: 64px;
   padding: 0 22px;
   gap: 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  background: linear-gradient(180deg, rgba(6, 9, 14, 0.52), rgba(6, 9, 14, 0.14));
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--sh-line-soft);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--sh-canvas) 62%, transparent),
+    color-mix(in srgb, var(--sh-canvas) 16%, transparent)
+  );
+  backdrop-filter: blur(var(--sh-blur));
+  -webkit-backdrop-filter: blur(var(--sh-blur));
 }
 
-/* 品牌那一格：34px、圆角 11、暖色描边与淡底；副标题小写字母间距。 */
+/* 品牌那一格就是设计稿左上角那块暖牌：方牌、细暖边、五根声波。 */
 :root[data-look='stage'] .app-shell .sh-brand {
   gap: 11px;
 }
@@ -80,11 +178,15 @@
 :root[data-look='stage'] .app-shell .sh-brand-mark {
   width: 34px;
   height: 34px;
-  border: 1px solid rgba(240, 167, 107, 0.34);
+  border: 1px solid color-mix(in srgb, var(--sh-accent) 38%, transparent);
   border-radius: 11px;
-  background: rgba(240, 167, 107, 0.1);
+  background: color-mix(in srgb, var(--sh-accent) 12%, transparent);
   color: var(--sh-accent);
   box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .sh-brand-mark::after {
+  display: none;
 }
 
 :root[data-look='stage'] .app-shell .sh-brand-name {
@@ -100,18 +202,22 @@
 }
 
 /* ------------------------------------------------------------- 左侧导航 -- */
+
 :root[data-look='stage'] .app-shell .sh-nav {
   gap: 6px;
   padding: 18px 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-  background: linear-gradient(90deg, rgba(5, 8, 12, 0.42), rgba(5, 8, 12, 0.08));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  border-right: 1px solid var(--sh-line-soft);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sh-canvas) 46%, transparent),
+    color-mix(in srgb, var(--sh-canvas) 8%, transparent)
+  );
+  backdrop-filter: blur(var(--sh-blur));
+  -webkit-backdrop-filter: blur(var(--sh-blur));
 }
 
 /* 图标即入口：导航文字收起时，每一格是一块 44px 的方牌。
-   这一档跟 theme.css 的 `data-nav-labels` 偏好走，不再无条件藏字：
-   设置里打开导航文字后按基础样式排；窄屏导航横排到顶上时也保留文字。 */
+   这一档跟 theme.css 的 `data-nav-labels` 偏好走，不再无条件藏字。 */
 @media (min-width: 901px) {
   :root[data-look='stage'] .app-shell[data-nav-labels='off'] .sh-nav-item {
     display: grid;
@@ -122,23 +228,28 @@
     border: 0;
     border-radius: 13px;
     background: none;
-    color: rgba(230, 238, 248, 0.52);
-  }
-
-  :root[data-look='stage'] .app-shell[data-nav-labels='off'] .sh-nav-label {
-    display: none;
+    color: var(--sh-text-3);
   }
 }
 
+:root[data-look='stage'] .app-shell .sh-nav-item {
+  color: var(--sh-text-3);
+}
+
 :root[data-look='stage'] .app-shell .sh-nav-item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--sh-hover);
   color: var(--sh-text-2);
 }
 
 :root[data-look='stage'] .app-shell .sh-nav-item.is-active {
-  background: rgba(240, 167, 107, 0.14);
+  background: var(--sh-accent-soft);
   color: var(--sh-accent);
   box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .sh-nav-item.is-active::before {
+  background: var(--sh-accent);
+  opacity: 1;
 }
 
 :root[data-look='stage'] .app-shell .sh-nav-badge {
@@ -148,19 +259,25 @@
 }
 
 :root[data-look='stage'] .app-shell .sh-nav-divider {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--sh-line-soft);
 }
 
 /* --------------------------------------------------------- 结构栏与正文 -- */
+
 :root[data-look='stage'] .app-shell .sh-rail {
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-  background: linear-gradient(90deg, rgba(5, 8, 12, 0.34), rgba(5, 8, 12, 0.06));
+  border-right: 1px solid var(--sh-line-soft);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sh-canvas) 38%, transparent),
+    color-mix(in srgb, var(--sh-canvas) 6%, transparent)
+  );
 }
 
 :root[data-look='stage'] .app-shell .sh-card,
 :root[data-look='stage'] .app-shell .pb-shell {
   border: 1px solid var(--sh-line);
-  background: color-mix(in srgb, var(--sh-panel) 72%, transparent);
+  /* 日场是纸面：卡片就是一张白纸，压在暖底上；夜场是玻璃，留一点透。 */
+  background: var(--sh-panel);
   backdrop-filter: blur(var(--sh-blur));
   -webkit-backdrop-filter: blur(var(--sh-blur));
   box-shadow: none;
@@ -178,47 +295,57 @@
 /* 输入与按钮：暗面 + 一道亮边，焦点是暖色环。 */
 :root[data-look='stage'] .app-shell .sh-field {
   border: 1px solid var(--sh-line);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--sh-field);
   color: var(--sh-text);
 }
 
+:root[data-look='stage'] .app-shell select.sh-field {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%237a6752' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+:root[data-look='stage'][data-theme='dark'] .app-shell select.sh-field {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%2394a0b1' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
 :root[data-look='stage'] .app-shell .sh-field:focus {
-  border-color: rgba(240, 167, 107, 0.5);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: color-mix(in srgb, var(--sh-accent) 52%, transparent);
+  background: var(--sh-field-focus);
 }
 
 :root[data-look='stage'] .app-shell .sh-btn.is-ghost {
   border: 1px solid var(--sh-line);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--sh-glass-soft);
   color: var(--sh-text-2);
 }
 
 :root[data-look='stage'] .app-shell .sh-btn.is-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--sh-glass);
   color: var(--sh-text);
 }
 
 :root[data-look='stage'] .app-shell .sh-btn.is-primary {
   background: linear-gradient(135deg, var(--sh-accent), var(--sh-accent-2));
-  box-shadow: 0 10px 22px -12px rgba(240, 167, 107, 0.7);
+  box-shadow: 0 10px 22px -12px color-mix(in srgb, var(--sh-accent) 62%, transparent);
 }
 
-/* 音色卡片：暗面、细边，选中是暖色描边；不再抬起。 */
+/* 音色卡片：细边暗面（夜场）/ 白瓷面（日场），选中是暖色描边。 */
 :root[data-look='stage'] .app-shell .card {
   border: 1px solid var(--sh-line-soft);
-  background: color-mix(in srgb, var(--sh-panel) 66%, transparent);
+  background: var(--sh-panel);
   box-shadow: none;
 }
 
 :root[data-look='stage'] .app-shell .card:hover {
   border-color: var(--sh-line);
-  background: color-mix(in srgb, var(--sh-panel) 78%, transparent);
+  background: var(--sh-panel);
 }
 
 :root[data-look='stage'] .app-shell .card.is-active,
 :root[data-look='stage'] .app-shell .card.is-selected {
-  border-color: rgba(240, 167, 107, 0.42);
-  background: rgba(240, 167, 107, 0.08);
+  border-color: color-mix(in srgb, var(--sh-accent) 42%, transparent);
+  background: var(--sh-accent-soft);
 }
 
 /* 行表与日志：分隔线分层，不叠卡。 */
@@ -227,7 +354,7 @@
   border-color: var(--sh-line-soft);
 }
 
-/* 滚动条：暗槽 + 细亮块。 */
+/* 滚动条：细亮块，两场同一套。 */
 :root[data-look='stage'] .app-shell ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -235,18 +362,18 @@
 
 :root[data-look='stage'] .app-shell ::-webkit-scrollbar-thumb {
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--sh-line-strong);
 }
 
 :root[data-look='stage'] .app-shell ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--sh-text-4);
 }
 
 :root[data-look='stage'] .app-shell ::-webkit-scrollbar-track {
   background: transparent;
 }
-/* 顶栏上的东西都不带框：图标直接落在玻璃上（设计稿里那颗太阳、那颗齿轮都没有底）。
-   只有品牌那一格是设计稿自带的暖色方牌。 */
+
+/* 顶栏上的东西都不带框：图标直接落在玻璃上。 */
 :root[data-look='stage'] .app-shell .sh-theme-toggle {
   padding: 0 8px;
   height: 32px;
@@ -254,11 +381,11 @@
   border-radius: 10px;
   background: none;
   box-shadow: none;
-  color: rgba(230, 238, 248, 0.62);
+  color: var(--sh-text-3);
 }
 
 :root[data-look='stage'] .app-shell .sh-theme-toggle:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--sh-hover);
   color: var(--sh-text);
 }
 
@@ -271,16 +398,17 @@
 :root[data-look='stage'] .app-shell .sh-search {
   border: 0;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--sh-glass-soft);
 }
 
 :root[data-look='stage'] .app-shell .sh-search:focus-within {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--sh-glass);
+  box-shadow: none;
 }
 
 :root[data-look='stage'] .app-shell .sh-search kbd {
   border: 0;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--sh-hover);
   color: var(--sh-text-4);
 }
 
@@ -298,5 +426,826 @@
 }
 
 :root[data-look='stage'] .app-shell .sh-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--sh-hover);
+}
+
+/* -------------------------------------------------------------- 页面抬头 -- */
+:root[data-look='stage'] .app-shell .sh-page-head h1 {
+  font-family: var(--sh-font-serif);
+  font-size: 27px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+:root[data-look='stage'] .app-shell .sh-sec-icon {
+  border: 1px solid color-mix(in srgb, var(--sh-accent) 26%, transparent);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .sh-sec-title {
+  font-family: var(--sh-font-serif);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+:root[data-look='stage'] .app-shell .sh-sec-sub {
+  color: var(--sh-text-3);
+  letter-spacing: 0.01em;
+}
+
+/* ------------------------------------------------------------------ 卡片 -- */
+:root[data-look='stage'] .app-shell .sh-card-head {
+  border-bottom: 1px solid var(--sh-line-soft);
+  padding-bottom: 10px;
+}
+
+:root[data-look='stage'] .app-shell .sh-card-icon {
+  border: 1px solid color-mix(in srgb, var(--sh-accent) 24%, transparent);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .sh-card-title {
+  font-family: var(--sh-font-serif);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+:root[data-look='stage'] .app-shell .sh-card-foot {
+  border-top: 1px solid var(--sh-line-soft);
+  background: transparent;
+}
+
+:root[data-look='stage'] .app-shell .sh-row {
+  border-top: 1px solid var(--sh-line-soft);
+}
+
+:root[data-look='stage'] .app-shell .sh-row-title {
+  font-size: 12.8px;
+  font-weight: 600;
+}
+
+:root[data-look='stage'] .app-shell .sh-row-desc,
+:root[data-look='stage'] .app-shell .sh-hint {
+  color: var(--sh-text-3);
+}
+
+/* ------------------------------------------------------------------ 按钮 -- */
+:root[data-look='stage'] .app-shell :is(.sh-btn, .btn) {
+  border-radius: var(--sh-r-sm);
+}
+
+:root[data-look='stage'] .app-shell :is(.sh-btn.is-primary, .btn.primary) {
+  border-color: transparent;
+  color: var(--sh-accent-contrast);
+  background: linear-gradient(135deg, var(--sh-accent), var(--sh-accent-2));
+  box-shadow: 0 8px 20px -14px color-mix(in srgb, var(--sh-accent) 70%, transparent);
+}
+
+:root[data-look='stage'] .app-shell :is(.sh-btn.is-primary, .btn.primary):hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 10px 24px -14px color-mix(in srgb, var(--sh-accent) 80%, transparent);
+}
+
+:root[data-look='stage'] .app-shell .sh-btn.is-soft {
+  border-color: color-mix(in srgb, var(--sh-accent) 32%, transparent);
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .sh-btn.is-soft:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--sh-accent) 46%, transparent);
+  background: var(--sh-accent-soft-2);
+}
+
+:root[data-look='stage'] .app-shell :is(.sh-btn.is-icon, .icon-btn) {
+  border-radius: var(--sh-r-sm);
+}
+
+:root[data-look='stage'] .app-shell .sh-btn.is-icon:hover:not(:disabled) {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .sh-btn.is-danger {
+  border-color: color-mix(in srgb, var(--sh-danger) 36%, transparent);
+  background: var(--sh-danger-soft);
+  color: var(--sh-danger);
+}
+
+/* ------------------------------------------------------------------ 控件 -- */
+:root[data-look='stage'] .app-shell .sh-toggle {
+  border-color: var(--sh-line-strong);
+  background: var(--sh-track);
+}
+
+:root[data-look='stage'] .app-shell .sh-toggle::after {
+  background: var(--sh-panel);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--sh-media-bg) 40%, transparent);
+}
+
+:root[data-look='stage'] .app-shell .sh-toggle[aria-checked='true'] {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--sh-accent), var(--sh-accent-2));
+  box-shadow: 0 4px 14px -8px color-mix(in srgb, var(--sh-accent) 75%, transparent);
+}
+
+:root[data-look='stage'] .app-shell .sh-toggle[aria-checked='true']::after {
+  background: var(--sh-accent-contrast);
+}
+
+:root[data-look='stage'] .app-shell .sh-seg {
+  border-color: var(--sh-line);
+  background: var(--sh-glass-soft);
+}
+
+:root[data-look='stage'] .app-shell .sh-seg-btn {
+  border-radius: calc(var(--sh-r-sm) - 2px);
+}
+
+:root[data-look='stage'] .app-shell .sh-seg-btn:hover {
+  background: var(--sh-hover);
+  color: var(--sh-text);
+}
+
+:root[data-look='stage'] .app-shell .sh-seg-btn[aria-checked='true'] {
+  color: var(--sh-accent);
+  background: color-mix(in srgb, var(--sh-panel) 78%, transparent);
+  box-shadow: inset 0 0 0 1px var(--sh-accent-ring);
+}
+
+:root[data-look='stage'] .app-shell .sh-slider input[type='range']::-webkit-slider-thumb {
+  border: 2px solid var(--sh-accent);
+  background: var(--sh-panel);
+  box-shadow: 0 2px 8px -2px color-mix(in srgb, var(--sh-accent) 60%, transparent);
+}
+
+:root[data-look='stage'] .app-shell .sh-slider input[type='range']::-moz-range-thumb {
+  border: 2px solid var(--sh-accent);
+  background: var(--sh-panel);
+}
+
+:root[data-look='stage'] .app-shell .sh-slider-value,
+:root[data-look='stage'] .app-shell .sh-kbd {
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-look='stage'] .app-shell .sh-kbd {
+  border-radius: var(--sh-r-2xs);
+  background: var(--sh-hover);
+}
+
+:root[data-look='stage'] .app-shell .sh-swatch {
+  border-radius: var(--sh-r-xs);
+}
+
+:root[data-look='stage'] .app-shell :is(.sh-chip, .tag-chip, .mark-chip, .tag-opt, .state-chip, .vh-pill, .rule-chip, .sh-nav-badge) {
+  border-radius: 999px;
+}
+
+:root[data-look='stage'] .app-shell .tag-input {
+  border-radius: var(--sh-r-sm);
+  border-color: var(--sh-line);
+  background: var(--sh-field);
+}
+
+/* ------------------------------------------------------------ 菜单/弹层 -- */
+:root[data-look='stage'] .app-shell :is(.vpop, .row-menu-pop, .speaker-menu) {
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-md);
+  background: var(--sh-glass-strong);
+  backdrop-filter: blur(var(--sh-blur-strong)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--sh-blur-strong)) saturate(140%);
+  box-shadow: var(--sh-shadow-pop);
+}
+
+:root[data-look='stage'] .app-shell :is(.vpop-clear, .row-menu-item, .speaker-menu button) {
+  border-radius: var(--sh-r-2xs);
+}
+
+:root[data-look='stage'] .app-shell .vpop-custom input {
+  border-radius: var(--sh-r-sm);
+  border-color: var(--sh-line);
+  background: var(--sh-field);
+}
+
+/* ------------------------------------------------------------ 设置左侧树 -- */
+:root[data-look='stage'] .app-shell .sh-sidebar .tree-root {
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-md);
+  background: transparent;
+}
+
+:root[data-look='stage'] .app-shell .sh-sidebar .tree-item {
+  border-radius: var(--sh-r-xs);
+}
+
+:root[data-look='stage'] .app-shell .sh-sidebar .tree-item.active {
+  background: var(--sh-accent-soft);
+  box-shadow: inset 2px 0 0 var(--sh-accent);
+  border-radius: 0 var(--sh-r-xs) var(--sh-r-xs) 0;
+}
+
+:root[data-look='stage'] .app-shell .sh-sidebar .tree-item > .count {
+  border: 1px solid var(--sh-line-soft);
+  border-radius: var(--sh-r-2xs);
+  background: transparent;
+}
+
+/* ------------------------------------------------------------ 音色卡片列 -- */
+:root[data-look='stage'] .app-shell .rail-fixed {
+  border: 1px solid color-mix(in srgb, var(--sh-accent) 26%, var(--sh-line));
+  border-radius: var(--sh-r-md);
+  background: var(--sh-accent-soft);
+  box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .rail-card:hover:not(.on):not(.rec-card) {
+  background: var(--sh-accent-soft);
+}
+
+:root[data-look='stage'] .app-shell .rail-card.on {
+  background: var(--sh-accent-soft);
+  box-shadow: inset 2px 0 0 var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .rail-card.on .rail-name {
+  color: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .rail-cover {
+  border-radius: var(--sh-r-xs);
+}
+
+/* ------------------------------------------------------------ 书籍刊头 -- */
+:root[data-look='stage'] .app-shell .producer-rail {
+  border-top-color: var(--sh-line);
+}
+
+:root[data-look='stage'] .app-shell .rail-book {
+  border-bottom-color: var(--sh-line);
+}
+
+:root[data-look='stage'] .app-shell .rail-book-mark {
+  border-radius: var(--sh-r-xs);
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+  box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .rail-book-name {
+  font-family: var(--sh-font-serif);
+  font-size: 13.6px;
+  letter-spacing: 0.02em;
+}
+
+:root[data-look='stage'] .app-shell .rail-book-meta {
+  letter-spacing: 0.06em;
+}
+
+:root[data-look='stage'] .app-shell .producer-rail .chapter-item {
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--sh-r-xs) var(--sh-r-xs) 0;
+}
+
+:root[data-look='stage'] .app-shell .producer-rail .chapter-row + .chapter-row {
+  border-top: 1px solid var(--sh-line-soft);
+}
+
+:root[data-look='stage'] .app-shell .producer-rail .chapter-row.is-active .chapter-item {
+  border-left-color: var(--sh-accent);
+  background: var(--sh-accent-soft);
+  color: var(--sh-text);
+}
+
+:root[data-look='stage'] .app-shell .producer-rail .chapter-title,
+:root[data-look='stage'] .app-shell .producer-rail .chapter-ord {
+  font-family: var(--sh-font-serif);
+}
+
+:root[data-look='stage'] .app-shell .producer-rail .chapter-stage {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* ------------------------------------------------------------------ 表格 -- */
+:root[data-look='stage'] .app-shell .producer-main,
+:root[data-look='stage'] .app-shell .producer-side {
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-lg);
+  background: color-mix(in srgb, var(--sh-panel) 86%, transparent);
+}
+
+:root[data-look='stage'] .app-shell .producer-main {
+  box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .chapter-head {
+  border-bottom: 1px solid var(--sh-line);
+  padding-bottom: 8px;
+}
+
+:root[data-look='stage'] .app-shell .chapter-name {
+  font-family: var(--sh-font-serif);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+:root[data-look='stage'] .app-shell .chapter-name::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  vertical-align: 2px;
+  border-radius: 50%;
+  background: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .chapter-meta {
+  letter-spacing: 0.02em;
+}
+
+:root[data-look='stage'] .app-shell .view-switch {
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-glass-soft);
+}
+
+:root[data-look='stage'] .app-shell .view-switch-btn {
+  border-radius: calc(var(--sh-r-sm) - 2px);
+}
+
+:root[data-look='stage'] .app-shell .view-switch-btn.on {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .rows-tools {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+
+:root[data-look='stage'] .app-shell .rows-filter {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  gap: 12px;
+}
+
+:root[data-look='stage'] .app-shell .filter-btn {
+  border-radius: 0;
+  padding: 3px 1px 5px;
+  border-bottom: 2px solid transparent;
+  color: var(--sh-text-3);
+}
+
+:root[data-look='stage'] .app-shell .filter-btn:hover {
+  background: transparent;
+  color: var(--sh-text);
+}
+
+:root[data-look='stage'] .app-shell .filter-btn.is-active {
+  border-bottom-color: var(--sh-accent);
+  background: transparent;
+  color: var(--sh-text);
+}
+
+:root[data-look='stage'] .app-shell .filter-btn.is-active .filter-count {
+  color: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .rows-batch {
+  border: 1px solid var(--sh-accent-ring);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-accent-soft);
+}
+
+:root[data-look='stage'] .app-shell .rows-wrap {
+  border-top: 1px solid var(--sh-line);
+  background: transparent;
+}
+
+:root[data-look='stage'] .app-shell .rows thead th {
+  border-bottom: 1px solid var(--sh-line);
+  background: var(--sh-glass-strong);
+  color: var(--sh-text-3);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+}
+
+:root[data-look='stage'] .app-shell .rows th + th,
+:root[data-look='stage'] .app-shell .rows td + td {
+  border-left: 0;
+}
+
+:root[data-look='stage'] .app-shell .rows td {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+
+:root[data-look='stage'] .app-shell .rows tbody tr.is-dialogue td {
+  background: color-mix(in srgb, var(--sh-ok) 16%, transparent);
+}
+
+:root[data-look='stage'] .app-shell .rows tbody tr.is-dialogue td:first-child {
+  box-shadow: inset 2px 0 0 var(--sh-ok);
+}
+
+:root[data-look='stage'] .app-shell .rows tbody tr.is-dialogue .speaker-input {
+  color: var(--sh-ok);
+  font-weight: 600;
+}
+
+:root[data-look='stage'] .app-shell .rows tbody tr.is-stale td:first-child {
+  box-shadow: inset 2px 0 0 var(--sh-warn);
+}
+
+:root[data-look='stage'] .app-shell .rows tbody tr.is-failed td {
+  background: var(--sh-danger-soft);
+}
+
+:root[data-look='stage'] .app-shell .rows tbody tr.is-selected td,
+:root[data-look='stage'] .app-shell .rows tbody tr:not(.is-selected):hover td {
+  background: var(--sh-accent-soft);
+}
+
+:root[data-look='stage'] .app-shell :is(.field-sm, .batch-input, .row-input, .mark-mirror) {
+  border-color: var(--sh-line);
+  border-radius: var(--sh-r-sm);
+  background-color: var(--sh-field);
+}
+
+:root[data-look='stage'] .app-shell .row-input:focus {
+  background: var(--sh-field-focus);
+}
+
+:root[data-look='stage'] .app-shell .row-text-area {
+  border-color: var(--sh-line);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-field);
+  font-family: var(--sh-font-serif);
+}
+
+:root[data-look='stage'] .app-shell .ord-btn {
+  border-radius: var(--sh-r-2xs);
+  font-family: var(--sh-font-serif);
+}
+
+:root[data-look='stage'] .app-shell .ord-btn.is-selected {
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+}
+
+:root[data-look='stage']
+  .app-shell
+  .audio-btn:not(.is-generate):not(.is-danger):not(.is-stale) {
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+}
+
+:root[data-look='stage']
+  .app-shell
+  .audio-btn:not(.is-generate):not(.is-danger):not(.is-stale):hover {
+  filter: brightness(1.08);
+  background: var(--sh-accent-2);
+}
+
+:root[data-look='stage'] .app-shell .audio-btn.is-generate {
+  border: 1px dashed color-mix(in srgb, var(--sh-accent) 60%, transparent);
+  background: transparent;
+  color: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .audio-btn.is-generate:hover {
+  border-style: solid;
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+}
+
+:root[data-look='stage'] .app-shell .audio-btn.is-danger {
+  border: 1px solid color-mix(in srgb, var(--sh-danger) 45%, transparent);
+  background: transparent;
+  color: var(--sh-danger);
+}
+
+/* ------------------------------------------------------------ 章节阅读 -- */
+:root[data-look='stage'] .app-shell :is(.chapter-source-lines, .chapter-source-text) {
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-md);
+  background: var(--sh-field);
+  font-family: var(--sh-font-serif);
+  font-size: 12.8px;
+  line-height: 1.9;
+}
+
+:root[data-look='stage'] .app-shell .chapter-line {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+
+:root[data-look='stage'] .app-shell .chapter-line.is-dialogue {
+  background: color-mix(in srgb, var(--sh-ok) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--sh-ok);
+}
+
+:root[data-look='stage'] .app-shell .chapter-line-ord {
+  font-family: var(--sh-font-serif);
+}
+
+:root[data-look='stage'] .app-shell .mark-token {
+  border-radius: 5px;
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+/* ---------------------------------------------------------------- 右栏 -- */
+:root[data-look='stage'] .app-shell .side-title {
+  font-size: 9.6px;
+  letter-spacing: 0.12em;
+}
+
+:root[data-look='stage'] .app-shell .role-row {
+  border-bottom: 1px solid var(--sh-line-soft);
+}
+
+:root[data-look='stage'] .app-shell .role-name {
+  font-family: var(--sh-font-serif);
+  font-size: 12.8px;
+}
+
+:root[data-look='stage'] .app-shell .producer-job {
+  border: 1px solid color-mix(in srgb, var(--sh-accent) 24%, transparent);
+  border-radius: var(--sh-r-md);
+  background: var(--sh-accent-soft);
+}
+
+:root[data-look='stage'] .app-shell .producer-job .job-kind {
+  color: var(--sh-accent);
+}
+
+/* -------------------------------------------------------------- 空状态 -- */
+:root[data-look='stage'] .app-shell .empty {
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-lg);
+  background: color-mix(in srgb, var(--sh-panel) 72%, transparent);
+  backdrop-filter: blur(var(--sh-blur));
+  -webkit-backdrop-filter: blur(var(--sh-blur));
+  box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .empty-icon {
+  border: 1px solid color-mix(in srgb, var(--sh-accent) 24%, transparent);
+  border-radius: var(--sh-r-md);
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+/* ------------------------------------------------------------ 生成页 -- */
+:root[data-look='stage'] .app-shell .synth-side {
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-lg);
+  background: color-mix(in srgb, var(--sh-panel) 82%, transparent);
+  backdrop-filter: blur(var(--sh-blur));
+  -webkit-backdrop-filter: blur(var(--sh-blur));
+  box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .chip-panel {
+  border-radius: var(--sh-r-sm);
+  background: transparent;
+}
+
+:root[data-look='stage'] .app-shell :is(.instr-area, .seed-row .field-input) {
+  border-color: var(--sh-line);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-field);
+}
+
+:root[data-look='stage'] .app-shell :is(.sref-bar, .sref-play, .result-play) {
+  border-radius: var(--sh-r-sm);
+}
+
+/* -------------------------------------------------------------- 对话框 -- */
+:root[data-look='stage'] .app-shell .vh-root {
+  background: var(--sh-mask-strong);
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+}
+
+:root[data-look='stage'] .app-shell .vh-modal {
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-lg);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow-2);
+}
+
+:root[data-look='stage'] .app-shell .vh-hero {
+  border-bottom: 1px solid var(--sh-line-soft);
+  background: transparent;
+}
+
+:root[data-look='stage'] .app-shell .vh-cover {
+  border-radius: var(--sh-r-md);
+  box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .vh-title {
+  font-family: var(--sh-font-serif);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+:root[data-look='stage']
+  .app-shell
+  :is(
+    .options-title,
+    .split-title,
+    .preview-title,
+    .analysis-title,
+    .import-title,
+    .confirm-title,
+    .assign-title,
+    .params-title,
+    .merge-title
+  ) {
+  font-family: var(--sh-font-serif);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+:root[data-look='stage'] .app-shell .audition > h3 {
+  font-family: var(--sh-font-serif);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+:root[data-look='stage'] .app-shell :is(.vh-title.is-editable, .vh-title-input) {
+  border-radius: var(--sh-r-sm);
+}
+
+/* ------------------------------------------------- 音色库：卡片与样例条 -- */
+:root[data-look='stage'] .app-shell .card {
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-radius-card);
+  background: color-mix(in srgb, var(--sh-panel) 92%, transparent);
+}
+
+:root[data-look='stage'] .app-shell .card:hover {
+  border-color: color-mix(in srgb, var(--sh-accent) 26%, var(--sh-line));
+  box-shadow: var(--sh-shadow-1);
+  transform: translateY(-1px);
+}
+
+:root[data-look='stage'] .app-shell .card-name {
+  font-family: var(--sh-font-serif);
+}
+
+:root[data-look='stage'] .app-shell :is(.cover, .cover-wrap, .cover-play) {
+  border-radius: var(--sh-r-md);
+}
+
+:root[data-look='stage'] .app-shell .sample {
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-md);
+  background: color-mix(in srgb, var(--sh-panel) 70%, transparent);
+}
+
+:root[data-look='stage'] .app-shell .sample:hover {
+  border-color: var(--sh-line-strong);
+  box-shadow: none;
+}
+
+:root[data-look='stage'] .app-shell .sample.is-playing {
+  border-color: var(--sh-accent-ring);
+  background: var(--sh-accent-soft);
+}
+
+:root[data-look='stage'] .app-shell .sample.is-main {
+  border-color: color-mix(in srgb, var(--sh-accent) 45%, transparent);
+  background: var(--sh-accent-soft);
+}
+
+:root[data-look='stage'] .app-shell .sample.is-main::before {
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .sample-play-btn {
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+  box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--sh-accent) 70%, transparent);
+}
+
+:root[data-look='stage'] .app-shell .sample-play-btn:hover {
+  filter: brightness(1.08);
+  background: var(--sh-accent-2);
+}
+
+:root[data-look='stage'] .app-shell :is(.sample.is-playing .sample-play-btn, .sample-play-btn.is-on) {
+  background: var(--sh-accent-2);
+}
+
+:root[data-look='stage'] .app-shell .sample-main {
+  border-radius: var(--sh-r-sm);
+  background: transparent;
+}
+
+:root[data-look='stage'] .app-shell .sample-main:hover:not(:disabled) {
+  background: var(--sh-accent-soft);
+}
+
+:root[data-look='stage'] .app-shell .sample-main.is-on {
+  border-color: var(--sh-accent);
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+}
+
+/* -------------------------------------------------------------- 播放条 -- */
+:root[data-look='stage'] .app-shell .pb-btn {
+  border-radius: var(--sh-r-sm);
+}
+
+:root[data-look='stage'] .app-shell .pb-seek::-webkit-slider-runnable-track,
+:root[data-look='stage'] .app-shell .pb-seek::-moz-range-track,
+:root[data-look='stage'] .app-shell .pb-seek::-moz-range-progress {
+  border-radius: 2px;
+}
+
+:root[data-look='stage'] .app-shell .pb-seek::-webkit-slider-thumb {
+  border: 0;
+  border-radius: 2px;
+  background: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .pb-seek::-moz-range-thumb {
+  border: 0;
+  border-radius: 2px;
+  background: var(--sh-accent);
+}
+
+/* ------------------------------------------------------------------ 提示条 -- */
+/* toast 在 .app-shell 外：只用 :root 上的舞台令牌，前缀到不了它。 */
+:root[data-look='stage'] .toast {
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-md);
+  background: var(--sh-glass-strong);
+  color: var(--sh-text);
+  backdrop-filter: blur(var(--sh-blur-strong)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--sh-blur-strong)) saturate(140%);
+  box-shadow: var(--sh-shadow-pop);
+}
+
+/* ---------------------------------------------------------- 焦点兜底 -- */
+/* 组件层那几条"舞台上的控件"把边框刷成了细线，会盖掉控件自己的 :focus 边框；
+   这里按同一档把焦点补回来——只补边框色，环仍由控件自己那一层给。 */
+:root[data-look='stage'] .app-shell
+  :is(
+    .sh-field,
+    .instr-area,
+    .tag-input,
+    .aud-pick,
+    .row-input,
+    .field-input,
+    .field-textarea,
+    .field-sm,
+    .batch-input,
+    .logview-source,
+    .logview-needle,
+    .analysis-prompt,
+    .params-text,
+    .params-input,
+    .import-text
+  ):focus {
+  border-color: var(--sh-accent);
+}
+
+:root[data-look='stage'] .app-shell .speaker-field:focus-within {
+  border-color: var(--sh-accent);
+}
+
+/* 夜场：卡片与行表回到设计稿的玻璃面，不跟着日场的纸面一起变实。 */
+:root[data-look='stage'][data-theme='dark'] .app-shell .sh-card,
+:root[data-look='stage'][data-theme='dark'] .app-shell .pb-shell {
+  background: color-mix(in srgb, var(--sh-panel) 76%, transparent);
+}
+
+:root[data-look='stage'][data-theme='dark'] .app-shell .card {
+  background: color-mix(in srgb, var(--sh-panel) 72%, transparent);
+}
+
+:root[data-look='stage'][data-theme='dark'] .app-shell .card:hover {
+  background: color-mix(in srgb, var(--sh-panel) 84%, transparent);
 }
