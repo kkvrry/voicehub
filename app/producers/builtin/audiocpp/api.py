@@ -125,6 +125,11 @@ def build_router(service: RuntimeService) -> APIRouter:
         service.clean_model(body.id)
         return service.state()
 
+    @router.post("/runtime/refresh", summary="同步上游运行包清单")
+    def refresh_runtime() -> dict[str, Any]:
+        service.refresh_runtime()
+        return service.state()
+
     @router.post("/models/load", summary="加载已安装的模型")
     def load(body: ModelIn) -> dict[str, Any]:
         service.load_model(body.id)

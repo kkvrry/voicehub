@@ -175,6 +175,7 @@ VoiceHub 是本地优先的有声书生产工作台：FastAPI 后端（`app/`）
 - 子进程：一律 argv 列表，禁止 `shell=True`；ffmpeg/ffprobe/`audio.cpp` 的输出显式 `encoding="utf-8", errors="replace"`，否则中文 Windows 会 GBK 解码失败。
 - 异步：事件循环里不做同步 httpx、ffmpeg、读大文件或阻塞 IO；放线程池。
 - 单实例：同一数据目录只允许一个服务进程（`data/service.lock`）。不要为了调试再起第二个实例；两个进程写同一批行会落下半截音频。
+- 监听与协议：`host` / `port` / `https` 三项只在 `app/infra/config.py` 的 `resolve_*` 里解析，优先级同形（命令行 > 环境变量 > `config.json` > 默认）。`https` 默认 `auto`：非回环即开，证书由 `infra/tls.py` 现签；签不出来回落 http，不许拦启动。`/service` 报生效的 `scheme` / `lan`，不报配置值；改这三项都要重启。
 - 任务：`jobs` 带 `owner` / `heartbeat_at`，启动时只回收“进程已不在或心跳超时”的任务，不盲清 `running`；行合成前先 `claim_row`，`row_claims` 抢不到就跳过；失败或取消释放占位。
 - 幂等：付费调用先 `idempotent_begin` 抢占，失败/取消 `abandon`；不要先调引擎再补记录。
 - 失败行的目标行为是只写 `error` / `status='failed'`、保留 `audio` / `audio_key`；当前 `set_row_error` 仍会清空（已知边界）。只有参数改动产生的 `stale` 行能自动恢复，不要把失败行当可恢复。

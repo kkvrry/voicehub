@@ -2,7 +2,15 @@
 <template>
   <PanelCard title="运行包" :desc="cardDesc">
     <template #head>
-      <span class="sh-hint">清单 v{{ data.runtime.catalog_version }}</span>
+      <span class="sh-hint">清单 v{{ data.runtime.catalog_version }}{{ data.runtime.catalog_synced ? ' · 已同步' : '' }}</span>
+      <ActionButton
+        size="sm"
+        variant="ghost"
+        :loading="state.busy === 'runtime-refresh'"
+        title="从上游同步运行包清单"
+        aria-label="从上游同步运行包清单"
+        @click="refreshRuntime"
+      >同步</ActionButton>
       <span v-if="data.runtime.version" class="sh-chip" :class="data.runtime.outdated ? 'is-warn' : ''">
         {{ data.runtime.version }}
       </span>
@@ -21,7 +29,7 @@
           @change="onRuntimeChange"
         >
           <option v-for="row in runtimeOptions" :key="row.id" :value="row.id">
-            {{ row.label }}{{ row.size ? ` · ${formatSize(row.size)}` : '' }}{{ row.experimental ? ' · 实验' : '' }}
+            {{ row.label }}{{ row.size ? ` · ${formatSize(row.size + (row.extras_size || 0))}` : '' }}{{ row.extras_size ? ' · 含 CUDA 运行时' : '' }}{{ row.experimental ? ' · 实验' : '' }}
           </option>
         </select>
         <ActionButton
@@ -98,6 +106,7 @@
 
     <p v-if="rootNote" class="acp-note is-warn">{{ rootNote }}</p>
     <p v-if="data.runtime.note" class="acp-note is-warn">{{ data.runtime.note }}</p>
+    <p v-if="data.runtime.catalog_note" class="acp-note is-warn">{{ data.runtime.catalog_note }}</p>
     <p v-if="data.runtime.outdated" class="acp-note is-warn">
       当前 {{ data.runtime.version }} 低于最低要求 v{{ data.runtime.minimum_version }}，请重新下载运行包。
     </p>
@@ -109,7 +118,7 @@
 import { computed } from 'vue'
 import ActionButton from '../../../components/ui/ActionButton.vue'
 import PanelCard from '../../../components/ui/PanelCard.vue'
-import { downloadRuntime, saveExe, saveModelsRoot, setRuntime, state, uninstall } from '../store'
+import { downloadRuntime, refreshRuntime, saveExe, saveModelsRoot, setRuntime, state, uninstall } from '../store'
 
 const data = computed(() => state.data)
 
@@ -126,7 +135,7 @@ const cardDesc = computed(() => {
 })
 const runtimeOptions = computed(() => {
   const rows = data.value?.runtime.packages || []
-  return rows.length ? rows : [{ id: '', label: '当前平台无可用运行包', size: 0, experimental: false }]
+  return rows.length ? rows : [{ id: '', label: '当前平台无可用运行包', size: 0, extras_size: 0, experimental: false }]
 })
 const downloadNote = computed(() => {
   const job = data.value?.runtime.download

@@ -40,7 +40,7 @@
 
     <SettingCard
       title="启动与访问"
-      keywords="启动 开机 自启 登录 托盘 桌面版 网络 局域网 监听 地址 端口 令牌 鉴权 访问 安全 同网段"
+      keywords="启动 开机 自启 登录 托盘 桌面版 网络 局域网 监听 地址 端口 令牌 鉴权 访问 安全 同网段 https 证书 加密 麦克风"
     >
       <template #icon><Server :size="16" :stroke-width="1.8" /></template>
 
@@ -58,6 +58,14 @@
         keywords="局域网 同网段 手机 平板 其他设备 监听"
       >
         <ToggleSwitch v-model="lanAllowed" label="允许局域网访问" />
+      </SettingRow>
+
+      <SettingRow
+        title="HTTPS"
+        desc="自签证书，浏览器首次打开会提示不受信任。关闭后其它设备用不了麦克风；自动 = 开放局域网时开启。"
+        keywords="https 证书 自签 加密 麦克风 安全上下文 重启"
+      >
+        <SegmentedControl v-model="httpsMode" :options="httpsOptions" label="HTTPS" />
       </SettingRow>
 
       <SettingRow
@@ -117,6 +125,19 @@ const lanAllowed = computed({
   },
 })
 
+const httpsOptions: SegmentOption[] = [
+  { value: 'auto', label: '自动' },
+  { value: 'on', label: '开启' },
+  { value: 'off', label: '关闭' },
+]
+
+const httpsMode = computed({
+  get: () => store.service.https as string,
+  set: (value: string | number) => {
+    store.service.https = value === 'on' || value === 'off' ? value : 'auto'
+  },
+})
+
 const tokenInput = computed({
   get: () => store.service.token,
   set: (value: string) => {
@@ -127,12 +148,20 @@ const tokenInput = computed({
 /** 状态行：只写当前实测值，不写"配置里存了什么"。 */
 const lanState = computed(() => {
   if (!store.backend.online) return '后端未连接'
-  // 前半句是**生效**的暴露面（拨了开关没重启时不能说已开放），后半句说配置要等重启。
-  const { host, port, lan, liveLan, liveTokenSet } = store.service
+  // 前两段是**生效**的暴露面（拨了开关没重启时不能说已开放），后面才是配置要等重启。
+  const { host, port, lan, liveLan, liveTokenSet, https, liveHttps, httpsKnown } = store.service
   const where = liveLan ? `局域网可访问${liveTokenSet ? '（需令牌）' : '，无令牌'}` : '仅本机'
-  const base = `${host}:${port} · ${where}`
-  if (lan === liveLan) return base
-  return `${base} · 重启后${lan ? '开放局域网' : '回到仅本机'}`
+  const base = `${liveHttps ? 'https' : 'http'}://${host}:${port} · ${where}`
+  const notes: string[] = []
+  if (lan !== liveLan) notes.push(`重启后${lan ? '开放局域网' : '回到仅本机'}`)
+  // `auto` 跟着（同样待兑现的）局域网开关走；老进程不报 scheme 时这句无从谈起。
+  if (httpsKnown) {
+    const wantHttps = https === 'on' || (https === 'auto' && lan)
+    if (wantHttps !== liveHttps) notes.push(`重启后改用 ${wantHttps ? 'https' : 'http'}`)
+  }
+  // 浏览器只在 https 或 localhost 下给麦克风；这一页拿不到就直说，别让人去猜开关。
+  if (!window.isSecureContext) notes.push('本页用不了麦克风')
+  return notes.length ? `${base} · ${notes.join(' · ')}` : base
 })
 
 const autoStart = computed({

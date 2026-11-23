@@ -1,8 +1,10 @@
 """VoiceHub 应用入口。起服务：``python -m app.main``（默认 ``127.0.0.1:17865``）。
 
 端口解析优先级 ``--port`` > ``VOICEHUB_PORT`` > ``config.json``，监听地址同构：
-``--host`` > ``VOICEHUB_HOST`` > ``config.json`` 的 ``host``；两处都只在
-:mod:`app.infra.config` 解析，默认只绑回环。
+``--host`` > ``VOICEHUB_HOST`` > ``config.json`` 的 ``host``；https 同构：
+``--https`` / ``--no-https`` > ``VOICEHUB_HTTPS`` > ``config.json`` 的 ``https``，
+未指定时跟随监听地址（非回环即开）。三处都只在 :mod:`app.infra.config` 解析，
+默认只绑回环。
 """
 
 from __future__ import annotations
@@ -11,7 +13,6 @@ import argparse
 import asyncio
 import contextlib
 import logging
-import os
 import socket
 import uuid
 import webbrowser
@@ -29,15 +30,20 @@ from app.api.routes import build_router
 from app.infra import recordings
 from app.infra.config import (
     DEFAULT_PORT,
+    HTTPS_OFF,
+    HTTPS_ON,
     WILDCARD_HOSTS,
     data_dir,
+    is_loopback_host,
     load_config,
     resolve_host,
+    resolve_https,
     resolve_port,
 )
 from app.infra.db import HubDB
 from app.infra.instancelock import InstanceLock
 from app.infra.loghub import CHANNEL, install_logging
+from app.infra.netenv import lan_addresses
 from app.infra.requestctx import REQUEST_ID
 from app.infra.runtime import data_path
 from app.usecase import asr as asr_usecase
@@ -139,37 +145,6 @@ def _cors_origins() -> list[str]:
     return list(dict.fromkeys(extra))
 
 
-#: 只对本机可达的监听地址：这些值下不放开私有网段的 CORS。
-_LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
-
-
-def _is_loopback(host: str) -> bool:
-    return host in _LOOPBACK
-
-
-def _lan_addresses() -> list[str]:
-    """本机的局域网 IPv4（去重、跳过回环）。取不到给空表——地址只用于提示，不是启动条件。"""
-    found: list[str] = []
-    try:
-        resolved = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
-    except OSError:
-        resolved = []
-    for _family, _type, _proto, _canon, sockaddr in resolved:
-        address = sockaddr[0]
-        if not address.startswith("127.") and address not in found:
-            found.append(address)
-    try:
-        # 不产生流量：connect 一个 UDP 套接字只用于让系统选出默认出口网卡的地址。
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-            probe.connect(("8.8.8.8", 80))
-            primary = probe.getsockname()[0]
-        if not primary.startswith("127.") and primary not in found:
-            found.insert(0, primary)
-    except OSError:
-        pass
-    return found
-
-
 def create_app(*, host: str | None = None) -> FastAPI:
     # 必须先装日志：启动阶段的 warning 才能进入界面。
     install_logging()
@@ -257,7 +232,7 @@ def create_app(*, host: str | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=_cors_origins(),
         # 只绑回环时不放开私有网段：那会让局域网里的一页读到本机接口的响应。
-        allow_origin_regex=(None if _is_loopback(bind_host) else _LAN_ORIGIN_REGEX),
+        allow_origin_regex=(None if is_loopback_host(bind_host) else _LAN_ORIGIN_REGEX),
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["X-Request-Id"],
@@ -374,38 +349,58 @@ def main() -> None:
         ),
     )
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument(
+        "--https",
+        dest="https",
+        action="store_const",
+        const=HTTPS_ON,
+        default=None,
+        help=(
+            "强制 https（自签证书）。默认跟随监听地址：非回环即开；"
+            "也可用环境变量 VOICEHUB_HTTPS 或 config.json 的 https"
+        ),
+    )
+    parser.add_argument(
+        "--no-https",
+        dest="https",
+        action="store_const",
+        const=HTTPS_OFF,
+        help="强制 http。默认跟随监听地址",
+    )
     args = parser.parse_args()
 
     port = resolve_port(args.port)
     host = resolve_host(args.host)
-    # `/service` 回答"现在生效什么"：端口与地址一样，`--port` 会盖掉配置，
+    # `/service` 回答"现在生效什么"：端口、地址与协议都可能被命令行盖掉，
     # 必须在绑定之前把实际值记进 HTTP 层，现读配置会答错。
-    from app.api.views import set_bind_port
+    from app.api.views import set_bind_host, set_bind_port, set_bind_scheme
 
+    set_bind_host(host)
     set_bind_port(port)
     wildcard = host in WILDCARD_HOSTS
     browser_host = "127.0.0.1" if wildcard else ("[::1]" if host == "::1" else host)
     # 对局域网开放就顺带把连接变成安全上下文：浏览器只在 https / localhost 下给麦克风，
     # 平板用 http://192.168.x.x 打开时连 navigator.mediaDevices 都没有。
-    # 只监听回环时不这样做——在本机给自己添一次证书警告没有好处。
+    # 只监听回环时不这样做——在本机给自己添一次证书警告没有好处。三层的顺序见 resolve_https。
     scheme = "http"
     ssl_files: tuple[Path, Path] | None = None
-    if wildcard and os.environ.get("VOICEHUB_HTTPS", "1") != "0":
+    if resolve_https(args.https, host):
         from app.infra.tls import CertError, ensure_cert
 
-        cert_hosts = list(_lan_addresses())
         try:
-            ssl_files = ensure_cert(data_dir() / "certs", cert_hosts)
+            ssl_files = ensure_cert(data_dir() / "certs", lan_addresses())
             scheme = "https"
         except CertError as exc:
             print(f"[VoiceHub] 自签证书没签成，仍用 http（麦克风在局域网下不可用）：{exc}", flush=True)
+            print("[VoiceHub] 确实要用 http：加 --no-https，或把设置里的 https 设为关闭。", flush=True)
+    set_bind_scheme(scheme)
     url = f"{scheme}://{browser_host}:{port}/"
     if scheme == "https":
         print(
             "[VoiceHub] 已启用 https（自签证书）：浏览器第一次会提示\"不受信任\"，选择继续访问即可。",
             flush=True,
         )
-        print("[VoiceHub] 想改回 http：设 VOICEHUB_HTTPS=0 再启动。", flush=True)
+        print("[VoiceHub] 想改回 http：加 --no-https，或在设置页把 https 设为关闭。", flush=True)
     if _port_in_use(host, port):
         CHANNEL.warning(
             f"端口 {port} 已被占用——多半是服务已经在跑：{url}", source="app", port=port
@@ -431,7 +426,7 @@ def main() -> None:
 
     token_on = bool(resolve_token())
     if wildcard:
-        for address in _lan_addresses():
+        for address in lan_addresses():
             print(f"[VoiceHub] 局域网：{scheme}://{address}:{port}/", flush=True)
         if token_on:
             print("[VoiceHub] 已启用访问令牌：其它设备首次打开要在 /login 输入。", flush=True)
@@ -441,7 +436,7 @@ def main() -> None:
                 "要加锁可在 config.json 里设 access_token。",
                 flush=True,
             )
-    elif not _is_loopback(host):
+    elif not is_loopback_host(host):
         print(f"[VoiceHub] 监听：{url}", flush=True)
         if token_on:
             print("[VoiceHub] 已启用访问令牌：其它设备首次打开要在 /login 输入。", flush=True)
@@ -457,7 +452,7 @@ def main() -> None:
     # 只在"回环与否"跟模块级 app 不一致时重建：CORS 的放行范围由它决定。
     server = (
         app
-        if _is_loopback(host) == _is_loopback(resolve_host(None))
+        if is_loopback_host(host) == is_loopback_host(resolve_host(None))
         else create_app(host=host)
     )
     try:

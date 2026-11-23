@@ -187,6 +187,24 @@ def test_saving_the_listen_scope_writes_config_and_asks_for_a_restart(client) ->
     assert secret_store.reveal(config.access_token) == "s3cret"
 
 
+def test_https_is_a_restart_setting(client) -> None:
+    """https 与地址、令牌同一套语义：保存只落盘，`/service` 报现在**生效**的 scheme。"""
+    from app.infra.config import load_config
+
+    body = client.get("/api/v1/service").json()
+    assert body["scheme"] == "http"
+    assert body["https"] == "auto"
+
+    resp = client.put("/api/v1/service", json={"https": "off"})
+    assert resp.status_code == 200
+    assert resp.json()["restart_required"] is True
+    assert resp.json()["https"] == "off"
+    assert load_config().https == "off"
+
+    # 只认三态：界面把值拼错时不能静默落成 auto。
+    assert client.put("/api/v1/service", json={"https": "maybe"}).status_code == 422
+
+
 # --------------------------------------------------------------------------- #
 # 幂等与提示
 # --------------------------------------------------------------------------- #

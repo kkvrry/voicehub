@@ -166,6 +166,9 @@ VoiceHub 是一个本地优先的有声书生产工作台。它以**音色**为�
 
 - 端口 / 监听地址：`--port` / `--host`、`VOICEHUB_PORT` / `VOICEHUB_HOST`，或 `config.json`。
 - 局域网访问：`--host 0.0.0.0`，建议同时设 `VOICEHUB_TOKEN` 或 `config.json` 的 `access_token`。
+- https：默认跟随监听地址（非回环即开，自签证书落在数据目录 `certs/`）；可用 `--https` /
+  `--no-https`、`VOICEHUB_HTTPS` 或 `config.json` 的 `https` 覆盖，设置页「启动与访问」同效。
+  关掉后局域网下的麦克风不可用（浏览器只在 https 或 localhost 下交出麦克风）。
 - 数据目录：默认 `./data`，可用 `VOICEHUB_DATA_DIR` 指到别处。
 - 单实例：同一个数据目录只允许一个服务进程（`data/service.lock`）。第二个实例会直接退出——
   两份进程同时推进同一批任务，会把同一段音频写进同一个文件。

@@ -23,6 +23,7 @@ from app.api.views import (
     _vocab,
     bind_host,
     bind_port,
+    bind_scheme,
 )
 from app.domain.request_spec import spec_payload
 from app.infra import autostart, releases
@@ -54,12 +55,13 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
             "lan_open": bool(host) and not is_local_host(host) and not resolve_token(),
         }
 
-    @router.get("/service", summary="服务监听与令牌", tags=["system"])
+    @router.get("/service", summary="服务监听、https 与令牌", tags=["system"])
     def service_state() -> dict[str, Any]:
-        """当前**生效**的监听地址与令牌状态。
+        """当前**生效**的监听地址、协议与令牌状态。
 
-        地址取自实际 bind 值而非配置：``--host`` 会盖掉 ``config.json``，读配置答不准。
-        改这两项要重启进程，所以这里只回答"现在是什么"，不回答"配置里写了什么"。
+        地址与协议取自实际 bind 值而非配置：``--host`` / ``--https`` 会盖掉
+        ``config.json``，证书签不出来时还会回落 http，读配置答不准。
+        改这三项要重启进程，所以这里只回答"现在是什么"，不回答"配置里写了什么"。
         """
         host = bind_host() or DEFAULT_HOST
         config = load_config()
@@ -67,28 +69,33 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
             "object": "service",
             "host": host,
             "port": bind_port(),
-            # `lan` 是现在生效的；`config_lan` 是配置里写的（重启后才兑现）。
-            # 两者不同时界面要如实说"改了但还没重启"，不能只报一个数。
+            "scheme": bind_scheme(),
+            # `lan` / `scheme` 是现在生效的；`config_lan` / `https` 是配置里写的
+            # （重启后才兑现）。两者不同时界面要如实说"改了但还没重启"，不能只报一个数。
             "lan": not is_local_host(host),
             "config_lan": config.host in WILDCARD_HOSTS,
+            "https": config.https,
             "token_set": bool(resolve_token()),
             # 开机自启只由桌面启动器提供；源码态没有可执行的自启命令。
             "autostart_supported": autostart.supported(),
             "autostart_enabled": autostart.enabled(),
         }
 
-    @router.put("/service", summary="保存监听范围、令牌与自启", tags=["system"])
+    @router.put("/service", summary="保存监听范围、https、令牌与自启", tags=["system"])
     def save_service(request: Request, body: ServiceIn) -> dict[str, Any]:
         """按提交的字段落盘：没给的字段不动。
 
-        监听地址与令牌要**重启进程**才兑现；开机自启是注册表状态，立刻生效。
-        所以 `restart_required` 只跟着前两项走，界面据此提示。
+        监听地址、https 与令牌要**重启进程**才兑现；开机自启是注册表状态，立刻生效。
+        所以 `restart_required` 只跟着前三项走，界面据此提示。
         """
         require_local(request)
         config = load_config()
         restart = False
         if body.lan is not None:
             config.host = "0.0.0.0" if body.lan else ""
+            restart = True
+        if body.https is not None:
+            config.https = body.https
             restart = True
         if body.access_token is not None:
             config.access_token = secret_store.seal(body.access_token.strip())
@@ -113,14 +120,16 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
 
         if restart:
             CHANNEL.info(
-                "监听范围与令牌已保存，重启服务后生效。",
+                "监听范围、https 与令牌已保存，重启服务后生效。",
                 source="config",
                 lan=config.host in WILDCARD_HOSTS,
+                https=config.https,
                 token_set=bool(config.access_token),
             )
         return {
             "object": "service",
             "lan": config.host in WILDCARD_HOSTS,
+            "https": config.https,
             "token_set": bool(config.access_token),
             "autostart_enabled": autostart.enabled(),
             "restart_required": restart,

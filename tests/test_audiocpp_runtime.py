@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from app.producers.base import ProducerError
-from app.producers.builtin.audiocpp import catalog, manager
+from app.producers.builtin.audiocpp import catalog, manager, runtimes
 from app.producers.builtin.audiocpp import runtime as rt
 from app.producers.builtin.audiocpp.plugin import AudiocppRuntime
 
@@ -756,3 +756,112 @@ def test_load_builtin_registers_a_path(
     monkeypatch.setattr(service, "ensure_management", lambda: fake_conn)
     service.load_builtin("deepfilternet2", path)
     assert ("load-path", "builtin-deepfilternet2", "builtin_audio_utils", "s2s", {"utility": "deepfilternet2"}) in fake_conn.calls
+
+
+# --------------------------------------------------------------------------- #
+# 运行包清单：上游同步、cudart 配对与内置兜底
+# --------------------------------------------------------------------------- #
+
+
+def _release_asset(name: str, digest: str = "a" * 64, size: int = 100) -> dict[str, Any]:
+    return {
+        "name": name,
+        "browser_download_url": f"https://example.com/{name}",
+        "digest": f"sha256:{digest}" if digest else "",
+        "size": size,
+    }
+
+
+def test_runtime_asset_names_are_parsed() -> None:
+    cases = {
+        "audio-v0.9.4-bin-windows-x64-cpu-portable.zip": ("windows-x64-cpu", "Windows x64 · CPU"),
+        "audio-v0.9.4-bin-windows-x64-cuda12.4.zip": ("windows-x64-cuda12.4", "Windows x64 · CUDA 12.4"),
+        "audio-v0.9.4-bin-ubuntu-x64-cuda12.8-colab.tar.gz": ("linux-x64-cuda12.8", "Linux x64 · CUDA 12.8"),
+        "audio-v0.9.4-bin-windows-x64-rocm10.0.0-test.zip": ("windows-x64-hip", "Windows x64 · ROCm（实验）"),
+        "audio-v0.9.4-bin-macos-arm64-metal.tar.gz": ("macos-arm64-metal", "macOS arm64 · Metal"),
+    }
+    for name, (expected_id, expected_label) in cases.items():
+        info = runtimes._asset_info(name, _release_asset(name))
+        assert info is not None
+        assert info["id"] == expected_id
+        assert info["label"] == expected_label
+    assert runtimes._asset_info("README.md", _release_asset("README.md")) is None
+
+
+def test_cudart_is_paired_and_unverified_packages_are_dropped() -> None:
+    binary = _release_asset("audio-v0.9.4-bin-windows-x64-cuda12.4.zip", "a" * 64, 467)
+    cudart = _release_asset("audio-v0.9.4-cudart-windows-x64-cuda12.4.zip", "b" * 64, 607)
+    cpu = _release_asset("audio-v0.9.4-bin-windows-x64-cpu-portable.zip", "c" * 64, 32)
+    unverified = _release_asset("audio-v0.9.4-bin-windows-x64-cuda13.3.zip", "", 400)
+    rows = {row["id"]: row for row in runtimes._build_packages([binary, cudart, cpu, unverified])}
+    assert set(rows) == {"windows-x64-cuda12.4", "windows-x64-cpu"}
+    extras = rows["windows-x64-cuda12.4"]["extras"]
+    assert len(extras) == 1
+    assert extras[0]["sha256"] == "b" * 64
+    assert extras[0]["size"] == 607
+    assert rows["windows-x64-cpu"]["extras"] == []
+    # 同一 Release 里混入的旧版资产不认，免得标着新版却下发旧包。
+    old = _release_asset("audio-v0.9.3-bin-windows-x64-cpu-portable.zip", "d" * 64, 31)
+    assert runtimes._build_packages([cpu, old], "0.9.4") == [
+        row for row in runtimes._build_packages([cpu, old]) if row["id"] == "windows-x64-cpu"
+    ]
+    assert len(runtimes._build_packages([cpu, old], "0.9.4")) == 1
+
+
+def _native_names(version: str) -> list[str]:
+    key = runtimes.platform_key()
+    if key == "windows-x64":
+        return [
+            f"audio-v{version}-bin-windows-x64-cuda12.4.zip",
+            f"audio-v{version}-cudart-windows-x64-cuda12.4.zip",
+        ]
+    if key == "linux-x64":
+        return [
+            f"audio-v{version}-bin-ubuntu-x64-cuda12.8-colab.tar.gz",
+            f"audio-v{version}-cudart-ubuntu-x64-cuda12.8.tar.gz",
+        ]
+    return [f"audio-v{version}-bin-macos-arm64-metal.tar.gz"]
+
+
+def test_runtime_sync_writes_remote_and_exposes_total_size(
+    service: rt.RuntimeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    names = _native_names("0.9.5")
+    payload = {
+        "tag_name": "v0.9.5",
+        "html_url": "https://github.com/0xShug0/audio.cpp/releases/tag/v0.9.5",
+        "assets": [_release_asset(name, size=400 + index) for index, name in enumerate(names)],
+    }
+    monkeypatch.setattr(runtimes, "_fetch_json", lambda url: payload)
+    # cudart 并入 extras，不单独计一个包。
+    assert service.refresh_runtime() == {"version": "0.9.5", "count": 1}
+
+    state = service.state()["runtime"]
+    assert state["catalog_version"] == "0.9.5"
+    assert state["catalog_synced"] is True
+    assert state["catalog_note"] == ""
+    assert state["packages"]
+    # 最低要求是内置门槛，不随上游版本放宽。
+    assert state["minimum_version"] == runtimes.minimum()
+    if len(names) == 2:
+        assert state["packages"][0]["extras_size"] == 401
+        assert state["packages"][0]["size"] == 400
+
+
+def test_runtime_sync_failure_keeps_current_catalog(
+    service: rt.RuntimeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        runtimes, "refresh", lambda root: (_ for _ in ()).throw(OSError("连不上"))
+    )
+    with pytest.raises(ProducerError, match="连不上"):
+        service.refresh_runtime()
+    state = service.state()["runtime"]
+    assert state["catalog_note"] == "连不上"
+    assert state["catalog_version"] == runtimes.version()
+
+
+def test_runtime_catalog_falls_back_to_snapshot(service: rt.RuntimeService) -> None:
+    (service.root / "runtimes.remote.json").write_text("{broken", encoding="utf-8")
+    assert runtimes.synced(service.root) is False
+    assert runtimes.version(service.root) == runtimes.version()

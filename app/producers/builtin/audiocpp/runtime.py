@@ -294,6 +294,7 @@ class RuntimeService:
         self._model_jobs: dict[str, dict[str, Any]] = {}
         self._model_procs: dict[str, subprocess.Popen[str]] = {}
         self._catalog_note = ""
+        self._runtime_note = ""
         self._installer = runtimes.Installer(root, self._set_download)
         self._cfg = self._read_state()
         if self._migrated:
@@ -533,11 +534,11 @@ class RuntimeService:
                 if backend not in runtimes.BACKENDS:
                     raise ProducerError("后端不在清单内。")
                 self._cfg["backend"] = backend
-                row = runtimes.pick("", backend)
+                row = runtimes.pick("", backend, self.root)
                 if row:
                     self._apply_runtime(row)
             if runtime_id is not None:
-                row = next((item for item in runtimes.rows() if item.get("id") == runtime_id), None)
+                row = next((item for item in runtimes.rows(root=self.root) if item.get("id") == runtime_id), None)
                 if row is None:
                     raise ProducerError("运行包不在清单内。")
                 self._apply_runtime(row)
@@ -647,7 +648,7 @@ class RuntimeService:
         with self._lock:
             if self._download["state"] == "downloading":
                 raise ProducerError("正在下载。")
-            row = runtimes.pick(runtime_id.strip(), str(self._cfg.get("backend") or "cpu"))
+            row = runtimes.pick(runtime_id.strip(), str(self._cfg.get("backend") or "cpu"), self.root)
             if not row:
                 raise ProducerError("当前平台没有该后端的运行包。")
             self._apply_runtime(row)
@@ -659,7 +660,8 @@ class RuntimeService:
         try:
             exe = self._installer.install(row)
             with self._lock:
-                self._cfg["version"] = f"v{runtimes.version()}" if runtimes.version() else ""
+                installed_version = runtimes.version(self.root)
+                self._cfg["version"] = f"v{installed_version}" if installed_version else ""
                 self._write_state()
             self._set_download("done", 100.0, "已安装")
             CHANNEL.info(f"audio.cpp 运行包已安装：{exe}", source="audiocpp")
@@ -1167,6 +1169,20 @@ class RuntimeService:
         CHANNEL.info(f"audio.cpp 模型清单已刷新：{result['count']} 个模型", source="audiocpp")
         return result
 
+    def refresh_runtime(self) -> dict[str, Any]:
+        """从上游最新 Release 同步运行包清单；失败保留当前清单。"""
+        try:
+            result = runtimes.refresh(self.root)
+        except OSError as exc:
+            self._runtime_note = str(exc)
+            raise ProducerError(str(exc)) from exc
+        self._runtime_note = ""
+        CHANNEL.info(
+            f"audio.cpp 运行包清单已同步：{result['version']}，{result['count']} 个包",
+            source="audiocpp",
+        )
+        return result
+
     # ------------------------------------------------------------------ #
     # 状态
     # ------------------------------------------------------------------ #
@@ -1568,8 +1584,10 @@ class RuntimeService:
                 "models_root": str(self.models_root()),
                 "models_root_custom": bool(self._cfg.get("models_root")),
                 "version": version,
-                "catalog_version": runtimes.version(),
+                "catalog_version": runtimes.version(self.root),
                 "minimum_version": need,
+                "catalog_synced": runtimes.synced(self.root),
+                "catalog_note": self._runtime_note,
                 "outdated": outdated,
                 "backend": backend,
                 "backends": available,
@@ -1580,9 +1598,14 @@ class RuntimeService:
                         "label": str(row.get("label") or row.get("id") or ""),
                         "backend": str(row.get("backend") or ""),
                         "size": int(row.get("size") or 0),
+                        "extras_size": sum(
+                            int(item.get("size") or 0)
+                            for item in (row.get("extras") or [])
+                            if isinstance(item, dict)
+                        ),
                         "experimental": bool(row.get("experimental")),
                     }
-                    for row in runtimes.rows()
+                    for row in runtimes.rows(root=self.root)
                 ],
                 "runtime_id": str(self._cfg.get("runtime_id") or ""),
                 "download": download,

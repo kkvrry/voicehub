@@ -61,5 +61,8 @@ export const unloadModel = (id) =>
 export const refreshCatalog = () =>
   request(`${base}/catalog/refresh`, { method: 'POST' })
 
+export const refreshRuntime = () =>
+  request(`${base}/runtime/refresh`, { method: 'POST' })
+
 export const uninstall = () =>
   request(`${base}/uninstall`, { method: 'POST', body: { confirm: true } })

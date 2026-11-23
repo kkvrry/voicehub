@@ -30,6 +30,8 @@ export type SectionKey =
   | 'asr'
   | 'texts'
   | 'storage'
+/** https 启动方式：`auto` 跟随监听地址（非回环即开），另两个是用户的明确选择。 */
+export type HttpsMode = 'auto' | 'on' | 'off'
 export type ShortcutAction =
   | 'openSettings'
   | 'toggleTheme'
@@ -129,7 +131,7 @@ export interface StorageEntry {
 export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
   openSettings: '打开设置',
   toggleTheme: '切换主题',
-  focusSearch: '聚焦搜索',
+  focusSearch: '命令输入',
   openFilters: '筛选音色',
   backToLibrary: '返回音色库',
   saveSettings: '保存设置',
@@ -236,6 +238,11 @@ function sameDir(left: string, right: string): boolean {
   return fold(left) === fold(right)
 }
 
+/** 后端存的是三态字符串；认不出（老进程没这一格）按 `auto` 显示。 */
+function normalizeHttps(value: unknown): HttpsMode {
+  return value === 'on' || value === 'off' ? value : 'auto'
+}
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
@@ -273,7 +280,7 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     roots: [] as string[],
     dirs: clone(DEFAULTS.storage.dirs),
     asr: clone(DEFAULTS.asr),
-    listen: { lan: false, token: '', autostart: false },
+    listen: { lan: false, https: 'auto' as HttpsMode, token: '', autostart: false },
   })
 
   /** 后端里当前生效的回收线：只提交改过的那一格。 */
@@ -287,17 +294,22 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     version: '',
   })
 
-  /** 监听范围与令牌。字段回答"现在生效的是什么"；改动只落盘，重启进程才变。 */
+  /** 监听范围、https 与令牌。字段回答"现在生效的是什么"；改动只落盘，重启进程才变。 */
   const service = reactive({
     host: '',
     port: 0,
     lan: false,
+    /** 配置里的 https 方式（`auto` / `on` / `off`）。 */
+    https: 'auto' as HttpsMode,
     tokenSet: false,
     /** 输入框里的新令牌；提交后清空，从不回填已存的那份。 */
     token: '',
     /** 当前**生效**的暴露面（与上面的编辑值不同：改了要重启才算数）。 */
     liveLan: false,
     liveTokenSet: false,
+    liveHttps: false,
+    /** 后端报过 scheme 才谈得上生效值；老进程没有这一格，界面不猜。 */
+    httpsKnown: false,
     /** 开机自启：只有桌面版（由启动器拉起）可设。 */
     autostart: false,
     autoSupported: false,
@@ -315,6 +327,7 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
       asr: clone(asr),
       listen: {
         lan: service.lan,
+        https: service.https,
         token: service.token,
         autostart: service.autostart,
       },
@@ -532,12 +545,21 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
         service.port = Number(listen.port || 0)
         // 开关显示配置意图，状态行显示生效事实：两者不同时才有"待重启"这句话。
         service.lan = Boolean(listen.config_lan)
+        service.https = normalizeHttps(listen.https)
         service.tokenSet = Boolean(listen.token_set)
         service.liveLan = Boolean(listen.lan)
         service.liveTokenSet = service.tokenSet
+        // 老进程不报 scheme：生效值无从谈起，状态行也就不提 https 的待重启。
+        service.httpsKnown = typeof listen.scheme === 'string'
+        service.liveHttps = listen.scheme === 'https'
         service.autoSupported = Boolean(listen.autostart_supported)
         service.autostart = Boolean(listen.autostart_enabled)
-        remoteSeed.listen = { lan: service.lan, token: '', autostart: service.autostart }
+        remoteSeed.listen = {
+          lan: service.lan,
+          https: service.https,
+          token: '',
+          autostart: service.autostart,
+        }
       }
       // 后端值就是这一层的基线；本机偏好仍按原快照算未保存。
       savedSnapshot.value = snapshot.value
@@ -684,9 +706,15 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
         for (const key of Object.keys(DEFAULTS.asr) as (keyof AsrPrefs)[]) {
           if (asr[key] !== remoteSeed.asr[key]) asrPatch[key] = asr[key]
         }
-        // 监听范围、令牌、自启：只提交改过的字段。前两项落盘待重启，自启立刻生效。
-        const servicePatch: { lan?: boolean; access_token?: string; autostart?: boolean } = {}
+        // 监听范围、https、令牌、自启：只提交改过的字段。前三项落盘待重启，自启立刻生效。
+        const servicePatch: {
+          lan?: boolean
+          https?: HttpsMode
+          access_token?: string
+          autostart?: boolean
+        } = {}
         if (service.lan !== remoteSeed.listen.lan) servicePatch.lan = service.lan
+        if (service.https !== remoteSeed.listen.https) servicePatch.https = service.https
         if (service.token) servicePatch.access_token = service.token
         if (service.autoSupported && service.autostart !== remoteSeed.listen.autostart) {
           servicePatch.autostart = service.autostart
@@ -702,6 +730,14 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
           if ('lan' in servicePatch) {
             // 生效值要等重启，这里不假装它变了；状态行据此显示"重启后…"。
             remoteSeed.listen.lan = service.lan
+            listenChanged = true
+          }
+          if ('https' in servicePatch) {
+            // 老进程不认这一格：不核对就会"提示已保存、重启后还是 http"。
+            if (saved?.https !== service.https) {
+              throw new Error('本地服务没有接受 https 设置，可能仍是旧进程；请重启服务后重试。')
+            }
+            remoteSeed.listen.https = service.https
             listenChanged = true
           }
           if ('autostart' in servicePatch) {

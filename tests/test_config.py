@@ -18,6 +18,7 @@ from app.infra.config import (
     Config,
     load_config,
     resolve_host,
+    resolve_https,
     resolve_port,
     save_config,
 )
@@ -28,6 +29,7 @@ def _no_env_port(monkeypatch: pytest.MonkeyPatch):
     """环境变量是**机器级的**：跑测试的那台机器上可能真设了它，得先摘干净。"""
     monkeypatch.delenv("VOICEHUB_PORT", raising=False)
     monkeypatch.delenv("VOICEHUB_HOST", raising=False)
+    monkeypatch.delenv("VOICEHUB_HTTPS", raising=False)
 
 
 class TestPort:
@@ -113,6 +115,63 @@ class TestHost:
         # 空 = 用默认，写回去仍是空串，不会被悄悄钉成 127.0.0.1。
         save_config(Config())
         assert load_config().host == ""
+
+
+class TestHttps:
+    """https 的默认值由监听地址推导：开放局域网就开，只在本机就关。
+
+    这不是偏好问题：浏览器只在 https 或 localhost 下把麦克风交给页面，局域网上用
+    http 打开时连 ``navigator.mediaDevices`` 都没有。
+    """
+
+    def test_loopback_defaults_to_http(self, data_dir: Path) -> None:
+        assert resolve_https(None, "127.0.0.1") is False
+
+    @pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.168.1.5"])
+    def test_the_lan_defaults_to_https(self, data_dir: Path, host: str) -> None:
+        assert resolve_https(None, host) is True
+
+    def test_the_config_file_can_turn_it_off(self, data_dir: Path) -> None:
+        save_config(Config(https="off"))
+        assert resolve_https(None, "0.0.0.0") is False
+
+    def test_the_config_file_can_turn_it_on_for_loopback(self, data_dir: Path) -> None:
+        save_config(Config(https="on"))
+        assert resolve_https(None, "127.0.0.1") is True
+
+    def test_the_env_var_beats_the_config_file(self, data_dir: Path, monkeypatch) -> None:
+        save_config(Config(https="off"))
+        monkeypatch.setenv("VOICEHUB_HTTPS", "1")
+        assert resolve_https(None, "0.0.0.0") is True
+
+    def test_the_command_line_beats_everything(self, data_dir: Path, monkeypatch) -> None:
+        save_config(Config(https="on"))
+        monkeypatch.setenv("VOICEHUB_HTTPS", "1")
+        assert resolve_https("off", "127.0.0.1") is False
+
+    @pytest.mark.parametrize("bad", ["", "  ", "maybe"])
+    def test_a_bad_env_value_falls_through_instead_of_breaking(
+        self, data_dir: Path, monkeypatch, bad: str
+    ) -> None:
+        """``VOICEHUB_HTTPS`` 是早先唯一的开关：写坏了当没说，照配置与监听地址算。"""
+        save_config(Config(https="off"))
+        monkeypatch.setenv("VOICEHUB_HTTPS", bad)
+        assert resolve_https(None, "0.0.0.0") is False
+
+    def test_the_mode_round_trips_through_the_file(self, data_dir: Path) -> None:
+        save_config(Config(https="off"))
+        assert load_config().https == "off"
+        save_config(Config())
+        assert load_config().https == "auto"
+
+    def test_a_hand_written_boolean_is_understood(self, data_dir: Path) -> None:
+        """早先只有环境变量，手写文件里出现 ``false`` 很自然。"""
+        (data_dir / "config.json").write_text('{"https": false}', encoding="utf-8")
+        assert load_config().https == "off"
+
+    def test_an_unreadable_value_reads_as_auto(self, data_dir: Path) -> None:
+        (data_dir / "config.json").write_text('{"https": "sure"}', encoding="utf-8")
+        assert load_config().https == "auto"
 
 
 class TestConfigRoundTrip:

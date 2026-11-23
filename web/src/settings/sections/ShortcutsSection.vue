@@ -129,7 +129,7 @@ const actionsList = Object.keys(SHORTCUT_LABELS) as ShortcutAction[]
 const descriptions: Record<ShortcutAction, string> = {
   openSettings: '从任意页面直接进入设置。',
   toggleTheme: '在浅色与深色之间切换，跟随系统时切到明确的浅色。',
-  focusSearch: '把光标放进顶部搜索框，直接输入设置项名称。',
+  focusSearch: '在顶部搜索框打开命令输入，列出可用命令。',
   openFilters: '打开或收起顶栏的音色筛选面板（只在音色库、合成与生产方页面有效）。',
   backToLibrary: '清空搜索后返回音色库页面。',
   saveSettings: '提交扫描根目录与存储位置，并清掉未保存标记。',

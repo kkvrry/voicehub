@@ -210,6 +210,8 @@ def login_routes(app: FastAPI) -> None:
             _cookie_value(required),
             max_age=_COOKIE_MAX_AGE,
             httponly=True,
+            # https 下顺手标 secure；换回 http 后这枚 cookie 会被忽略，需要重登一次。
+            secure=request.url.scheme == "https",
             samesite="lax",
             path="/",
         )

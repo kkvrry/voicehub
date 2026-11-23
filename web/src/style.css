@@ -282,24 +282,25 @@ input, select, textarea { font: inherit; color: inherit; }
 .tag-chip.active .tag-count {
   color: color-mix(in srgb, var(--sh-accent-contrast) 75%, transparent);
 }
-/* 「全部」是这一排里的"回到不筛"，与后面的具体标签用一道竖线分开；
-   选中时用浅蓝底而不是实心蓝——它在每一页都出现，实心会把这一行压成色块。 */
-.tagbar-divider {
-  flex: none; width: 1px; height: 15px; margin: 0 3px; background: var(--sh-line);
-}
+/* 「全部」是这一排里的"回到不筛"，选中时用浅蓝底而不是实心蓝——
+   它在每一页都出现，实心会把这一行压成色块。 */
 .tag-chip.is-all { font-weight: 600; }
 .tag-chip.is-all.active {
   background: var(--sh-accent-soft); border-color: transparent; color: var(--sh-accent);
 }
-/* 标签条的总开关：标签太多时收成一行，平板不再被标签墙占掉半屏。
-   收起后这一颗写着"标签"（正筛着某个标签时写那个标签名），点它展开。
-   样式复用 `.tag-chip`（模板上两个类一起挂），这里只补差异：不吃 flex
-   收缩、字重更重、字名过长时省略。 */
-.tagbar-toggle { flex: none; font-weight: 600; }
-.tagbar-toggle-label {
-  max-width: 10em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* 标题兼作标签开关：沿用标题字号与字重，只多一枚小箭头提示可展开／收起。
+   没有标签时标题是纯文本，不可点、不带箭头。 */
+.lib-title-toggle {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 0; border: 0; background: none; color: inherit;
+  font: inherit; letter-spacing: inherit; cursor: pointer;
 }
-.tagbar-toggle svg { flex: none; }
+.lib-title-toggle:hover { color: var(--sh-accent); }
+.lib-title-toggle:focus-visible {
+  outline: 2px solid var(--sh-accent-ring); outline-offset: 3px; border-radius: 3px;
+}
+.lib-title-toggle svg { flex: none; align-self: center; color: var(--sh-text-4); }
+.lib-title-toggle:hover svg { color: var(--sh-accent); }
 
 .grid-wrap { flex: 1; overflow-y: auto; padding: 8px var(--sh-gutter) 28px; }
 /* 一块一窗口：块与块之间用同一个 14px 的间距，块内仍是原来的 auto-fill 网格。
@@ -2328,6 +2329,19 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
   color: var(--muted); font-family: inherit; font-size: 11.5px; cursor: pointer;
 }
 .vpop-clear:hover { background: var(--hover); color: var(--danger); }
+
+/* 斜杠命令候选：两行一项，键盘高亮与悬浮共用 hot 态。 */
+.cmd-menu { display: flex; flex-direction: column; gap: 2px; }
+.cmd-row {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; padding: 7px 9px; border: 0; border-radius: var(--sh-r-sm);
+  background: transparent; color: var(--sh-text); text-align: left;
+  font-family: inherit; font-size: 12px; cursor: pointer;
+}
+.cmd-row:hover, .cmd-row.hot { background: var(--sh-accent-soft); }
+.cmd-row.hot { color: var(--sh-accent); }
+.cmd-hint { font-size: 10px; color: var(--sh-text-4); }
+.cmd-empty { margin: 4px 2px 0; font-size: 11px; color: var(--sh-text-4); }
 
 /* 放进列向布局里时别被拉满：标签该按内容宽，拉成一条会让"能点"这件事看不出来。 */
 .field .vchip-field { align-self: flex-start; }

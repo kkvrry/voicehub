@@ -16,6 +16,32 @@ export function stopAvatarJob() {
   stopped = true
 }
 
+/** 当前列表里缺头像的本地音色：隐藏按「显示已隐藏」口径，平台音色没有目录。 */
+export function avatarTargets() {
+  const list = store.showHidden ? store.voices : store.voices.filter(
+    /** @param {any} voice */ (voice) => !voice.hidden
+  )
+  return list.filter(
+    /** @param {any} voice */ (voice) => voice.is_local && !voice.has_cover
+  )
+}
+
+/** 顶栏命令入口：先确认规模，再按当前列表补头像。 */
+export async function matchAvatars() {
+  if (store.avatarJob.running) return
+  const targets = avatarTargets()
+  if (!targets.length) {
+    say('当前列表里的音色都已有头像。')
+    return
+  }
+  if (targets.length > 1) {
+    const minutes = Math.max(1, Math.round((targets.length * 3) / 60))
+    const hint = `为当前列表缺少头像的 ${targets.length} 个音色查找头像？\n预计约 ${minutes} 分钟，可在提示里停止。`
+    if (!window.confirm(hint)) return
+  }
+  await generateAvatars(targets)
+}
+
 /** @param {any[]} voices */
 export async function generateAvatars(voices) {
   if (store.avatarJob.running) return

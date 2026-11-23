@@ -207,6 +207,8 @@ export const cleanPackage = (id) => act(`clean:${id}`, () => api.cleanModel(id))
 
 export const refreshCatalog = () => act('catalog', () => api.refreshCatalog())
 
+export const refreshRuntime = () => act('runtime-refresh', () => api.refreshRuntime())
+
 export function uninstall() {
   return act('uninstall', () => api.uninstall()).then((ok) => {
     state.confirmUninstall = false

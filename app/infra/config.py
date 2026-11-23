@@ -21,13 +21,18 @@ __all__ = [
     "DEFAULT_CACHE_LIMIT_MB",
     "DEFAULT_HOST",
     "DEFAULT_PORT",
+    "HTTPS_AUTO",
+    "HTTPS_OFF",
+    "HTTPS_ON",
     "WILDCARD_HOSTS",
     "Config",
     "cache_base",
     "data_dir",
+    "is_loopback_host",
     "load_config",
     "log_base",
     "resolve_host",
+    "resolve_https",
     "resolve_port",
     "save_config",
 ]
@@ -44,6 +49,11 @@ DEFAULT_HOST = "127.0.0.1"
 
 #: 通配地址：绑它们等于"这台机器的所有网卡"。
 WILDCARD_HOSTS = frozenset({"0.0.0.0", "::"})
+
+#: https 三态。``auto`` = 跟随监听地址（非回环即开），另两个是用户的明确选择。
+HTTPS_AUTO = "auto"
+HTTPS_ON = "on"
+HTTPS_OFF = "off"
 
 #: 转换产物的默认回收线。512MB 大约是"五百份 12 秒参考音频"的量级，
 #: 超过这个数说明积的多半是用不到的旧样例；30 天没被重新生成过的直接清掉。
@@ -143,6 +153,8 @@ class Config:
         独立于 ``engines`` 段：保存引擎设置会整段重写 ``engines[key]``，放一起会被抹掉。
     :param port: 服务端口。0 = 用 :data:`DEFAULT_PORT`，"没配"与"配成同一个数"同义。
     :param host: 监听地址。空 = 用 :data:`DEFAULT_HOST`（仅回环）；``0.0.0.0`` = 全网卡。
+    :param https: https 启动方式：:data:`HTTPS_AUTO`（跟随监听地址）/ ``on`` / ``off``。
+        证书是自己签的那张，落在数据目录 ``certs/``；与 host/port 一样，改完要重启。
     :param access_token: 访问令牌。空 = 不校验（默认，个人本机工具）；
         配了之后非回环请求要带令牌（见 :mod:`app.api.auth`）。与 host/port 一样，
         改完要重启。
@@ -162,6 +174,7 @@ class Config:
     asr_options: dict[str, Any] = field(default_factory=dict)  # 应用层识别选项
     port: int = 0  # 服务端口（0 = 用 DEFAULT_PORT；改完要重启才生效）
     host: str = ""  # 监听地址（空 = DEFAULT_HOST；0.0.0.0 = 开放局域网）
+    https: str = HTTPS_AUTO  # https 启动方式（auto / on / off；改完要重启才生效）
     access_token: str = ""  # 访问令牌（空 = 不校验；配了则非回环请求要带）
     cors_origins: list[str] = field(default_factory=list)  # 额外允许的 CORS 来源
     engines: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -236,6 +249,50 @@ def resolve_host(cli_host: str | None = None) -> str:
     return _as_host(os.environ.get("VOICEHUB_HOST", "")) or _as_host(load_config().host) or DEFAULT_HOST
 
 
+def is_loopback_host(host: str) -> bool:
+    """这个监听地址是否只在本机可达。
+
+    两处共用：https 的 ``auto`` 判据与 CORS 放开范围。绑通配地址与绑某张网卡的地址
+    都算对外开放，绑 ``127.x`` / ``::1`` / ``localhost`` 算本机。
+    """
+    text = str(host or "").strip().lower()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+    return text in {"127.0.0.1", "localhost", "::1"} or text.startswith("127.")
+
+
+def _as_https(value: Any) -> str:
+    """https 三态。认不出的一律当 ``auto``：配置可手改，写坏了不该把服务拦在门外。
+
+    布尔值与 ``1`` / ``0`` 一并认——早先只有一个环境变量开关，手写文件里出现得出来。
+    """
+    if isinstance(value, bool):
+        return HTTPS_ON if value else HTTPS_OFF
+    text = str(value or "").strip().lower()
+    if text in {"on", "1", "true", "yes"}:
+        return HTTPS_ON
+    if text in {"off", "0", "false", "no"}:
+        return HTTPS_OFF
+    return HTTPS_AUTO
+
+
+def resolve_https(cli: str | None = None, host: str = "") -> bool:
+    """这次启动要不要 https：``--https`` / ``--no-https`` > ``VOICEHUB_HTTPS`` > ``config.json`` > 自动。
+
+    与端口、监听地址同一套顺序，判据只写这一处。``auto`` 看监听地址：开放局域网就开
+    ——浏览器只在 https 或 localhost 下把麦克风交给页面，局域网上不开等于关掉平板的
+    录音入口；只监听回环则相反，给自己添一次证书告警没有好处。
+    """
+    mode = _as_https(cli) if cli else HTTPS_AUTO
+    if mode == HTTPS_AUTO:
+        mode = _as_https(os.environ.get("VOICEHUB_HTTPS", ""))
+    if mode == HTTPS_AUTO:
+        mode = _as_https(load_config().https)
+    if mode == HTTPS_AUTO:
+        return not is_loopback_host(host)
+    return mode == HTTPS_ON
+
+
 def load_config() -> Config:
     """读配置。文件不在 / 坏了 → 空配置（服务照样起得来，界面上再配目录）。
 
@@ -274,6 +331,7 @@ def load_config() -> Config:
         "asr_options",
         "port",
         "host",
+        "https",
         "access_token",
         "cors_origins",
         "engines",
@@ -341,6 +399,7 @@ def load_config() -> Config:
         asr_options=asr_options,
         port=_as_port(raw.get("port")),
         host=_as_host(raw.get("host")),
+        https=_as_https(raw.get("https")),
         access_token=str(raw.get("access_token", "") or "").strip(),
         cors_origins=[
             str(origin).strip()
@@ -385,6 +444,7 @@ def save_config(config: Config) -> None:
         "asr_options": config.asr_options,
         "port": config.port,
         "host": config.host,
+        "https": config.https,
         # 只有配了才写进文件：默认配置里不该出现一个空令牌键，看着像"设过又清空"。
         **({"access_token": config.access_token} if config.access_token else {}),
         "cors_origins": config.cors_origins,

@@ -41,16 +41,18 @@
         <PlayerBar v-if="app.player.url" />
       </Transition>
 
-      <div v-if="showSearch" class="sh-search">
+      <div v-if="showSearch" ref="searchBoxEl" class="sh-search">
         <Search :size="16" :stroke-width="1.8" aria-hidden="true" />
         <input
           ref="searchInput"
           v-model="queryProxy"
           type="text"
-          :placeholder="placeholder"
-          :aria-label="placeholder"
-          @keydown.enter.prevent="$emit('search-enter')"
-          @keydown.esc.prevent="clearSearch"
+          :placeholder="effectivePlaceholder"
+          :aria-label="effectivePlaceholder"
+          role="combobox"
+          aria-autocomplete="list"
+          :aria-expanded="commandOpen"
+          @keydown="onInputKeydown"
         />
         <button
           v-if="queryProxy"
@@ -64,6 +66,33 @@
         </button>
         <kbd v-else>{{ hintText }}</kbd>
         <slot name="search-actions" />
+        <Popover
+          :open="commandOpen"
+          :anchor="searchBoxEl || undefined"
+          :width="320"
+          label="命令"
+          @close="closeCommand"
+        >
+          <div class="vpop-head">命令<span class="vpop-hint">↑↓ 选择 · 回车执行</span></div>
+          <div class="cmd-menu" role="listbox">
+            <button
+              v-for="(cmd, index) in commandMatches"
+              :key="cmd.id"
+              type="button"
+              class="cmd-row"
+              :class="{ hot: index === commandActive }"
+              role="option"
+              :aria-selected="index === commandActive"
+              @mousedown.prevent
+              @mouseenter="commandActive = index"
+              @click="runCommand(cmd)"
+            >
+              <span class="cmd-label">{{ cmd.label }}</span>
+              <span class="cmd-hint">{{ cmd.hint }}</span>
+            </button>
+          </div>
+          <p v-if="!commandMatches.length" class="cmd-empty">没有匹配的命令。</p>
+        </Popover>
       </div>
 
       <div class="sh-topbar-right">
@@ -143,6 +172,8 @@ import { AlertTriangle, Moon, Search, Sun, X } from 'lucide-vue-next'
 import AppNav from './AppNav.vue'
 import ContextMenuHost from '../components/ui/ContextMenu.vue'
 import PlayerBar from '../components/PlayerBar.vue'
+import Popover from '../components/ui/Popover.vue'
+import { searchCommands } from '../commands'
 import { actions, store as appStore } from '../store'
 import { useSettingsStore } from '../stores/settings'
 import { comboFromEvent } from '../settings/keymap'
@@ -186,9 +217,22 @@ const settings = useSettingsStore()
 const app = appStore
 
 const searchInput = ref<HTMLInputElement | null>(null)
+const searchBoxEl = ref<HTMLElement | null>(null)
 const contentEl = ref<HTMLElement | null>(null)
 const shellEl = ref<HTMLElement | null>(null)
 const bannerClosed = ref(false)
+
+/** 斜杠命令：输入以 / 开头时不发出搜索词，改为走候选；退出后恢复原来的搜索词。 */
+const commandOpen = ref(false)
+const commandText = ref('')
+const commandActive = ref(0)
+const savedQuery = ref('')
+const commandMatches = computed(() =>
+  commandOpen.value ? searchCommands(commandText.value) : []
+)
+const effectivePlaceholder = computed(() =>
+  commandOpen.value ? '输入命令' : props.placeholder
+)
 
 const isDark = computed(() => app.theme === 'dark')
 
@@ -208,8 +252,20 @@ const railHint = computed(() => {
 })
 
 const queryProxy = computed({
-  get: () => props.query,
-  set: (value: string) => emit('update:query', value),
+  get: () => (commandOpen.value ? `/${commandText.value}` : props.query),
+  set: (value: string) => {
+    if (value.startsWith('/')) {
+      if (!commandOpen.value) {
+        savedQuery.value = props.query
+        commandOpen.value = true
+      }
+      commandText.value = value.slice(1)
+      commandActive.value = 0
+      return
+    }
+    if (commandOpen.value) closeCommand()
+    emit('update:query', value)
+  },
 })
 const hintText = computed(
   () => props.hint || prettyCombo(settings.shortcuts.focusSearch).join(' ')
@@ -257,13 +313,78 @@ function navigate(key: string) {
 }
 
 function clearSearch() {
+  commandOpen.value = false
+  commandText.value = ''
+  commandActive.value = 0
   emit('update:query', '')
   emit('search-escape')
+}
+
+/** 退出命令态：搜索词原样放回，命令输入框回到占位提示。 */
+function closeCommand() {
+  commandOpen.value = false
+  commandText.value = ''
+  commandActive.value = 0
+  emit('update:query', savedQuery.value)
+}
+
+/** @param {number} step */
+function moveCommand(step: number) {
+  const count = commandMatches.value.length
+  if (!count) return
+  commandActive.value = (commandActive.value + step + count) % count
+}
+
+/** 回车：命令态执行候选，普通态交给页面自己的搜索处理。 */
+function onEnter() {
+  if (!commandOpen.value) {
+    emit('search-enter')
+    return
+  }
+  const command = commandMatches.value[commandActive.value]
+  if (!command) return
+  closeCommand()
+  void command.run()
+}
+
+/** @param {KeyboardEvent} event */
+function onInputKeydown(event: KeyboardEvent) {
+  if (event.key === 'ArrowDown' && commandOpen.value) {
+    event.preventDefault()
+    moveCommand(1)
+  } else if (event.key === 'ArrowUp' && commandOpen.value) {
+    event.preventDefault()
+    moveCommand(-1)
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    onEnter()
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    if (commandOpen.value) closeCommand()
+    else clearSearch()
+  }
+}
+
+/** @param {any} command */
+function runCommand(command: any) {
+  closeCommand()
+  void command.run()
 }
 
 function focusSearch() {
   searchInput.value?.focus()
   searchInput.value?.select()
+}
+
+/** 打开命令输入：空命令、列出全部候选，原搜索词先存着。 */
+function openCommand() {
+  if (!commandOpen.value) {
+    savedQuery.value = props.query
+    commandOpen.value = true
+    commandText.value = ''
+    commandActive.value = 0
+  }
+  searchInput.value?.focus()
 }
 
 /** 全局只保留这一份「/」处理：设置页不再自己监听，免得两处抢同一个键。 */
@@ -276,7 +397,7 @@ function onKeydown(event: KeyboardEvent) {
     (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
   if (typing) return
   event.preventDefault()
-  focusSearch()
+  openCommand()
 }
 
 onMounted(() => {

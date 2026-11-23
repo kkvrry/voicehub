@@ -1,17 +1,21 @@
 """运行包：清单、下载解压、可执行文件与后端探测。
 
-清单里是 audio.cpp 官方 Release 的资产（URL + sha256），随插件分发；
-版本与最低要求的比对也在这里，界面只读结果。
+默认用插件分发的官方 Release 资产（``runtimes.json``）；显式同步后改用数据目录的
+``runtimes.remote.json``，坏掉或删掉都能退回内置版本。最低要求始终取内置门槛，
+不随上游版本放宽。界面只读这里的结果。
 """
 
 from __future__ import annotations
 
 import json
 import platform as sys_platform
+import re
 import shutil
 import subprocess
 import tarfile
 import threading
+import urllib.error
+import urllib.request
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -20,6 +24,7 @@ from typing import Any
 import httpx
 
 from app.infra import download
+from app.infra.atomic import write_json
 from app.producers.base import ProducerError
 from app.producers.builtin.audiocpp.manager import client
 
@@ -31,35 +36,81 @@ __all__ = [
     "mirror_order",
     "pick",
     "platform_key",
+    "refresh",
     "rows",
+    "synced",
     "version",
     "version_tuple",
 ]
 
 _HERE = Path(__file__).resolve().parent
+_SNAPSHOT = _HERE / "runtimes.json"
+_REMOTE = "runtimes.remote.json"
 BACKENDS = ("cpu", "cuda", "vulkan", "metal", "hip")
 _CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 #: GitHub Release 直连不通时依次换的镜像前缀（空串 = 直连）。
 _MIRRORS = ("", "https://ghfast.top/", "https://gh-proxy.com/", "https://ghproxy.net/")
+_API_MIRRORS = ("", "https://ghfast.top/", "https://ghproxy.net/", "https://gh-proxy.com/")
+_API = "https://api.github.com/repos/0xShug0/audio.cpp/releases/latest"
+_TIMEOUT = 20.0
 _HINT = {"prefix": ""}
 _LOCK = threading.Lock()
 
+#: 同一份清单在一次界面轮询里会被问十几次；按路径 + mtime/大小缓存。
+_READ_CACHE: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
 
-def catalog() -> dict[str, Any]:
+_ASSET_RE = re.compile(
+    r"^audio-v(?P<version>[^-]+)-(?P<kind>bin|cudart)-(?P<rest>.+?)(?:\.(?P<ext>tar\.gz|zip))$"
+)
+_PLATFORMS = (
+    ("windows-x64", "windows-x64", "Windows x64"),
+    ("ubuntu-x64", "linux-x64", "Linux x64"),
+    ("macos-arm64", "macos-arm64", "macOS arm64"),
+    ("macos-x64", "macos-x64", "macOS x64"),
+)
+_VARIANTS = ("portable", "colab")
+
+
+def _read(path: Path) -> dict[str, Any]:
+    key = str(path)
     try:
-        payload = json.loads((_HERE / "runtimes.json").read_text(encoding="utf-8"))
+        stat = path.stat()
+        stamp = (stat.st_mtime_ns, stat.st_size)
+        cached = _READ_CACHE.get(key)
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        value = payload if isinstance(payload, dict) else {}
+        _READ_CACHE[key] = (stamp, value)
+        return value
     except (OSError, ValueError):
         return {}
-    return payload if isinstance(payload, dict) else {}
 
 
-def version() -> str:
-    return str(catalog().get("version") or "")
+def catalog(root: Path | None = None) -> dict[str, Any]:
+    """当前生效的清单：同步过的优先，没有或读坏了退回内置快照。"""
+    if root is not None:
+        remote = _read(root / _REMOTE)
+        if remote.get("version") and remote.get("packages"):
+            return remote
+    return _read(_SNAPSHOT)
+
+
+def version(root: Path | None = None) -> str:
+    return str(catalog(root).get("version") or "")
 
 
 def minimum() -> str:
-    return str(catalog().get("minimum") or "")
+    """最低要求取内置门槛，不随上游版本放宽。"""
+    return str(_read(_SNAPSHOT).get("minimum") or "")
+
+
+def synced(root: Path | None) -> bool:
+    if root is None:
+        return False
+    payload = _read(Path(root) / _REMOTE)
+    return bool(payload.get("version") and payload.get("packages"))
 
 
 def version_tuple(text: str) -> tuple[int, ...]:
@@ -82,18 +133,18 @@ def platform_key() -> str:
     return f"{system}-{machine}"
 
 
-def rows(backend: str = "") -> list[dict[str, Any]]:
+def rows(backend: str = "", root: Path | None = None) -> list[dict[str, Any]]:
     return [
         row
-        for row in catalog().get("packages", [])
+        for row in catalog(root).get("packages", [])
         if isinstance(row, dict)
         and row.get("platform") == platform_key()
         and (not backend or row.get("backend") == backend)
     ]
 
 
-def pick(runtime_id: str = "", backend: str = "") -> dict[str, Any]:
-    found = rows(backend)
+def pick(runtime_id: str = "", backend: str = "", root: Path | None = None) -> dict[str, Any]:
+    found = rows(backend, root)
     for row in found:
         if runtime_id and row.get("id") == runtime_id:
             return row
@@ -101,6 +152,157 @@ def pick(runtime_id: str = "", backend: str = "") -> dict[str, Any]:
         if not row.get("experimental"):
             return row
     return found[0] if found else {}
+
+
+# ---------------------------------------------------------------------- #
+# 上游同步
+# ---------------------------------------------------------------------- #
+
+
+def _asset_info(name: str, asset: dict[str, Any]) -> dict[str, Any] | None:
+    """把一个 Release 资产解析成清单行；不认识的文件名返回空。"""
+    match = _ASSET_RE.match(str(name or ""))
+    if match is None:
+        return None
+    rest = match.group("rest")
+    place: tuple[str, str, str] | None = None
+    for prefix, key, label in _PLATFORMS:
+        if rest == prefix or rest.startswith(prefix + "-"):
+            place = (key, label, rest[len(prefix) :].lstrip("-"))
+            break
+    if place is None:
+        return None
+    platform, platform_label, tail = place
+    parts = tail.split("-")
+    if parts and parts[-1] in _VARIANTS:
+        parts = parts[:-1]
+    token = "-".join(parts)
+    backend = ""
+    backend_label = ""
+    cuda_version = ""
+    if token == "cpu":
+        backend, backend_label = "cpu", "CPU"
+    elif token == "vulkan":
+        backend, backend_label = "vulkan", "Vulkan"
+    elif token == "metal":
+        backend, backend_label = "metal", "Metal"
+    elif re.fullmatch(r"rocm[\d.]+(?:-test)?", token):
+        backend, backend_label = "hip", "ROCm（实验）"
+    elif found := re.fullmatch(r"cuda(\d+(?:\.\d+)?)", token):
+        cuda_version = found.group(1)
+        backend, backend_label = "cuda", f"CUDA {cuda_version}"
+    if not backend:
+        return None
+    suffix = f"cuda{cuda_version}" if backend == "cuda" else backend
+    digest = str(asset.get("digest") or "").strip()
+    if ":" in digest:
+        digest = digest.split(":", 1)[1]
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+        digest = ""
+    try:
+        size = int(asset.get("size") or 0)
+    except (TypeError, ValueError):
+        size = 0
+    return {
+        "version": match.group("version"),
+        "kind": match.group("kind"),
+        "platform": platform,
+        "backend": backend,
+        "cuda_version": cuda_version,
+        "archive": match.group("ext"),
+        "id": f"{platform}-{suffix}",
+        "label": f"{platform_label} · {backend_label}",
+        "experimental": backend == "hip" or "test" in token,
+        "url": str(asset.get("browser_download_url") or ""),
+        "sha256": digest,
+        "size": size,
+    }
+
+
+def _build_packages(assets: Any, version: str = "") -> list[dict[str, Any]]:
+    """主包缺校验和的一律丢弃；cudart 按同版本、同平台、同容器配对。"""
+    found: dict[str, dict[str, Any]] = {}
+    extras: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for asset in assets if isinstance(assets, list) else []:
+        if not isinstance(asset, dict):
+            continue
+        info = _asset_info(str(asset.get("name") or ""), asset)
+        if info is None or not info["url"]:
+            continue
+        if version and info["version"] != version.lstrip("v"):
+            continue
+        if info["kind"] == "cudart":
+            if info["sha256"]:
+                key = (info["platform"], info["cuda_version"], info["archive"])
+                extras.setdefault(key, []).append(
+                    {"url": info["url"], "sha256": info["sha256"], "size": info["size"]}
+                )
+            continue
+        if not info["sha256"] or info["id"] in found:
+            continue
+        found[info["id"]] = {
+            "id": info["id"],
+            "platform": info["platform"],
+            "backend": info["backend"],
+            "label": info["label"],
+            "archive": info["archive"],
+            "url": info["url"],
+            "sha256": info["sha256"],
+            "size": info["size"],
+            "extras": [],
+            "experimental": info["experimental"],
+        }
+    for (platform, cuda_version, archive), items in extras.items():
+        row = found.get(f"{platform}-cuda{cuda_version}")
+        if row is not None and row["archive"] == archive:
+            row["extras"] = items
+    return [found[key] for key in sorted(found)]
+
+
+def refresh(root: Path) -> dict[str, Any]:
+    """从上游最新 Release 重建运行包清单；失败抛 ``OSError``，旧清单不动。"""
+    payload = _fetch_json(_API)
+    if not isinstance(payload, dict):
+        raise OSError("上游 Release 返回格式异常。")
+    tag = str(payload.get("tag_name") or "")
+    release_version = tag.lstrip("v")
+    if not release_version:
+        raise OSError("上游 Release 缺少版本号。")
+    packages = _build_packages(payload.get("assets"), release_version)
+    if not packages:
+        raise OSError("上游 Release 没有可识别的运行包。")
+    document = {
+        "note": "上游 Release assets；extras 为 CUDA 运行时依赖，解压到同一目录。",
+        "version": release_version,
+        "minimum": minimum() or release_version,
+        "source": str(
+            payload.get("html_url")
+            or f"https://github.com/0xShug0/audio.cpp/releases/tag/{tag}"
+        ),
+        "packages": packages,
+    }
+    target = Path(root) / _REMOTE
+    target.parent.mkdir(parents=True, exist_ok=True)
+    write_json(target, document)
+    return {"version": release_version, "count": len(packages)}
+
+
+def _fetch_json(url: str) -> Any:
+    last: Exception | None = None
+    for prefix in _API_MIRRORS:
+        try:
+            request = urllib.request.Request(
+                f"{prefix}{url}",
+                headers={
+                    "User-Agent": "VoiceHub/audiocpp-runtime",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+            last = exc
+    raise OSError(f"无法获取上游运行包清单：{last}")
 
 
 def mirror_order() -> tuple[str, ...]:

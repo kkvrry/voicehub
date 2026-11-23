@@ -49,7 +49,7 @@ from app.usecase.engines import (
     settings_payload,
 )
 
-__all__ = ["AsrModelIn", "AsrOptionsIn", "AvatarApplyIn", "ClientLogIn", "DesignPromptIn", "FoldersIn", "MainSampleIn", "OutputIn", "PrefsIn", "PronunciationEntryIn", "PronunciationsIn", "SamplePatch", "StorageIn", "StorageOpenIn", "SynthesizeIn", "TextsIn", "TranscribeIn", "VocabEmotionsIn", "VocabIn", "VocabInstructionsIn", "VoicePatch", "bind_host", "set_bind_host"]
+__all__ = ["AsrModelIn", "AsrOptionsIn", "AvatarApplyIn", "ClientLogIn", "DesignPromptIn", "FoldersIn", "MainSampleIn", "OutputIn", "PrefsIn", "PronunciationEntryIn", "PronunciationsIn", "SamplePatch", "StorageIn", "StorageOpenIn", "SynthesizeIn", "TextsIn", "TranscribeIn", "VocabEmotionsIn", "VocabIn", "VocabInstructionsIn", "VoicePatch", "bind_host", "bind_scheme", "set_bind_host", "set_bind_scheme"]
 
 #: 幂等记录的有效期（秒）。24 小时覆盖"当天整章重跑"这种最常见的重试场景。
 _IDEMPOTENCY_TTL = 24 * 3600
@@ -61,6 +61,8 @@ _STARTED = time.monotonic()
 #: 只给 ``/health`` 判断「这台是不是开在局域网上」用。
 _BIND_HOST = ""
 _BIND_PORT = 0
+#: 实际协议（``http`` / ``https``）。命令行与证书是否签成都可能盖掉配置，同样不能现算。
+_BIND_SCHEME = ""
 
 
 def set_bind_host(host: str) -> None:
@@ -73,6 +75,11 @@ def set_bind_port(port: int) -> None:
     _BIND_PORT = int(port or 0)
 
 
+def set_bind_scheme(scheme: str) -> None:
+    global _BIND_SCHEME
+    _BIND_SCHEME = "https" if str(scheme or "").strip().lower() == "https" else "http"
+
+
 def bind_host() -> str:
     """本次进程的监听地址；宿主还没设置时按配置解析。"""
     return _BIND_HOST or resolve_host(None)
@@ -81,6 +88,11 @@ def bind_host() -> str:
 def bind_port() -> int:
     """本次进程的监听端口；``--port`` 会盖掉配置，所以只认宿主设进来的值。"""
     return _BIND_PORT or resolve_port(None)
+
+
+def bind_scheme() -> str:
+    """本次进程对外提供的协议；宿主没设过（外部 uvicorn 起的、测试客户端）即 ``http``。"""
+    return _BIND_SCHEME or "http"
 
 
 # --------------------------------------------------------------------- #
@@ -525,10 +537,12 @@ class StorageOpenIn(BaseModel):
 
 
 class ServiceIn(BaseModel):
-    """监听范围、访问令牌与开机自启。前两项重启后生效，自启立刻生效。"""
+    """监听范围、https、访问令牌与开机自启。前三项重启后生效，自启立刻生效。"""
 
-    #: 没给的字段不动：三项各自独立，前端只提交改过的那几个。
+    #: 没给的字段不动：四项各自独立，前端只提交改过的那几个。
     lan: bool | None = None
+    #: https 启动方式：``auto``（跟随监听地址）/ ``on`` / ``off``。
+    https: Literal["auto", "on", "off"] | None = None
     #: 空串 = 清掉令牌（回到"不校验"，仅本机使用时的默认）。
     access_token: str | None = None
     #: 开机自启；``None`` = 这次不改。只在桌面版可设（注册表项要指向启动器）。

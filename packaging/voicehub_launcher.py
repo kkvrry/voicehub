@@ -73,6 +73,21 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         default=None,
         help="监听地址（默认读环境变量 / config.json，均未设则 127.0.0.1）",
     )
+    parser.add_argument(
+        "--https",
+        dest="https",
+        action="store_const",
+        const="on",
+        default=None,
+        help="强制 https（自签证书）；默认跟随监听地址",
+    )
+    parser.add_argument(
+        "--no-https",
+        dest="https",
+        action="store_const",
+        const="off",
+        help="强制 http；默认跟随监听地址",
+    )
     parser.add_argument("--no-browser", action="store_true", help="启动后不打开浏览器")
     parser.add_argument("--no-tray", action="store_true", help="不显示托盘（调试用）")
     parser.add_argument("--data-dir", default="", help="数据目录（默认 LOCALAPPDATA\\voicehub）")
@@ -127,6 +142,26 @@ def _port_in_use(host: str, port: int) -> bool:
         return probe.connect_ex((probe_host, port)) == 0
 
 
+def _tls(host: str, mode: str | None) -> tuple[str, tuple[str, str] | None]:
+    """本次启动的协议与证书文件；与 ``app.main`` 共用同一份判定与同一张自签证书。
+
+    签不出来回落 http：证书告警比启动失败轻，而且回落是可见的（日志 + 浏览器地址）。
+    """
+    from app.infra.config import data_dir, resolve_https
+    from app.infra.netenv import lan_addresses
+
+    if not resolve_https(mode, host):
+        return "http", None
+    from app.infra.tls import CertError, ensure_cert
+
+    try:
+        cert, key = ensure_cert(data_dir() / "certs", lan_addresses())
+    except CertError as exc:
+        _LOG.warning("自签证书没签成，仍用 http（麦克风在局域网下不可用）：%s", exc)
+        return "http", None
+    return "https", (str(cert), str(key))
+
+
 class _Instance:
     """按数据目录命名的互斥量；句柄要留到进程退出，否则命名对象会提前消失。"""
 
@@ -166,12 +201,12 @@ def _runtime_file(data_root: Path) -> Path:
     return data_root / "runtime.json"
 
 
-def _publish_runtime(data_root: Path, port: int, host: str) -> str:
+def _publish_runtime(data_root: Path, port: int, host: str, scheme: str) -> str:
     # 绑通配地址时本机走回环；绑具体地址时只能用那个地址（回环上没有监听）。
     local_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
     if ":" in local_host and not local_host.startswith("["):
         local_host = f"[{local_host}]"
-    url = f"http://{local_host}:{port}/"
+    url = f"{scheme}://{local_host}:{port}/"
     payload = {
         "pid": os.getpid(),
         "host": host,
@@ -199,7 +234,7 @@ def _clear_runtime(data_root: Path) -> None:
         pass
 
 
-def _existing_url(data_root: Path, fallback_port: int) -> str:
+def _existing_url(data_root: Path, fallback_port: int, scheme: str) -> str:
     try:
         payload = json.loads(_runtime_file(data_root).read_text(encoding="utf-8"))
         url = str(payload.get("url") or "").strip()
@@ -208,7 +243,7 @@ def _existing_url(data_root: Path, fallback_port: int) -> str:
             return url
     except (OSError, ValueError, TypeError):
         pass
-    return f"http://127.0.0.1:{fallback_port}/"
+    return f"{scheme}://127.0.0.1:{fallback_port}/"
 
 
 def _pid_alive(pid: int) -> bool:
@@ -450,14 +485,17 @@ def main(argv: list[str] | None = None) -> int:
     data_root = data_dir()
     port = resolve_port(args.port)
     host = resolve_host(args.host)
-    fallback_url = f"http://127.0.0.1:{port}/"
+    # 协议要在写 runtime.json 与开浏览器之前定下来：这两处都把地址带出去，
+    # 事后才发现是 https 的话，托盘与二次启动都会打开一个 http 地址。
+    scheme, ssl_files = _tls(host, args.https)
+    fallback_url = f"{scheme}://127.0.0.1:{port}/"
 
     instance = _Instance(_mutex_name(data_root))
     if not instance.acquire():
         instance.close()
         _LOG.info("已有实例在运行，打开 %s", fallback_url)
         if not args.no_browser:
-            _open_when_ready(_existing_url(data_root, port), port)
+            _open_when_ready(_existing_url(data_root, port, scheme), port)
         return 0
 
     try:
@@ -472,13 +510,27 @@ def main(argv: list[str] | None = None) -> int:
 
         import uvicorn
 
+        # 与源码入口同一份交代：`/service` 与 `/health` 按实际 bind 值回答——
+        # 启动器自己接的 `--host` / `--port` 不经过 `app.main` 的命令行解析。
+        from app.api.views import set_bind_host, set_bind_port, set_bind_scheme
         from app.infra.loghub import CHANNEL
         from app.main import app
+
+        set_bind_host(host)
+        set_bind_port(port)
+        set_bind_scheme(scheme)
 
         _refresh_autostart_path()
 
         server = uvicorn.Server(
-            uvicorn.Config(app, host=host, port=port, log_level="warning")
+            uvicorn.Config(
+                app,
+                host=host,
+                port=port,
+                log_level="warning",
+                ssl_certfile=ssl_files[0] if ssl_files else None,
+                ssl_keyfile=ssl_files[1] if ssl_files else None,
+            )
         )
         server_thread = threading.Thread(target=server.run, name="voicehub-server", daemon=True)
         state.update(server=server, server_thread=server_thread)
@@ -492,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
             _message(text, error=True)
             return 1
 
-        url = _publish_runtime(data_root, port, host)
+        url = _publish_runtime(data_root, port, host, scheme)
         CHANNEL.info(f"桌面模式启动：{url}", source="launcher", port=port)
         if not args.no_browser:
             webbrowser.open(url)
