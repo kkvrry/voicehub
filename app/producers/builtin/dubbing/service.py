@@ -38,6 +38,8 @@ from app.producers.builtin.dubbing.store import DubbingStore
 from app.usecase import asr as asr_uc
 from app.usecase import assembly
 from app.usecase import subtitles as subtitle_uc
+from app.usecase.engines import ENGINE_AUTO, auto_engine_keys, is_auto_engine
+from app.usecase.library import LibraryError
 from app.usecase.subtitles import normalize_encoding, parse_subtitles
 
 if TYPE_CHECKING:
@@ -129,6 +131,8 @@ def _engine_name(key: str) -> str:
     key = str(key or "")
     if not key:
         return "—"
+    if is_auto_engine(key):
+        return "自动"
     if key not in _ENGINE_NAMES:
         try:
             from app.engines.registry import detect_engine
@@ -1560,33 +1564,112 @@ class DubbingService:
 
     # ---- 角色 -------------------------------------------------------------
 
-    def add_role(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def _auto_engine_for(
+        voice_id: str, library: LibraryService | None, preferred: str = ""
+    ) -> str:
+        """「自动」此刻落到哪台；没有可用返回空串。
+
+        给了音色库就按这条音色能落的引擎筛（平台音色不能被派给不认它的引擎）；
+        库不可用（测试、后台任务）时只看当前在跑的本地引擎，由合成时再校正。
+        ``preferred`` 是上一次那台：它还有实例在跑就继续用——一本书不该因为
+        后来多起了一台引擎就整轨换嗓；它不在了才换。
+        """
+        voice = None
+        if library is not None and voice_id:
+            try:
+                voice = library.get_voice(voice_id)
+            except LibraryError:
+                voice = None
+        keys = auto_engine_keys(voice)
+        if preferred and preferred in keys:
+            return preferred
+        return keys[0] if keys else ""
+
+    def _refresh_auto_roles(
+        self, project_id: str, library: LibraryService | None
+    ) -> None:
+        """开始合成前重新选一次「自动」角色的引擎。
+
+        角色上存的是上一次选中的实际引擎：实例换了、插件升级了，只要再开始
+        一次合成就会跟着换，调用方不必改配置。选不到时保留上一次那台——它可能
+        只是暂时没起，合成会在那一台上给出「不可用」的明确说法。
+        """
+        for role in self.store.roles(project_id):
+            if not role.get("engine_auto"):
+                continue
+            previous = str(role.get("engine") or "")
+            key = self._auto_engine_for(
+                str(role.get("voice_id") or ""), library, preferred=previous
+            )
+            if not key or key == previous:
+                continue
+            self.store.update_role(role["id"], engine=key, engine_auto=True)
+            CHANNEL.info(
+                f"自动引擎：{role['name']} 改用 {_engine_name(key)}"
+                + (f"（原 {_engine_name(previous)}）" if previous else ""),
+                source="dubbing",
+                project=project_id,
+                role=role["id"],
+                engine=key,
+                previous=previous,
+            )
+
+    def add_role(
+        self,
+        project_id: str,
+        payload: dict[str, Any],
+        library: LibraryService | None = None,
+    ) -> dict[str, Any]:
         self._project(project_id)
         name = str(payload.get("name") or "").strip()
         if not name:
             raise ProducerError("角色要有名字。")
+        raw_engine = str(payload.get("engine") or "").strip()
+        engine_auto = raw_engine == ENGINE_AUTO
+        engine = (
+            self._auto_engine_for(str(payload.get("voice_id") or ""), library)
+            if engine_auto
+            else raw_engine
+        )
         role = self.store.add_role(
             project_id,
             name=name,
             mode=str(payload.get("mode") or "tts"),
-            engine=str(payload.get("engine") or ""),
+            engine=engine,
+            engine_auto=engine_auto,
             voice_id=str(payload.get("voice_id") or ""),
             voice_name=str(payload.get("voice_name") or ""),
             sample_mode=str(payload.get("sample_mode") or ""),
             sample_file=str(payload.get("sample_file") or ""),
             params=payload.get("params") or {},
         )
+        if engine_auto and not engine:
+            CHANNEL.warning(
+                f"自动引擎暂无可用：{role['name']} 只有云端或没有实例在跑的引擎，"
+                "开始合成时会再选一次。",
+                source="dubbing",
+                project=project_id,
+                role=role["id"],
+            )
         CHANNEL.info(
             f"新建角色：{role['name']}",
             source="dubbing",
             project=project_id,
             role=role["id"],
             engine=role["engine"],
+            auto=engine_auto,
             voice=role["voice_id"],
         )
         return role
 
-    def update_role(self, project_id: str, role_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def update_role(
+        self,
+        project_id: str,
+        role_id: str,
+        payload: dict[str, Any],
+        library: LibraryService | None = None,
+    ) -> dict[str, Any]:
         self._project(project_id)
         role = self.store.role(role_id)
         if role is None or role["project_id"] != project_id:
@@ -1605,6 +1688,25 @@ class DubbingService:
             )
             if key in payload
         }
+        if "engine" in fields:
+            raw_engine = str(fields["engine"] or "").strip()
+            if raw_engine == ENGINE_AUTO:
+                fields["engine_auto"] = True
+                fields["engine"] = self._auto_engine_for(
+                    str(fields.get("voice_id", role.get("voice_id")) or ""),
+                    library,
+                    preferred=str(role.get("engine") or ""),
+                )
+            else:
+                fields["engine_auto"] = False
+                fields["engine"] = raw_engine
+        elif role.get("engine_auto") and "voice_id" in fields:
+            # 自动角色换了音色：候选引擎跟着音色变，当场再选一次（原来那台还在就继续用）。
+            fields["engine"] = self._auto_engine_for(
+                str(fields["voice_id"] or ""),
+                library,
+                preferred=str(role.get("engine") or ""),
+            )
         if "sample_mode" in fields:
             mode = str(fields["sample_mode"] or "")
             if mode not in {"", "emotion", "fixed"}:
@@ -2336,6 +2438,8 @@ class DubbingService:
         force: bool = False,
     ) -> dict[str, Any]:
         project = self._project(project_id)
+        # 「自动」角色在这一刻重新选一次实际引擎：调用方存的是 auto，换实例不必改配置。
+        self._refresh_auto_roles(project_id, library)
         roles = self.store.roles(project_id)
         cues = self._cues_out(project_id, roles)
         stats = self._stats(cues, roles)
@@ -2344,6 +2448,18 @@ class DubbingService:
             detail = "先转录，或检查角色的处理方式是否为「配音」且已选音色。"
             if cue_ids:
                 detail = "选中的段落里没有可合成的：它们可能保留原声，或角色还没有音色。"
+            waiting = [
+                str(role["name"])
+                for role in roles
+                if role.get("engine_auto")
+                and role.get("voice_id")
+                and not role.get("engine")
+            ]
+            if waiting:
+                detail = (
+                    f"自动引擎暂无可用实例（{'、'.join(waiting)}）："
+                    "先启动一台本地引擎再开始配音。"
+                )
             raise ProducerError(f"没有需要合成的段落：{detail}")
         missing = 0 if cue_ids else stats["unvoiced"]
         job = self._spawn(

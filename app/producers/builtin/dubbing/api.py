@@ -223,14 +223,24 @@ def build_router(service: DubbingService) -> APIRouter:
     # ---- 角色 -------------------------------------------------------------
 
     @router.post("/projects/{project_id}/roles", summary="新建角色")
-    def add_role(project_id: str, body: dict[str, Any]) -> dict[str, Any]:
-        return {"object": "dubbing_role", **service.add_role(project_id, body or {})}
-
-    @router.put("/projects/{project_id}/roles/{role_id}", summary="修改角色")
-    def update_role(project_id: str, role_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    def add_role(
+        project_id: str, request: Request, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        """``engine`` 传 ``auto`` 时由宿主按当前在跑的引擎选，存下实际选中那台。"""
         return {
             "object": "dubbing_role",
-            **service.update_role(project_id, role_id, body or {}),
+            **service.add_role(project_id, body or {}, library=request.app.state.library),
+        }
+
+    @router.put("/projects/{project_id}/roles/{role_id}", summary="修改角色")
+    def update_role(
+        project_id: str, role_id: str, request: Request, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {
+            "object": "dubbing_role",
+            **service.update_role(
+                project_id, role_id, body or {}, library=request.app.state.library
+            ),
         }
 
     @router.delete("/projects/{project_id}/roles/{role_id}", summary="删除角色")

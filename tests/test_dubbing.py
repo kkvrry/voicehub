@@ -732,6 +732,132 @@ class TestDubbingProject:
         assert detail["paths"]["export_current"] is True
 
 
+class TestAutoEngine:
+    """角色引擎写 auto：每次开始合成前按当前运行实例重选，调用方不必跟随改动。"""
+
+    def _service(self, tmp_path: Path) -> DubbingService:
+        return DubbingService(tmp_path / "svc", DubbingSettings())
+
+    def test_legacy_auto_role_reads_as_auto(
+        self, tmp_path: Path, ffmpeg_ready: None
+    ) -> None:
+        """升级前就写进库里的 engine=auto：读出来是自动标记，不拿 "auto" 当引擎。"""
+        service = self._service(tmp_path)
+        source = make_tone(tmp_path / "source.wav", 2.0)
+        detail = service.create(name="旧库", upload=source, suffix=".wav")
+        project_id = detail["project"]["id"]
+        role = service.store.add_role(
+            project_id, name="旧调用方", engine="auto", voice_id="v1"
+        )
+        assert role["engine"] == ""
+        assert role["engine_auto"] is True
+
+        saved = next(
+            item
+            for item in service.detail(project_id)["roles"]
+            if item["id"] == role["id"]
+        )
+        assert saved["engine"] == ""
+        assert saved["engine_auto"] is True
+
+    def test_auto_role_follows_the_running_engine(
+        self, tmp_path: Path, ffmpeg_ready: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.engines.base import SynthesisResult
+        from app.producers.builtin.dubbing import service as dubbing_service
+        from app.usecase import gateway
+
+        service = self._service(tmp_path)
+        source = make_tone(tmp_path / "source.wav", 2.0)
+        detail = service.create(name="自动", upload=source, suffix=".wav")
+        project_id = detail["project"]["id"]
+        role = detail["roles"][0]
+
+        picks = [["fake_a"]]
+        monkeypatch.setattr(
+            dubbing_service, "auto_engine_keys", lambda voice=None: picks[0]
+        )
+        updated = service.update_role(
+            project_id, role["id"], {"engine": "auto", "voice_id": "v1"}
+        )
+        assert updated["engine"] == "fake_a"
+        assert updated["engine_auto"] is True
+
+        cue = service.store.replace_cues(
+            project_id, [{"start_ms": 0, "end_ms": 1000, "text": "一句。"}]
+        )[0]
+        calls: list[dict] = []
+
+        async def fake_synthesize(*args, **kwargs):
+            calls.append(kwargs)
+            mono = quiet_tone(tmp_path / "engine.wav", 1.0)
+            return SynthesisResult(audio=mono.read_bytes(), format="wav")
+
+        monkeypatch.setattr(gateway, "synthesize", fake_synthesize)
+
+        # 原来那台停了、另一台起来了：开始合成时自动跟随，调用方存下的 auto 不用改。
+        picks[0] = ["fake_b"]
+        job = service.start_synth(project_id, None, [cue["id"]], force=True)
+        done = service.wait_job(job["id"], timeout=30)
+        assert done["state"] == "done", done["message"]
+        assert service.store.role(role["id"])["engine"] == "fake_b"
+        assert [item["engine_key"] for item in calls] == ["fake_b"]
+        assert service.detail(project_id)["cues"][0]["state"] == "ready"
+
+        # 两台都在跑时保持上一次那台：多起一台引擎不该让整本书换嗓。
+        picks[0] = ["fake_a", "fake_b"]
+        job = service.start_synth(project_id, None, [cue["id"]], force=True)
+        service.wait_job(job["id"], timeout=30)
+        assert service.store.role(role["id"])["engine"] == "fake_b"
+        assert [item["engine_key"] for item in calls] == ["fake_b", "fake_b"]
+
+        # 钉死一台：自动标记让位，下一次合成不再改。
+        updated = service.update_role(project_id, role["id"], {"engine": "fake_c"})
+        assert updated["engine"] == "fake_c"
+        assert updated["engine_auto"] is False
+
+    def test_auto_role_without_a_running_engine_waits(
+        self, tmp_path: Path, ffmpeg_ready: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.engines.base import SynthesisResult
+        from app.producers.builtin.dubbing import service as dubbing_service
+        from app.usecase import gateway
+
+        service = self._service(tmp_path)
+        source = make_tone(tmp_path / "source.wav", 2.0)
+        detail = service.create(name="自动", upload=source, suffix=".wav")
+        project_id = detail["project"]["id"]
+        role = detail["roles"][0]
+
+        picks = [[]]
+        monkeypatch.setattr(
+            dubbing_service, "auto_engine_keys", lambda voice=None: picks[0]
+        )
+        updated = service.update_role(
+            project_id, role["id"], {"engine": "auto", "voice_id": "v1"}
+        )
+        assert updated["engine"] == ""
+        assert updated["engine_auto"] is True
+
+        cue = service.store.replace_cues(
+            project_id, [{"start_ms": 0, "end_ms": 1000, "text": "一句。"}]
+        )[0]
+        with pytest.raises(ProducerError, match="自动引擎暂无可用实例"):
+            service.start_synth(project_id, None)
+
+        async def fake_synthesize(*args, **kwargs):
+            mono = quiet_tone(tmp_path / "engine.wav", 1.0)
+            return SynthesisResult(audio=mono.read_bytes(), format="wav")
+
+        monkeypatch.setattr(gateway, "synthesize", fake_synthesize)
+        # 实例起来之后再开始合成：当场补上实际引擎，段照常配出来。
+        picks[0] = ["fake"]
+        job = service.start_synth(project_id, None, [cue["id"]])
+        done = service.wait_job(job["id"], timeout=30)
+        assert done["state"] == "done", done["message"]
+        assert service.store.role(role["id"])["engine"] == "fake"
+
+
 class TestAssemblyPlan:
     """拼装规则：补静音、加速贴齐、越界顺延。这两条直接决定成片对齐。"""
 
@@ -1403,6 +1529,37 @@ class TestDubbingApi:
         # 删除段落也要同步字幕成品：留下的文件不能还念着已删的那两句。
         remain = subtitle.read_text(encoding="utf-8")
         assert "改过的第三句" in remain and "第一句" not in remain and "第二句" not in remain
+
+    def test_role_engine_accepts_auto(
+        self, client, tmp_path: Path, ffmpeg_ready: None
+    ) -> None:
+        """调用方可以只写 auto：没有实例在跑时先留空，钉死一台后自动标记让位。"""
+        source = make_tone(tmp_path / "auto.wav", 2.0)
+        with source.open("rb") as handle:
+            created = client.post(
+                "/api/v1/producers/dubbing/projects",
+                files={"file": ("auto.wav", handle, "audio/wav")},
+                data={"name": "自动引擎"},
+            )
+        assert created.status_code == 200, created.text
+        project_id = created.json()["project"]["id"]
+
+        role = client.post(
+            f"/api/v1/producers/dubbing/projects/{project_id}/roles",
+            json={"name": "甲", "engine": "auto", "voice_id": "库里没有这条"},
+        )
+        assert role.status_code == 200, role.text
+        body = role.json()
+        assert body["engine_auto"] is True
+        assert body["engine"] == ""
+
+        pinned = client.put(
+            f"/api/v1/producers/dubbing/projects/{project_id}/roles/{body['id']}",
+            json={"engine": "fake"},
+        )
+        assert pinned.status_code == 200, pinned.text
+        assert pinned.json()["engine"] == "fake"
+        assert pinned.json()["engine_auto"] is False
 
     def test_upload_edit_and_delete(
         self, client, tmp_path: Path, ffmpeg_ready: None

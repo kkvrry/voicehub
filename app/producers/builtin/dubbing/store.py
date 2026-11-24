@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS roles (
     name TEXT NOT NULL,
     mode TEXT NOT NULL DEFAULT 'tts',
     engine TEXT NOT NULL DEFAULT '',
+    -- 1 = 引擎由宿主按当前运行实例选：engine 记上一次选中的那台，开始合成前重选。
+    engine_auto INTEGER NOT NULL DEFAULT 0,
     voice_id TEXT NOT NULL DEFAULT '',
     voice_name TEXT NOT NULL DEFAULT '',
     sample_mode TEXT NOT NULL DEFAULT '',
@@ -133,6 +135,15 @@ class DubbingStore:
                     conn.execute(
                         f"ALTER TABLE roles ADD COLUMN {name} TEXT NOT NULL DEFAULT ''"
                     )
+            # 自动引擎是 0/1；旧库里的角色都是钉死的引擎，默认 0。
+            if "engine_auto" not in columns:
+                conn.execute(
+                    "ALTER TABLE roles ADD COLUMN engine_auto INTEGER NOT NULL DEFAULT 0"
+                )
+            # 旧调用方把 auto 直接写在 engine 上：转成自动标记，等下一次合成再选实际引擎。
+            conn.execute(
+                "UPDATE roles SET engine_auto = 1, engine = '' WHERE engine = 'auto'"
+            )
             project_columns = {
                 str(row["name"]) for row in conn.execute("PRAGMA table_info(projects)")
             }
@@ -309,6 +320,11 @@ class DubbingStore:
         # 旧库还留着 color 列；颜色现在由前端按角色名推导，不再读写这一格。
         item.pop("color", None)
         item["params"] = _loads(item.get("params") or "{}")
+        # 升级前调用方可能已经把引擎写成 auto：按自动标记读，下一次合成时补上实际引擎。
+        item["engine_auto"] = bool(item.get("engine_auto")) or item.get("engine") == "auto"
+        if item.get("engine") == "auto":
+            # 还没解析过的自动档不能当具体引擎下发：否则合成会拿 "auto" 去撞网关。
+            item["engine"] = ""
         return item
 
     def roles(self, project_id: str) -> list[dict[str, Any]]:
@@ -331,6 +347,7 @@ class DubbingStore:
         name: str,
         mode: str = "tts",
         engine: str = "",
+        engine_auto: bool = False,
         voice_id: str = "",
         voice_name: str = "",
         sample_mode: str = "",
@@ -340,15 +357,16 @@ class DubbingStore:
         role_id = _id("rol")
         with self._conn() as conn:
             conn.execute(
-                "INSERT INTO roles (id, project_id, name, mode, engine,"
+                "INSERT INTO roles (id, project_id, name, mode, engine, engine_auto,"
                 " voice_id, voice_name, sample_mode, sample_file, params, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     role_id,
                     project_id,
                     name,
                     mode,
                     engine,
+                    1 if engine_auto else 0,
                     voice_id,
                     voice_name,
                     sample_mode,
@@ -366,6 +384,7 @@ class DubbingStore:
             "name",
             "mode",
             "engine",
+            "engine_auto",
             "voice_id",
             "voice_name",
             "sample_mode",
@@ -378,9 +397,12 @@ class DubbingStore:
             if key not in allowed:
                 continue
             sets.append(f"{key} = ?")
-            values.append(
-                json.dumps(value, ensure_ascii=False) if key == "params" else value
-            )
+            if key == "params":
+                values.append(json.dumps(value, ensure_ascii=False))
+            elif key == "engine_auto":
+                values.append(1 if value else 0)
+            else:
+                values.append(value)
         if not sets:
             return
         values.append(role_id)

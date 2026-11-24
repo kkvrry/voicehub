@@ -57,7 +57,7 @@
 | `POST /projects/{id}/cues/{cue_id}/split` · `/merge` | 按时间点拆分、与下一段合并 |
 | `DELETE /projects/{id}/cues/{cue_id}` | 删段并重排序号 |
 | `POST /projects/{id}/cues/batch` | 多选后批量改角色或删除 |
-| `POST /projects/{id}/roles` · `PUT/DELETE .../roles/{id}` | 角色增删改；`sample_mode`（`emotion` / `fixed`）与 `sample_file` 随音色一起存，换回原音色且旧产物还在时恢复「已配音」 |
+| `POST /projects/{id}/roles` · `PUT/DELETE .../roles/{id}` | 角色增删改；`sample_mode`（`emotion` / `fixed`）与 `sample_file` 随音色一起存，换回原音色且旧产物还在时恢复「已配音」；`engine` 传 `auto` 表示由宿主按当前运行实例选，响应带 `engine_auto` 与实际选中的 `engine` |
 | `POST /projects/{id}/synth` · `/synth/cancel` | 逐段合成与取消 |
 | `POST /projects/{id}/separate` · `/separation/remove` | 开始分轨 / 移除分轨（后台任务） |
 | `POST /projects/{id}/assemble` · `/export` | 开始贴齐 / 导出后台任务，返回 `dubbing_job` |
@@ -110,6 +110,11 @@
 
 - 没指定角色的段落归**旁白**（第一条角色），不是"随便找一条会配音的角色"；
   判据只在 `service.role_of`；转录时把归属明确写进去，不留空。
+- `engine` 可以传 `auto`：角色存的是自动标记，**每次开始合成前**按「已启用、
+  此刻有实例在跑、且这条音色能落到」的本地引擎重选一次（云端按量计费，不参与自动）。
+  上一次那台还在跑就继续用，多起一台引擎不会让整本书换嗓；它停了才换，
+  换实例、换机器都不用改调用方。选中的是实际引擎，进合成键——换了引擎，
+  旧产物按 `stale` 处理。没有可用引擎时保留上一次那台，由合成给出「不可用」的说法。
 - 进度只数需要配音的段落（`stats.dubbed`），保留原声的段永远不会缺产物；
   行上的 `dub` 由后端下发，前端不自己推；`ready` / `stale` 只数产物还在磁盘上的段，
   `audio` 有值但文件没了算 `pending`。
