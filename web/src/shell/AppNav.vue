@@ -72,7 +72,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { AudioLines, Cpu, Mic, ScrollText, Settings as SettingsIcon, Sparkles } from 'lucide-vue-next'
+import { AudioLines, Cpu, History, ScrollText, Settings as SettingsIcon, Sparkles } from 'lucide-vue-next'
 import { store } from '../store'
 
 const props = defineProps<{
@@ -118,8 +118,8 @@ const items = computed<NavItem[]>(() => [
   // 生产方插件自带工作区：位置由插件声明（order），图标用插件目录里的那一张。
   // 停用的插件不进导航；清单本身仍留着，设置 → 插件里可以再启用。
   ...producerItems('main'),
-  // 音频库是成品库：排在动作页之后、工具组之前（素材 → 动作 → 成品）。
-  { key: 'audio', label: '音频库', icon: Mic },
+  // 历史页是成品库：排在动作页之后、工具组之前（素材 → 动作 → 成品）。
+  { key: 'audio', label: '历史', icon: History },
 ])
 
 /** 引擎与日志是工具，不是每天要点的入口：沉到导航下半段；

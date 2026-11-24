@@ -151,13 +151,13 @@ const releaseHint = computed(() => {
   if (releaseFailure.value) return releaseFailure.value
 
   const result = release.value
-  if (!result) return '检查 GitHub 上是否有新的正式发布；本页只做提示，不改动本机文件。'
+  if (!result) return ''
   if (result.error) return result.error.message
 
   const item = result.latest
   if (!item) return '还没有可用的发布信息。'
   if (result.update_available) {
-    return `${item.name || item.tag} 发布于 ${formatDate(item.published_at)}；本页只提示，不会自动更新。`
+    return `${item.name || item.tag} 发布于 ${formatDate(item.published_at)}；需手动更新。`
   }
   const current = result.current
   const sourceNote =

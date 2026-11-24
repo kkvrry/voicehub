@@ -10,7 +10,6 @@
 
       <SettingRow
         title="当前识别引擎"
-        desc="未指定时按引擎顺序选用当前开着的服务；引擎地址与模型在「引擎 → 识别」里配置。"
         keywords="识别 引擎 选择 当前 asr 转写 自动"
       >
         <div class="asr-pick">
@@ -45,7 +44,7 @@
       <SettingRow
         v-if="currentEngine"
         title="引擎状态"
-        :desc="currentEngine.ready ? '已就绪，可以使用。' : currentEngine.note || '尚未就绪。'"
+        :desc="currentEngine.ready ? '' : currentEngine.note || '尚未就绪。'"
         keywords="就绪 状态 地址 模型 未配置"
       >
         <span class="asr-state" :class="{ bad: !currentEngine.ready }">
@@ -68,7 +67,7 @@
 
       <SettingRow
         title="连接时自动识别"
-        desc="识别服务连上后（启动、保存引擎设置、测试连接成功），自动把库里还没有逐字稿的样例听一遍并写回。一轮补一批，下次连接接着补；已有文字的音频不会重复识别。"
+        desc="只补缺逐字稿的样例，已有文字的不重复识别。"
         keywords="连接 自动 识别 逐字稿 补全 批量 样例 启动"
       >
         <ToggleSwitch
@@ -80,7 +79,7 @@
 
       <SettingRow
         title="缺逐字稿时自动识别"
-        desc="参考音频没有「说话内容」时，先识别再合成；生成页选中的无文本样例也走这一条。关闭后需要手动填写。"
+        desc="关闭后需手动填写。"
         keywords="自动 识别 逐字稿 参考音频 缺失 补文本"
       >
         <ToggleSwitch
@@ -92,7 +91,7 @@
 
       <SettingRow
         title="识别结果写回样例"
-        desc="自动识别出的文字写回该样例的「说话内容」，下次不必再识别。关闭后结果只用于本次合成。"
+        desc="关闭后只用于本次合成。"
         keywords="写回 样例 说话内容 保存 自动"
       >
         <ToggleSwitch
@@ -107,7 +106,7 @@
       <SettingRow
         v-if="supportsLanguage"
         title="语种识别"
-        desc="识别结果里的语种写回主样例所属音色；音色已有语言时不覆盖。关闭后识别仍回报语种，只是不写回。"
+        desc="写回音色，已有语言不覆盖。"
         keywords="语种 语言 识别 写回 音色 自动"
       >
         <ToggleSwitch
@@ -119,7 +118,6 @@
 
       <SettingRow
         title="录音后自动转写"
-        desc="麦克风录的参考音频落盘后顺手识别。关闭后录音仍可用，可以在参考音频那一格点「识别」补上。"
         keywords="录音 麦克风 自动 转写 参考音频"
       >
         <ToggleSwitch

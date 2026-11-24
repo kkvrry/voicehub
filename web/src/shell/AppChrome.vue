@@ -222,7 +222,8 @@ const contentEl = ref<HTMLElement | null>(null)
 const shellEl = ref<HTMLElement | null>(null)
 const bannerClosed = ref(false)
 
-/** 斜杠命令：输入以 / 开头时不发出搜索词，改为走候选；退出后恢复原来的搜索词。 */
+/** 斜杠命令：在搜索框里打出以 / 开头的内容时不当搜索词，改走候选；退出后恢复原来的搜索词。
+ *  全局快捷键只负责聚焦搜索框——它同时是页面搜索的入口，不能一按就进命令态。 */
 const commandOpen = ref(false)
 const commandText = ref('')
 const commandActive = ref(0)
@@ -241,7 +242,7 @@ const showTree = computed(() => (props.mode === 'app' ? settings.railTree : true
 
 /** 当前页图标再点时，提示下一档会发生什么：
  *  三档页（有音色栏）是"收目录树 → 收音色栏 → 全展开"，
- *  两档页（音色库 / 引擎 / 音频库）是"收左栏 ↔ 展开左栏"。 */
+ *  两档页（音色库 / 引擎 / 历史）是"收左栏 ↔ 展开左栏"。 */
 const railHint = computed(() => {
   if (!props.railCards) {
     return settings.railTree ? '点击收起左栏' : '点击展开左栏'
@@ -263,7 +264,14 @@ const queryProxy = computed({
       commandActive.value = 0
       return
     }
-    if (commandOpen.value) closeCommand()
+    if (commandOpen.value) {
+      // 命令被删空：这是清空搜索，不是退回上一条搜索词。
+      if (!value) {
+        clearSearch()
+        return
+      }
+      closeCommand()
+    }
     emit('update:query', value)
   },
 })
@@ -376,18 +384,8 @@ function focusSearch() {
   searchInput.value?.select()
 }
 
-/** 打开命令输入：空命令、列出全部候选，原搜索词先存着。 */
-function openCommand() {
-  if (!commandOpen.value) {
-    savedQuery.value = props.query
-    commandOpen.value = true
-    commandText.value = ''
-    commandActive.value = 0
-  }
-  searchInput.value?.focus()
-}
-
-/** 全局只保留这一份「/」处理：设置页不再自己监听，免得两处抢同一个键。 */
+/** 全局只保留这一份「/」处理：设置页不再自己监听，免得两处抢同一个键。
+ *  这里只聚焦：命令态由框里打出的「/」开启（见 queryProxy）。 */
 function onKeydown(event: KeyboardEvent) {
   const combo = comboFromEvent(event)
   if (!combo || combo !== settings.shortcuts.focusSearch) return
@@ -397,7 +395,7 @@ function onKeydown(event: KeyboardEvent) {
     (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
   if (typing) return
   event.preventDefault()
-  openCommand()
+  focusSearch()
 }
 
 onMounted(() => {

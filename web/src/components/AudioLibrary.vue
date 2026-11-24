@@ -1,11 +1,11 @@
 <template>
-  <!-- 音频库：录音 / 内录 / 生成三类音频放在同一张表里。
+  <!-- 历史：录音 / 内录 / 生成三类音频放在同一张表里，按时间倒序。
        数据表页不叠卡——标题、筛选、表格依次铺在平面上，用分隔线分层（与创作页同一政策）。
        行内动作只有一层主操作（入库），低频动作收进行尾「⋯」。 -->
   <div class="audio-page">
     <header class="audio-head">
       <h1>
-        音频库
+        历史
         <!-- 顺序播放紧贴标题：它管的是眼前这一列，不是页面的一个工具。 -->
         <button
           type="button"
@@ -153,10 +153,6 @@
             </div>
           </Popover>
         </span>
-      </div>
-
-      <div v-if="store.audio.hasMore" class="audio-more-note">
-        只显示前 200 条，收窄筛选查看更多。
       </div>
 
       <div v-if="store.audio.hasMore" class="audio-more-note">
@@ -622,12 +618,6 @@ function discard(ids) {
 .audio-menu button:disabled {
   color: var(--sh-text-4);
   cursor: default;
-}
-.audio-more-note {
-  padding: 10px var(--sh-gutter);
-  font-size: 11px;
-  color: var(--sh-text-4);
-  border-bottom: 1px solid var(--sh-line-soft);
 }
 .audio-more-note {
   padding: 10px var(--sh-gutter);

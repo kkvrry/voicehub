@@ -21,10 +21,8 @@ export type Density = 'compact' | 'cozy' | 'roomy'
 export type Look = 'classic' | 'glass' | 'paper' | 'celadon' | 'stage'
 /** 左栏可见档：`both` = 目录树 + 音色栏；`cards` = 只有音色栏；`none` = 都收起。 */
 export type RailVisibility = 'both' | 'cards' | 'none'
-export type OutputFormat = 'mp3' | 'wav' | 'flac'
 export type SectionKey =
   | 'general'
-  | 'audio'
   | 'appearance'
   | 'shortcuts'
   | 'asr'
@@ -43,18 +41,7 @@ export type ShortcutAction =
 export interface GeneralPrefs {
   autoScan: boolean
   rememberFilters: boolean
-  defaultView: 'library' | 'synth'
   showDescriptions: boolean
-}
-
-export interface AudioPrefs {
-  format: OutputFormat
-  sampleRate: number
-  bitrate: number
-  volume: number
-  normalize: boolean
-  crossfade: number
-  autoPlayNext: boolean
 }
 
 /** 应用层识别选项（「设置 → 语音识别」）。存在后端 ``config.asr_options``，
@@ -131,7 +118,7 @@ export interface StorageEntry {
 export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
   openSettings: '打开设置',
   toggleTheme: '切换主题',
-  focusSearch: '命令输入',
+  focusSearch: '聚焦搜索',
   openFilters: '筛选音色',
   backToLibrary: '返回音色库',
   saveSettings: '保存设置',
@@ -144,18 +131,8 @@ const DEFAULTS = {
   general: {
     autoScan: true,
     rememberFilters: true,
-    defaultView: 'library',
     showDescriptions: true,
   } as GeneralPrefs,
-  audio: {
-    format: 'mp3',
-    sampleRate: 44100,
-    bitrate: 192,
-    volume: 80,
-    normalize: true,
-    crossfade: 120,
-    autoPlayNext: true,
-  } as AudioPrefs,
   asr: {
     auto_transcript: true,
     auto_on_connect: false,
@@ -249,7 +226,6 @@ function clone<T>(value: T): T {
 
 interface PersistedSettings {
   general?: Partial<GeneralPrefs>
-  audio?: Partial<AudioPrefs>
   appearance?: Partial<AppearancePrefs>
   shortcuts?: Partial<Record<ShortcutAction, string>>
   asr?: Partial<AsrPrefs>
@@ -264,7 +240,6 @@ function normalizeSnapshot(raw: unknown): PersistedSettings | null {
 
 export const useSettingsStore = defineStore('voicehub-settings', () => {
   const general = reactive<GeneralPrefs>(clone(DEFAULTS.general))
-  const audio = reactive<AudioPrefs>(clone(DEFAULTS.audio))
   const appearance = reactive<AppearancePrefs>(clone(DEFAULTS.appearance))
   const shortcuts = reactive<Record<ShortcutAction, string>>(clone(DEFAULTS.shortcuts))
   const asr = reactive<AsrPrefs>(clone(DEFAULTS.asr))
@@ -321,7 +296,6 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
   function prefsSnapshot() {
     return JSON.stringify({
       general: clone(general),
-      audio: clone(audio),
       appearance: clone(appearance),
       shortcuts: clone(shortcuts),
       asr: clone(asr),
@@ -354,7 +328,6 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     const diff = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b)
     const sections: Record<SectionKey, boolean> = {
       general: Boolean(saved) && diff(now.general, saved.general),
-      audio: Boolean(saved) && diff(now.audio, saved.audio),
       appearance: Boolean(saved) && diff(now.appearance, saved.appearance),
       shortcuts: Boolean(saved) && diff(now.shortcuts, saved.shortcuts),
       asr: Boolean(saved) && diff(now.asr, saved.asr),
@@ -485,7 +458,6 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     }
     if (stored) {
       Object.assign(general, DEFAULTS.general, stored.general)
-      Object.assign(audio, DEFAULTS.audio, stored.audio)
       // 先克隆：直接挂 stored 的引用再往上合并默认值，会把同一份已存值改回默认。
       const savedAppearance = stored.appearance ? clone(stored.appearance) : undefined
       Object.assign(appearance, clone(DEFAULTS.appearance), savedAppearance)
@@ -784,7 +756,6 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
 
   function resetSection(section: SectionKey) {
     if (section === 'general') Object.assign(general, clone(DEFAULTS.general))
-    if (section === 'audio') Object.assign(audio, clone(DEFAULTS.audio))
     if (section === 'appearance') {
       Object.assign(appearance, clone(DEFAULTS.appearance))
       applyTheme()
@@ -801,7 +772,6 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
 
   function resetAll() {
     Object.assign(general, clone(DEFAULTS.general))
-    Object.assign(audio, clone(DEFAULTS.audio))
     Object.assign(appearance, clone(DEFAULTS.appearance))
     Object.assign(shortcuts, clone(DEFAULTS.shortcuts))
     Object.assign(asr, clone(DEFAULTS.asr))
@@ -821,7 +791,6 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
 
   return {
     general,
-    audio,
     appearance,
     shortcuts,
     asr,

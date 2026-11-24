@@ -82,6 +82,8 @@
     </template>
   </AppChrome>
 
+  <AvatarMatchDialog />
+
   <Transition name="toast-pop">
     <div
       v-if="store.notice"
@@ -108,7 +110,7 @@
     >
       <Loader2 :size="16" :stroke-width="1.8" class="sh-spin" aria-hidden="true" />
       <span>
-        查找头像 {{ store.avatarJob.done }}/{{ store.avatarJob.total }}
+        匹配头像 {{ store.avatarJob.done }}/{{ store.avatarJob.total }}
         <template v-if="store.avatarJob.name"> · {{ store.avatarJob.name }}</template>
         <template v-if="store.avatarJob.failed"> · 失败 {{ store.avatarJob.failed }}</template>
         <template v-if="store.avatarJob.stopping"> · 当前张完成后停止</template>
@@ -182,6 +184,7 @@ import LlmPanel from './components/LlmPanel.vue'
 import SynthPanel from './components/SynthPanel.vue'
 import AudioLibrary from './components/AudioLibrary.vue'
 import AudioRail from './components/AudioRail.vue'
+import AvatarMatchDialog from './components/AvatarMatchDialog.vue'
 import LogView from './components/LogView.vue'
 
 /** 设置屏是壳内的一屏：壳的形态（mode）与主区内容跟着它换，壳本身不换。 */
@@ -191,7 +194,7 @@ const settings = useSettingsStore()
 
 /** 顶部搜索同一格绑两件事：音色库等页筛音色，设置屏搜设置项。
  *  音色那一份的规矩不变——三页都摆着音色卡片，搜索就地筛卡片；其余页面才回音色库看结果。
- *  音频库有自己的筛选词：那一页搜的是文本、文件名与音色名，不与音色库共用一份。 */
+ *  历史页有自己的筛选词：那一页搜的是文本、文件名与音色名，不与音色库共用一份。 */
 const searchQuery = computed({
   get: () => {
     if (isSettings.value) return settingsQuery.value
@@ -214,7 +217,7 @@ const searchQuery = computed({
 })
 
 const searchPlaceholder = computed(() => {
-  if (isSettings.value) return '搜索设置项，例如「音量」「目录」'
+  if (isSettings.value) return '搜索设置项，例如「头像」「目录」'
   if (store.view === 'audio') return '搜索文本、文件名或音色……'
   return '搜索音色、描述……'
 })

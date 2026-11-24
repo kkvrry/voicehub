@@ -66,7 +66,7 @@ class ProducerPlugin(ABC):
     homepage: ClassVar[str] = ""
     #: 导航顺序，小的在前。
     order: ClassVar[int] = 100
-    #: 导航分组：``main`` = 日常页面（音色库 / 生成 / 各生产方 / 音频库）；
+    #: 导航分组：``main`` = 日常页面（音色库 / 生成 / 各生产方 / 历史）；
     #: ``tools`` = 下半段工具组（引擎 / 日志）。运行时管理这类工具型工作区放 ``tools``。
     nav_section: ClassVar[str] = "main"
     #: 配置里含"指定并执行本机程序"这类字段：保存只认本机来源。默认不设限。

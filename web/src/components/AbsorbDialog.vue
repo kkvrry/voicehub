@@ -1,7 +1,7 @@
 <template>
-  <!-- 入库：把音频库里的一段（或一批）音频登记为某条音色的参考音频。
+  <!-- 入库：把历史里的一段（或一批）音频登记为某条音色的参考音频。
        三条路在一个窗口里说完：回原音色、指定其他音色、新建音色并选归属文件夹。
-       库里已有的音频不动——入库是复制一份进音色目录，音频库这边照旧留着。 -->
+       库里已有的音频不动——入库是复制一份进音色目录，历史这边照旧留着。 -->
   <Teleport :to="overlayTarget">
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="close">
@@ -131,7 +131,7 @@
           </div>
 
           <footer class="sh-dialog-foot">
-            <span class="absorb-hint">入库后复制到音色目录，音频库保留原文件。</span>
+            <span class="absorb-hint">入库后复制到音色目录，历史保留原文件。</span>
             <span class="spacer"></span>
             <ActionButton @click="close">取消</ActionButton>
             <ActionButton variant="primary" :disabled="!canConfirm" @click="confirm">入库</ActionButton>

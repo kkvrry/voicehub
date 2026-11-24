@@ -252,7 +252,7 @@ class AudioAbsorbTargetIn(BaseModel):
 
 
 class AudioAbsorbIn(BaseModel):
-    """把音频库的条目登记为某条音色的样例。"""
+    """把历史里的条目登记为某条音色的样例。"""
 
     ids: list[str] = Field(default_factory=list)
     target: AudioAbsorbTargetIn = Field(default_factory=AudioAbsorbTargetIn)

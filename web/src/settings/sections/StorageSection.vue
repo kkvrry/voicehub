@@ -100,7 +100,7 @@
 
       <SettingRow
         title="缓存上限"
-        desc="转换产物合计超过它就按最久没用的先删；0 = 不限。"
+        desc="0 = 不限。"
         keywords="缓存 上限 体积 空间 mb 回收"
       >
         <TextField
@@ -116,7 +116,7 @@
 
       <SettingRow
         title="保留天数"
-        desc="超过这么多天没被重新生成的直接删；0 = 不按时间删。"
+        desc="0 = 不按时间删。"
         keywords="保留 天数 过期 回收"
       >
         <TextField

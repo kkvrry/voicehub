@@ -1,9 +1,9 @@
 """头像图片来源：作品 Wiki、萌娘百科、AniList 与 Bing 图片搜索。
 
 每个来源只做「名字 → 候选图片 URL + 出处」；下载、裁剪与落盘在
-:mod:`app.usecase.avatar`。站点拦截（B 站 Wiki、PRTS 常见）会抛
-:class:`SourceError`，调用方换下一个来源；被拦截过的站点短时间内不再请求，
-避免批量配头像时每个角色都撞一次墙。
+:mod:`app.usecase.avatar`。来源由用户在界面上指定，一次只查一个：不按分类猜来源，
+也不在来源之间兜底。站点拦截（PRTS、biligame 常见）会抛 :class:`SourceError`，
+调用方如实回报；被拦截过的站点短时间内不再请求，避免批量配头像时每张都撞一次墙。
 """
 
 from __future__ import annotations
@@ -18,7 +18,15 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-__all__ = ["HEADERS", "Candidate", "SourceError", "plan", "search", "source_rows"]
+__all__ = [
+    "HEADERS",
+    "SOURCE_KEYS",
+    "Candidate",
+    "SourceError",
+    "search",
+    "source_label",
+    "source_rows",
+]
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -30,34 +38,25 @@ HEADERS = {"User-Agent": _UA, "Accept-Language": "zh-CN,zh;q=0.9"}
 _BLOCK_SECONDS = 600
 _BLOCKED: dict[str, float] = {}
 
+#: 界面上的来源清单：``label`` 是站点名，``hint`` 说明它收哪类角色。顺序即界面顺序。
+#: 新增来源 = 这里加一行 + :func:`search` 加一路。
 _SOURCE_ROWS = (
-    {
-        "key": "wiki",
-        "label": "作品 Wiki",
-        "desc": "三国杀、原神、明日方舟优先查对应 Wiki 的官方头像与立绘。",
-    },
-    {
-        "key": "moegirl",
-        "label": "萌娘百科",
-        "desc": "中文动漫、游戏角色的条目配图，覆盖面最广。",
-    },
-    {
-        "key": "anilist",
-        "label": "AniList",
-        "desc": "动画与游戏角色的官方立绘，只接受精确名称匹配。",
-    },
-    {
-        "key": "bing",
-        "label": "Bing 图片",
-        "desc": "真人、网红以及以上来源没有收录的角色，按姓名搜索。",
-    },
+    {"key": "prts", "label": "PRTS Wiki", "hint": "明日方舟"},
+    {"key": "biligame_sgs", "label": "三国杀 Wiki", "hint": "三国杀"},
+    {"key": "biligame_ys", "label": "原神 Wiki", "hint": "原神"},
+    {"key": "moegirl", "label": "萌娘百科", "hint": "动漫与游戏角色条目配图"},
+    {"key": "anilist", "label": "AniList", "hint": "动画与游戏角色立绘"},
+    {"key": "bing", "label": "Bing 图片", "hint": "真人、主播与其它来源没收录的角色"},
 )
+
+#: 合法来源 key，顺序同上。
+SOURCE_KEYS: tuple[str, ...] = tuple(str(row["key"]) for row in _SOURCE_ROWS)
 
 _REAL_PERSON_WORDS = ("网红", "明星", "演员", "歌手", "主持", "导演", "真人", "名人", "博主", "主播")
 
 
 class SourceError(Exception):
-    """这个来源暂时用不了：被拦截、超时或接口改版。调用方换下一个来源。"""
+    """这个来源暂时用不了：被拦截、超时或接口改版。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +72,11 @@ class Candidate:
 
 def source_rows() -> list[dict[str, str]]:
     return [dict(row) for row in _SOURCE_ROWS]
+
+
+def source_label(key: str) -> str:
+    """来源 key → 站点名。未知 key 返回空串，调用方据此拒绝请求。"""
+    return next((str(row["label"]) for row in _SOURCE_ROWS if row["key"] == key), "")
 
 
 #: 作品 → 认它的词。**只放作品名，不放「普通话」「方言」这类内容分类**：
@@ -109,28 +113,10 @@ def series_title(name: str) -> str:
     return next((title for key, title, _w in _SERIES_WORDS if key == name), "")
 
 
-def plan(category: str, folder: str = "") -> tuple[str, ...]:
-    """按作品给出查找顺序。分类是文件夹名，可能是「原神/角色」这种子路径。
-
-    ``folder`` 是音色的绝对路径，用来兜住「分类名看不出作品」的布局（见 :func:`series`）。
-    """
-    found = series(category, folder)
-    if found == "arknights":
-        return ("prts", "moegirl", "anilist", "bing")
-    if found == "genshin":
-        return ("biligame_ys", "moegirl", "anilist", "bing")
-    if found == "sanguosha":
-        return ("biligame_sgs", "moegirl", "bing")
-    cat = (category or "").casefold()
-    if any(word in cat for word in _REAL_PERSON_WORDS):
-        return ("bing", "moegirl")
-    return ("moegirl", "anilist", "bing")
-
-
 async def search(
     key: str, client: httpx.AsyncClient, name: str, category: str, folder: str = ""
 ) -> list[Candidate]:
-    """跑一个来源。名字为空或来源不认识时返回空表，不当成错误。
+    """跑一个来源。名字为空返回空表；未知来源抛 :class:`ValueError`（调用方先校验 key）。
 
     ``folder`` 参与作品判定（见 :func:`series`），拼搜索关键词时用作品名而不是
     内容分类名——「陈 普通话」搜不出东西，「陈 明日方舟」才对。

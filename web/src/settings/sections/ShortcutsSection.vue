@@ -126,13 +126,14 @@ const store = useSettingsStore()
 
 const actionsList = Object.keys(SHORTCUT_LABELS) as ShortcutAction[]
 
+/** 只写按键名看不出来的部分：命令入口与作用范围；其余留空，标题已经说清。 */
 const descriptions: Record<ShortcutAction, string> = {
-  openSettings: '从任意页面直接进入设置。',
-  toggleTheme: '在浅色与深色之间切换，跟随系统时切到明确的浅色。',
-  focusSearch: '在顶部搜索框打开命令输入，列出可用命令。',
-  openFilters: '打开或收起顶栏的音色筛选面板（只在音色库、合成与生产方页面有效）。',
-  backToLibrary: '清空搜索后返回音色库页面。',
-  saveSettings: '提交扫描根目录与存储位置，并清掉未保存标记。',
+  openSettings: '',
+  toggleTheme: '',
+  focusSearch: '在框内输入 / 可打开命令。',
+  openFilters: '只在音色库、生成与生产方页有效。',
+  backToLibrary: '',
+  saveSettings: '',
 }
 
 const pending = ref<ShortcutAction | ''>('')

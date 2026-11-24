@@ -34,7 +34,7 @@ export const store = reactive({
   //: 提示的档次（info / success / warn / error）与时间戳；时间戳给动画换 key。
   noticeKind: 'info',
   noticeAt: 0,
-  // 一键配头像的进度（toast 里显示，可停止）。`stopping` 是按下停止后、
+  // 匹配头像的进度（toast 里显示，可停止）。`stopping` 是按下停止后、
   // 当前这张还没收尾的那一小段。
   avatarJob: {
     running: false,
@@ -44,6 +44,10 @@ export const store = reactive({
     name: '',
     stopping: false,
   },
+  //: 头像来源清单（后端下发：具体站点，前端不写死）。取到一次就留着。
+  avatarSources: /** @type {{ key: string, label: string, hint: string }[]} */ ([]),
+  //: 「匹配头像」的来源选择弹层：`total` 是这次要补的音色数。
+  avatarMatch: { open: false, total: 0, source: '' },
   avatarPick: /** @type {any} */ (null), // 正在挑头像的那条音色（卡片右键与详情共用）
   // 连接时补逐字稿那一轮的进度（toast 里显示，可停止）。后端在启动 / 保存设置时
   // 自己起线程，前端靠轮询跟上；`stopping` 是按下停止后、当前这条还没收尾的一段。
@@ -158,7 +162,7 @@ export const store = reactive({
   //: 某个生产方的工作区（`producer`，具体是哪一家看 `producer.key`）。
   view: 'library', // 'library' | 'audio' | 'synth' | 'engine' | 'logs' | 'settings' | 'producer'
 
-  // 音频库：录音、内录、生成物三类音频的同一张表。
+  // 历史：录音、内录、生成物三类音频的同一张表。
   // 列表、计数与引擎分组都由后端算（`GET /api/v1/audio`），这里只存当前这一屏的结果；
   // 选择与播放留在本机。
   audio: {

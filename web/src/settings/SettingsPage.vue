@@ -8,12 +8,11 @@
   <div v-if="noResult" class="sh-no-result">
     <SearchX :size="24" :stroke-width="1.8" />
     <strong>没有找到「{{ query }}」</strong>
-    <span>换个关键词试试，比如「音量」「目录」「玻璃」「快捷键」。</span>
+    <span>换个关键词试试，比如「目录」「玻璃」「头像」「快捷键」。</span>
   </div>
 
   <div v-show="sectionVisible('general')" class="sh-section-slot"><GeneralSection /></div>
   <div v-show="sectionVisible('services')" class="sh-section-slot"><ServicesSection /></div>
-  <div v-show="sectionVisible('audio')" class="sh-section-slot"><AudioSection /></div>
   <div v-show="sectionVisible('appearance')" class="sh-section-slot"><AppearanceSection /></div>
   <div v-show="sectionVisible('shortcuts')" class="sh-section-slot"><ShortcutsSection /></div>
   <div v-show="sectionVisible('asr')" class="sh-section-slot"><AsrSection /></div>
@@ -42,7 +41,6 @@ import {
 } from './pane'
 import GeneralSection from './sections/GeneralSection.vue'
 import ServicesSection from './sections/ServicesSection.vue'
-import AudioSection from './sections/AudioSection.vue'
 import AppearanceSection from './sections/AppearanceSection.vue'
 import ShortcutsSection from './sections/ShortcutsSection.vue'
 import AsrSection from './sections/AsrSection.vue'

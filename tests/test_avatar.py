@@ -54,7 +54,8 @@ def test_status_lists_sources_without_network():
 
     assert result["ready"] is True
     labels = [row["label"] for row in result["sources"]]
-    assert labels == ["作品 Wiki", "萌娘百科", "AniList", "Bing 图片"]
+    assert labels == ["PRTS Wiki", "三国杀 Wiki", "原神 Wiki", "萌娘百科", "AniList", "Bing 图片"]
+    assert avatar_sources.SOURCE_KEYS == tuple(row["key"] for row in result["sources"])
 
 
 def test_client_creation_survives_bracketed_ipv6_no_proxy(monkeypatch: pytest.MonkeyPatch):
@@ -79,7 +80,7 @@ def test_generate_writes_square_avatar_and_rescans(library, monkeypatch):
     voice = next(v for v in service.list_voices() if v.name == "胡桃")
     monkeypatch.setattr(avatar_sources, "search", _search_returning("moegirl"))
 
-    result = asyncio.run(avatar.generate(service, voice.id))
+    result = asyncio.run(avatar.generate(service, voice.id, "moegirl"))
 
     target = root / "原神" / "胡桃" / "avatar.png"
     assert target.is_file()
@@ -92,28 +93,33 @@ def test_generate_writes_square_avatar_and_rescans(library, monkeypatch):
     assert result["voice"].cover == "avatar.png"
 
 
-def test_blocked_source_falls_back_to_next(library, monkeypatch):
+def test_blocked_source_reports_the_reason(library, monkeypatch):
+    """一次只查一个来源：被拦截就如实回报，不悄悄换下一个。"""
     service, _ = library
     voice = next(v for v in service.list_voices() if v.name == "阿米娅")
 
     async def fake_search(key, client, name, category, folder=""):
-        if key == "prts":
-            raise SourceError("prts.wiki 拒绝访问")
-        if key == "moegirl":
-            return [
-                Candidate(
-                    url="https://example.test/amiya.png",
-                    source="萌娘百科",
-                    page="https://zh.moegirl.org.cn/阿米娅",
-                )
-            ]
-        return []
+        raise SourceError("prts.wiki 拒绝访问")
 
     monkeypatch.setattr(avatar_sources, "search", fake_search)
 
-    result = asyncio.run(avatar.generate(service, voice.id))
+    with pytest.raises(avatar.AvatarError) as caught:
+        asyncio.run(avatar.generate(service, voice.id, "prts"))
 
-    assert result["source"] == "萌娘百科"
+    assert caught.value.code == "avatar_not_found"
+    assert "PRTS Wiki" in caught.value.reason
+    assert "拒绝访问" in caught.value.reason
+
+
+def test_source_is_required(library):
+    """来源由用户指定：空值或不在清单里的 key 直接拒绝。"""
+    service, _ = library
+    voice = next(v for v in service.list_voices() if v.name == "胡桃")
+
+    for key in ("", "  ", "nope"):
+        with pytest.raises(avatar.AvatarError) as caught:
+            asyncio.run(avatar.generate(service, voice.id, key))
+        assert caught.value.code == "avatar_source_invalid"
 
 
 def test_missing_image_is_a_clear_error(library, monkeypatch):
@@ -122,9 +128,10 @@ def test_missing_image_is_a_clear_error(library, monkeypatch):
     monkeypatch.setattr(avatar_sources, "search", _search_returning())
 
     with pytest.raises(avatar.AvatarError) as caught:
-        asyncio.run(avatar.generate(service, voice.id))
+        asyncio.run(avatar.generate(service, voice.id, "moegirl"))
 
     assert caught.value.code == "avatar_not_found"
+    assert "萌娘百科" in caught.value.reason
     assert "胡桃" in caught.value.reason
 
 
@@ -199,7 +206,7 @@ def test_find_match_picks_highest_quality_candidate(monkeypatch):
     monkeypatch.setattr(avatar, "_download", fake_download)
     voice = SimpleNamespace(id="v1", shown_name="胡桃", name="胡桃", category="原神")
 
-    match = asyncio.run(avatar._find_match(None, voice))
+    match = asyncio.run(avatar._find_match(None, voice, "moegirl"))
 
     assert match.original == large
 
@@ -246,10 +253,11 @@ def test_candidates_then_apply_saves_the_chosen_one(library, monkeypatch):
     voice = next(v for v in service.list_voices() if v.name == "胡桃")
     monkeypatch.setattr(avatar_sources, "search", _search_returning("moegirl"))
 
-    result = asyncio.run(avatar.candidates(service, voice.id))
+    result = asyncio.run(avatar.candidates(service, voice.id, "moegirl"))
 
     items = result["items"]
     assert result["voice"].id == voice.id
+    assert result["source"] == "moegirl"
     assert len(items) == 1
     assert items[0]["token"]
     assert items[0]["preview"].startswith("data:image/jpeg;base64,")
@@ -286,7 +294,7 @@ def test_generate_skips_voices_that_already_have_a_picture(library, monkeypatch)
 
     monkeypatch.setattr(avatar_sources, "search", refuse)
 
-    result = asyncio.run(avatar.generate(service, voice.id))
+    result = asyncio.run(avatar.generate(service, voice.id, "moegirl"))
 
     assert result["skipped"] == "cover.jpg"
     assert result["source"] == ""
@@ -302,7 +310,7 @@ def test_replacing_the_avatar_keeps_the_previous_copy(library, monkeypatch):
     voice = next(v for v in service.list_voices() if v.name == "胡桃")
     monkeypatch.setattr(avatar_sources, "search", _search_returning("moegirl"))
 
-    items = asyncio.run(avatar.candidates(service, voice.id))["items"]
+    items = asyncio.run(avatar.candidates(service, voice.id, "moegirl"))["items"]
     asyncio.run(avatar.apply_candidate(service, voice.id, items[0]["token"]))
 
     assert (folder / "avatar-prev.png").read_bytes() == b"old-avatar"
@@ -317,7 +325,7 @@ def test_replacing_avatar_removes_old_extension(library, monkeypatch):
     voice = next(v for v in service.list_voices() if v.name == "胡桃")
     monkeypatch.setattr(avatar_sources, "search", _search_returning("moegirl"))
 
-    items = asyncio.run(avatar.candidates(service, voice.id))["items"]
+    items = asyncio.run(avatar.candidates(service, voice.id, "moegirl"))["items"]
     asyncio.run(avatar.apply_candidate(service, voice.id, items[0]["token"]))
 
     assert (folder / "avatar.png").is_file()

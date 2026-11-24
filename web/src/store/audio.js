@@ -1,5 +1,5 @@
 // @ts-check
-// 音频库：麦克风录音、系统内录、引擎生成三类音频的同一张表。
+// 历史：麦克风录音、系统内录、引擎生成三类音频的同一张表。
 //
 // 列表、计数与引擎分组都由后端算（`GET /api/v1/audio`）：生成物在盘上按引擎分目录，
 // 录音与内录按原有规则写在录音目录（重启即清），前端不另建一份索引，也不缓存结果。
@@ -31,7 +31,7 @@ function errorText(error) {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** 打开音频库。音色名单与情绪候选与生成页同一份，只为入库弹层备着。 */
+/** 打开历史页。音色名单与情绪候选与生成页同一份，只为入库弹层备着。 */
 export function openAudio() {
   store.view = 'audio'
   store.engineKey = ''

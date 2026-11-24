@@ -255,7 +255,7 @@ export const api = {
   /** @param {Record<string, any>} filters */
   voices: (filters) => listRequest(`/api/v1/voices${query(filters)}`),
   /**
-   * 音频库：录音、内录、生成物的同一张表。筛选与计数都由后端算。
+   * 历史：录音、内录、生成物的同一张表。筛选与计数都由后端算。
    * @param {Record<string, any>} filters source / engine / q / status / span / limit
    */
   audio: (filters) => request(`/api/v1/audio${query(filters)}`),
@@ -503,21 +503,28 @@ export const api = {
     }).catch(() => {}),
 
   // ---- 头像匹配 ----
-  // 来源只给候选图片；服务端负责下载、裁成方形、命名与落盘。
+  // 来源只给候选图片；服务端负责下载、裁成方形、命名与落盘。一次只查一个来源，
+  // `source` 取 `avatarStatus()` 下发的 key。
   avatarStatus: () => request('/api/v1/avatar/status'),
-  /** @param {string} voiceId */
-  generateAvatar: (voiceId) =>
+  /**
+   * @param {string} voiceId
+   * @param {string} source 来源 key
+   */
+  generateAvatar: (voiceId, source) =>
     request(`/api/v1/avatar/voices/${encodeURIComponent(voiceId)}`, {
       method: 'POST',
+      body: { source },
       timeout: 180_000,
     }),
   /**
    * 裁好的候选图（缩略图 + 出处），**不落盘**；挑好后再 apply。
    * @param {string} voiceId
+   * @param {string} source 来源 key
    */
-  avatarCandidates: (voiceId) =>
+  avatarCandidates: (voiceId, source) =>
     request(`/api/v1/avatar/voices/${encodeURIComponent(voiceId)}/candidates`, {
       method: 'POST',
+      body: { source },
       timeout: 180_000,
     }),
   /**

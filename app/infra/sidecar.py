@@ -157,8 +157,8 @@ def read_sidecar(folder: Path) -> Sidecar:
             )
             if params:
                 entry["params"] = params
-            # 音频库回写的两栏：这条样例从哪一条音频来、已经入库到哪些音色。
-            # 它们是"这条文件的事实"，与 text / duration 同级；丢了之后音频库既说不出来路，
+            # 历史回写的两栏：这条样例从哪一条音频来、已经入库到哪些音色。
+            # 它们是"这条文件的事实"，与 text / duration 同级；丢了之后历史既说不出来路，
             # 也会把同一条音频在列表里重新标成"未入库"。
             source = str(value.get("source") or "").strip()
             if source:

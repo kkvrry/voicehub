@@ -929,3 +929,23 @@ def test_design_prompt_needs_a_name_or_a_draft(client) -> None:
     resp = client.post("/api/v1/voices/design-prompt", json={"name": " ", "brief": ""})
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "invalid_value"
+
+
+def test_avatar_sources_are_concrete_and_source_is_required(client, demo_library: Path):
+    """来源由用户选：清单列具体站点，缺来源的请求直接拒绝，不退回自动挑来源。"""
+    client.put("/api/v1/folders", json={"folders": [str(demo_library)]})
+
+    sources = client.get("/api/v1/avatar/status").json()["sources"]
+    assert [row["label"] for row in sources] == [
+        "PRTS Wiki",
+        "三国杀 Wiki",
+        "原神 Wiki",
+        "萌娘百科",
+        "AniList",
+        "Bing 图片",
+    ]
+
+    hutao = next(v for v in _items(client.get("/api/v1/voices")) if v["name"] == "胡桃")
+    missing = client.post(f"/api/v1/avatar/voices/{hutao['id']}", json={})
+    assert missing.status_code == 400
+    assert missing.json()["error"]["code"] == "avatar_source_invalid"

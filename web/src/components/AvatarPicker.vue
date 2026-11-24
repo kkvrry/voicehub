@@ -13,16 +13,19 @@
           <header class="ap-head">
             <div>
               <h2 class="ap-title">选择「{{ title }}」的头像</h2>
-              <p class="ap-note">各来源裁好的图都在这里，点一张就保存；旧头像留在 avatar-prev。</p>
+              <p class="ap-note">选一个来源，裁好的图会列在下面；点一张就保存，旧头像留在 avatar-prev。</p>
             </div>
             <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="close">
               <X :size="16" :stroke-width="1.8" />
             </button>
           </header>
 
-          <div v-if="loading" class="ap-state">
+          <AvatarSourceChips v-model="source" :sources="store.avatarSources" />
+
+          <div v-if="!source" class="ap-state">选择一个来源开始查找。</div>
+          <div v-else-if="loading" class="ap-state">
             <Loader2 :size="18" class="sh-spin" />
-            正在从各来源查找…
+            正在查找…
           </div>
           <div v-else-if="error" class="ap-state is-error">{{ error }}</div>
           <template v-else>
@@ -61,7 +64,9 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Loader2, X } from 'lucide-vue-next'
 import { api } from '../api'
+import { actions, store } from '../store'
 import { overlayTarget } from '../composables/overlayTarget'
+import AvatarSourceChips from './AvatarSourceChips.vue'
 
 const props = defineProps({ voice: { type: Object, default: null } })
 const emit = defineEmits(['close', 'applied'])
@@ -70,11 +75,12 @@ const emit = defineEmits(['close', 'applied'])
 
 const dialogEl = ref(/** @type {HTMLElement | null} */ (null))
 const items = ref(/** @type {any[]} */ ([]))
+const source = ref('')
 const loading = ref(false)
 const error = ref('')
 const notice = ref('')
 const applying = ref('')
-/** 只认最后一次请求：换音色时上一批结果晚到，不能把界面填成别人的。 */
+/** 只认最后一次请求：换来源或换音色时上一批结果晚到，不能把界面填成别人的。 */
 let requestId = 0
 
 const title = computed(() => props.voice?.shown_name || props.voice?.name || '')
@@ -91,22 +97,28 @@ function onKeydown(event) {
   close()
 }
 
+/** @param {unknown} err */
+function errorText(err) {
+  return err instanceof Error ? err.message : String(err)
+}
+
 async function load() {
   const voice = props.voice
-  if (!voice) return
+  const key = source.value
+  if (!voice || !key) return
   const id = ++requestId
   items.value = []
   error.value = ''
   notice.value = ''
   loading.value = true
   try {
-    const payload = await api.avatarCandidates(voice.id)
+    const payload = await api.avatarCandidates(voice.id, key)
     if (id !== requestId) return
     items.value = payload.data || []
-    if (!items.value.length) error.value = '没有找到可用的候选图。'
+    if (!items.value.length) error.value = '这个来源没有可用的候选图，换一个来源再试。'
   } catch (err) {
     if (id !== requestId) return
-    error.value = err instanceof Error ? err.message : String(err)
+    error.value = errorText(err)
   } finally {
     if (id === requestId) loading.value = false
   }
@@ -123,7 +135,7 @@ async function use(item) {
     emit('close')
   } catch (err) {
     // 应用失败不换掉候选：换一张重试，或关掉重开。
-    notice.value = err instanceof Error ? err.message : String(err)
+    notice.value = errorText(err)
   } finally {
     applying.value = ''
   }
@@ -132,12 +144,22 @@ async function use(item) {
 watch(
   () => props.voice?.id,
   (id) => {
+    source.value = ''
+    items.value = []
+    error.value = ''
+    notice.value = ''
     if (!id) return
-    void load()
+    if (!store.avatarSources.length) {
+      actions.ensureAvatarSources().catch((err) => {
+        error.value = errorText(err)
+      })
+    }
     void nextTick(() => dialogEl.value?.focus())
   },
   { immediate: true }
 )
+
+watch(source, () => void load())
 
 watch(
   () => Boolean(props.voice),

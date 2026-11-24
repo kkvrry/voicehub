@@ -223,7 +223,7 @@ def record_sample(
 
     :param origin: 音频属于库里哪条音色（``{"voice_id": …, "engine": …}``），
         与音频一起写——文件夹名会变，认得回归属靠这个。
-    :param source: 这条样例从音频库的哪一条来（音频库的条目 id）。音频库据此回答
+    :param source: 这条样例从历史里的哪一条来（历史条目的 id）。历史据此回答
         "这条入库了没有"，不必反查所有音色目录。
     """
     text = str(text or "").strip()
@@ -259,7 +259,7 @@ def record_sample(
         "tags": list(known.get("tags") or []),
         "params": extra,
     }
-    # 音频库回写的那两栏是这条样例的事实，重写记录时不能丢：丢了之后「它从哪来、
+    # 历史回写的那两栏是这条样例的事实，重写记录时不能丢：丢了之后「它从哪来、
     # 已经入库到哪几条音色」就说不出来，再入一次库会重复记一条。
     if recorded_source:
         entries[filename]["source"] = recorded_source
@@ -291,7 +291,7 @@ def record_sample(
 def note_absorbed(folder: Path, filename: str, *, voice_id: str, name: str = "") -> None:
     """在源音频的 sidecar 里记一笔「已入库到哪条音色」。
 
-    音频库据此回答「这条入库了没有」，不必反查所有音色目录。记录键与样例同形
+    历史据此回答「这条入库了没有」，不必反查所有音色目录。记录键与样例同形
     （``samples[<文件名>].absorbed``）；重复入库到同一目标只留一条。
 
     录音目录不是音色目录，但 sidecar 格式通用：它没有条目时这里补一条，只写这一栏。

@@ -9,7 +9,6 @@
  */
 import { computed, nextTick, reactive, ref, type Component } from 'vue'
 import {
-  AudioLines,
   Brain,
   HardDrive,
   Info,
@@ -30,7 +29,6 @@ export type SectionMeta = { id: string; label: string; icon: Component; group: s
 /** 分组：顺序即分类栏的顺序。 */
 export const sections: SectionMeta[] = [
   { id: 'general', label: '通用设置', icon: SlidersHorizontal, group: '偏好' },
-  { id: 'audio', label: '音频设置', icon: AudioLines, group: '偏好' },
   { id: 'appearance', label: '外观主题', icon: Palette, group: '偏好' },
   { id: 'shortcuts', label: '快捷键', icon: Keyboard, group: '偏好' },
   { id: 'asr', label: '语音识别', icon: Mic, group: '能力' },

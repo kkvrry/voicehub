@@ -1,17 +1,17 @@
 """头像编排：**找图、裁成方形头像、落盘、重扫**，显示交给现有头像设置。
 
 图片来自公开的角色 Wiki、萌娘百科、AniList 与 Bing 图片搜索；不再调用生图模型。
-来源只返回候选 URL，下载与裁剪在这一层，写出的永远是宿主自己的 ``avatar.png``；
-下载到的整张原图一并留在音色目录里（``avatar-source.*``），方便回看或手动重裁。
+来源由用户在界面上指定（清单见 ``/avatar/status``），**一次只查一个**：下载、裁剪与
+落盘都在这一层，写出的永远是宿主自己的 ``avatar.png``；下载到的整张原图一并留在
+音色目录里（``avatar-source.*``），方便回看或手动重裁。
 
-单条音色走「先看候选再落盘」：:func:`candidates` 把各来源裁好的图连同出处交给界面，
-用户挑了以后 :func:`apply_candidate` 才写盘——自动匹配认错人时不用覆盖掉现有头像。
-一键配头像（:func:`generate`）自动取最优的一张，但**只补空缺**：目录里已经有图就跳过，
-批量补齐不会盖掉现有的封面。
+单条音色走「先看候选再落盘」：:func:`candidates` 把该来源裁好的图连同出处交给界面，
+用户挑了以后 :func:`apply_candidate` 才写盘——认错人时不用先覆盖掉现有头像。
+批量匹配（:func:`generate`）取该来源里画质最好的一张，但**只补空缺**：目录里已经有图
+就跳过，补齐不会盖掉现有的封面。
 
-查找顺序按分类决定（见 :func:`app.infra.avatar_sources.plan`）：三国杀/原神/明日方舟
-先查对应 Wiki，真人 / 主播先走 Bing，其它角色先查萌娘百科与 AniList。任何一个
-来源被站点拦截都只影响它自己，后面的来源照常跑。
+来源被站点拦截、超时或没有收录这个名字，都只影响这一次查找：错误里写明来源与原因，
+界面据此提示换一个来源。
 """
 
 from __future__ import annotations
@@ -53,12 +53,11 @@ _MAX_DOWNLOAD = 12 * 1024 * 1024
 _MAX_CANDIDATES = 6
 #: 一张图找完就收工：分辨率够高又检出了脸的，不值得再下下一张。
 _GOOD_SIDE = 600
-#: 整次查找（含所有来源）的墙钟预算。源站慢的时候宁可拿手里最好的，
+#: 整次查找（含下载）的墙钟预算。源站慢的时候宁可拿手里最好的，
 #: 也不让详情面板的按钮转上好几分钟。
 _FIND_BUDGET = 30.0
-#: 选图弹层一次最多摆几张、每个来源最多几张（来源多，摆多了反而挑花眼）。
-_MAX_PICK = 8
-_PER_SOURCE_PICK = 3
+#: 选图弹层一次最多摆几张。
+_MAX_PICK = 6
 #: 候选只在内存里活十分钟：用户看完选一张就走，不值得落盘。
 _PICK_TTL = 600.0
 
@@ -99,12 +98,20 @@ _PENDING: dict[str, _Pending] = {}
 
 
 def status() -> dict[str, object]:
-    """头像来源清单。**不探网络**，设置页每次打开都问得起。"""
+    """头像来源清单。**不探网络**，弹层每次打开都问得起。"""
     return {
         "ready": True,
         "note": "",
         "sources": avatar_sources.source_rows(),
     }
+
+
+def _source(key: str) -> str:
+    """校验用户选的来源。空或不在清单里就拒绝——不做「没选就全查」的兜底。"""
+    key = (key or "").strip()
+    if key not in avatar_sources.SOURCE_KEYS:
+        raise AvatarError("请先选择头像来源。", code="avatar_source_invalid")
+    return key
 
 
 # --------------------------------------------------------------------------- #
@@ -327,7 +334,7 @@ async def _source_found(
     *,
     folder: str = "",
     keep_original: bool = False,
-    keep: int = _PER_SOURCE_PICK,
+    keep: int,
     eager: bool = True,
 ) -> list[_Found]:
     """跑一个来源，下载并裁好最多 ``_MAX_CANDIDATES`` 张，按画质分取前 ``keep`` 张。
@@ -358,81 +365,62 @@ async def _source_found(
     return found[:keep]
 
 
-def _not_found(name: str, failures: list[str]) -> AvatarError:
-    detail = f"（{failures[0]}）" if failures else ""
+def _not_found(source: str, name: str, failure: str = "") -> AvatarError:
+    """这个来源没给出可用头像。原因写进提示：界面据此让用户换一个来源。"""
+    label = avatar_sources.source_label(source) or source
+    detail = f"（{failure}）" if failure else ""
     return AvatarError(
-        f"没有找到「{name}」的可用头像{detail}。可以补充分类重试，或在该音色目录放一张 cover.png。",
+        f"「{label}」没有找到「{name}」的可用头像{detail}。换一个来源，或在该音色目录放一张 cover.png。",
         code="avatar_not_found",
-        retryable=bool(failures),
+        retryable=bool(failure),
     )
 
 
-async def _find_match(client: httpx.AsyncClient, voice) -> _Found:
-    """自动模式：按来源顺序，第一个有结果的来源里挑画质最高的一张。"""
+async def _find_match(client: httpx.AsyncClient, voice, source: str) -> _Found:
+    """在指定来源里挑画质最高的一张。原图已经在手上，落盘不用再下一次。"""
     name = (voice.shown_name or voice.name or "").strip()
     category = voice.category or ""
     # 平台音色没有目录；认作品要用到它（分类名可能是「普通话」这种内容分组）。
     folder = getattr(voice, "folder", "") or ""
-    failures: list[str] = []
     deadline = time.monotonic() + _FIND_BUDGET
 
-    for key in avatar_sources.plan(category, folder):
-        if time.monotonic() > deadline:
-            failures.append("找图超时，先用已经拿到的结果")
-            break
-        try:
-            found = await _source_found(
-                client, voice, key, name, category, deadline,
-                folder=folder, keep_original=True, keep=1,
-            )
-        except SourceError as exc:
-            failures.append(str(exc))
-            continue
-        except httpx.HTTPError as exc:
-            failures.append(f"{key} 网络请求失败：{exc}")
-            CHANNEL.info(f"头像来源 {key} 网络失败：{exc}", source="avatar", voice=voice.id)
-            continue
+    try:
+        found = await _source_found(
+            client, voice, source, name, category, deadline,
+            folder=folder, keep_original=True, keep=1,
+        )
+    except SourceError as exc:
+        raise _not_found(source, name, str(exc)) from exc
+    except httpx.HTTPError as exc:
+        CHANNEL.info(f"头像来源 {source} 网络失败：{exc}", source="avatar", voice=voice.id)
+        raise _not_found(source, name, f"网络请求失败：{exc}") from exc
 
-        # 自动模式取当前来源里最好的一张；原图已经在手上，落盘不用再下一次。
-        if found:
-            return found[0]
-
-    raise _not_found(name, failures)
+    if not found:
+        raise _not_found(source, name)
+    return found[0]
 
 
-async def _collect(client: httpx.AsyncClient, voice) -> list[_Found]:
-    """选图模式：把计划里每个来源的前几张都收集起来，跨来源去重后交给界面。"""
+async def _collect(client: httpx.AsyncClient, voice, source: str) -> list[_Found]:
+    """选图模式：把这个来源裁好的前几张交给界面。"""
     name = (voice.shown_name or voice.name or "").strip()
     category = voice.category or ""
     folder = getattr(voice, "folder", "") or ""
     deadline = time.monotonic() + _FIND_BUDGET
-    collected: list[_Found] = []
-    seen: set[str] = set()
 
-    for key in avatar_sources.plan(category, folder):
-        if len(collected) >= _MAX_PICK or time.monotonic() > deadline:
-            break
-        try:
-            found = await _source_found(
-                client, voice, key, name, category, deadline, folder=folder, eager=False
-            )
-        except SourceError as exc:
-            CHANNEL.info(f"头像来源 {key} 跳过：{exc}", source="avatar", voice=voice.id)
-            continue
-        except httpx.HTTPError as exc:
-            CHANNEL.info(f"头像来源 {key} 网络失败：{exc}", source="avatar", voice=voice.id)
-            continue
-        for item in found:
-            if item.candidate.url in seen:
-                continue
-            seen.add(item.candidate.url)
-            collected.append(item)
-            if len(collected) >= _MAX_PICK:
-                break
+    try:
+        found = await _source_found(
+            client, voice, source, name, category, deadline,
+            folder=folder, eager=False, keep=_MAX_PICK,
+        )
+    except SourceError as exc:
+        raise _not_found(source, name, str(exc)) from exc
+    except httpx.HTTPError as exc:
+        CHANNEL.info(f"头像来源 {source} 网络失败：{exc}", source="avatar", voice=voice.id)
+        raise _not_found(source, name, f"网络请求失败：{exc}") from exc
 
-    if not collected:
-        raise _not_found(name, [])
-    return collected
+    if not found:
+        raise _not_found(source, name)
+    return found
 
 
 def _preview(png: bytes) -> str:
@@ -598,9 +586,11 @@ def _existing_picture(folder: Path) -> str:
     return ""
 
 
-async def generate(service: LibraryService, voice_id: str) -> dict[str, object]:
-    """一键配头像：**只补空缺**。目录里已有图（``avatar.*`` 或手工 ``cover.*``）就跳过，
-    不上网、不动文件；要换头像走 :func:`candidates` 挑一张再 :func:`apply_candidate`。"""
+async def generate(service: LibraryService, voice_id: str, source: str) -> dict[str, object]:
+    """匹配头像：在用户指定的来源里取最好的一张，**只补空缺**。目录里已有图
+    （``avatar.*`` 或手工 ``cover.*``）就跳过，不上网、不动文件；要换头像走
+    :func:`candidates` 挑一张再 :func:`apply_candidate`。"""
+    source = _source(source)
     voice, folder = _local_voice(service, voice_id)
     existing = _existing_picture(folder)
     if existing:
@@ -615,17 +605,18 @@ async def generate(service: LibraryService, voice_id: str) -> dict[str, object]:
         }
     name = (voice.shown_name or voice.name or "").strip()
     async with _client() as client:
-        found = await _find_match(client, voice)
+        found = await _find_match(client, voice, source)
     return await _save(service, voice_id, folder, found, name)
 
 
-async def candidates(service: LibraryService, voice_id: str) -> dict[str, object]:
-    """列出裁好的候选（不落盘），由用户挑一张再 :func:`apply_candidate`。"""
+async def candidates(service: LibraryService, voice_id: str, source: str) -> dict[str, object]:
+    """列出指定来源裁好的候选（不落盘），由用户挑一张再 :func:`apply_candidate`。"""
+    source = _source(source)
     voice, _ = _local_voice(service, voice_id)
     name = (voice.shown_name or voice.name or "").strip()
     async with _client() as client:
-        found = await _collect(client, voice)
-    return {"voice": voice, "items": _remember(voice_id, name, found)}
+        found = await _collect(client, voice, source)
+    return {"voice": voice, "source": source, "items": _remember(voice_id, name, found)}
 
 
 async def apply_candidate(service: LibraryService, voice_id: str, token: str) -> dict[str, object]:

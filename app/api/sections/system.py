@@ -109,7 +109,7 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
                 raise ApiError(
                     status=400,
                     code="autostart_unsupported",
-                    message="开机自启只在桌面版可用：当前进程不是由启动器拉起的。",
+                    message="开机自启仅桌面版生效。",
                 )
             if not autostart.set_enabled(body.autostart):
                 raise ApiError(

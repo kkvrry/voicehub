@@ -19,6 +19,7 @@ from app.api.errors import ApiError, not_found
 from app.api.views import (
     _IDEMPOTENCY_TTL,
     AvatarApplyIn,
+    AvatarSourceIn,
     PronunciationsIn,
     SynthesizeIn,
     TextsIn,
@@ -58,11 +59,11 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
         """可用的图片来源与说明。**不探网络**。"""
         return {"object": "avatar_status", **avatar.status()}
 
-    @router.post("/avatar/voices/{voice_id}", summary="查找音色头像", tags=["avatar"])
-    async def avatar_generate(voice_id: str) -> dict[str, Any]:
-        """按分类与名字找图，裁成方形头像并写盘。**只补空缺**：目录里已有图就跳过
-        （``skipped`` 带回那个文件名），要换头像走候选接口。一键配头像走这里。"""
-        result = await avatar.generate(service, voice_id)
+    @router.post("/avatar/voices/{voice_id}", summary="匹配音色头像", tags=["avatar"])
+    async def avatar_generate(voice_id: str, body: AvatarSourceIn) -> dict[str, Any]:
+        """在指定来源里按名字找图，裁成方形头像并写盘。**只补空缺**：目录里已有图就跳过
+        （``skipped`` 带回那个文件名），要换头像走候选接口。"""
+        result = await avatar.generate(service, voice_id, body.source)
         return {
             "object": "voice_avatar",
             "source": result["source"],
@@ -73,9 +74,9 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
         }
 
     @router.post("/avatar/voices/{voice_id}/candidates", summary="头像候选", tags=["avatar"])
-    async def avatar_candidates(voice_id: str) -> dict[str, Any]:
-        """各来源裁好的候选图（缩略图 + 出处），**不落盘**；挑好后走 apply。"""
-        result = await avatar.candidates(service, voice_id)
+    async def avatar_candidates(voice_id: str, body: AvatarSourceIn) -> dict[str, Any]:
+        """指定来源裁好的候选图（缩略图 + 出处），**不落盘**；挑好后走 apply。"""
+        result = await avatar.candidates(service, voice_id, body.source)
         return {
             "object": "avatar_candidates",
             "voice": _voice_out(result["voice"], with_samples=True),

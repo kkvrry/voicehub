@@ -62,7 +62,7 @@ CODES: dict[str, str] = {
     "folder_missing": "音色文件夹不存在",
     "reveal_failed": "打开文件夹失败",
     "reveal_local_only": "只能打开本机音色的文件夹",
-    "autostart_unsupported": "开机自启只在桌面版可用",
+    "autostart_unsupported": "开机自启仅桌面版生效",
     "autostart_failed": "写注册表失败",
     "scan_in_progress": "扫描已在进行中",
     "audio_empty": "音频为空",
@@ -109,6 +109,7 @@ CODES: dict[str, str] = {
     "avatar_folder_missing": "音色目录不存在",
     "avatar_candidate_expired": "头像候选已过期",
     "avatar_candidate_mismatch": "头像候选与音色不匹配",
+    "avatar_source_invalid": "请选择头像来源",
     # 生产方与 TTS 直连
     "producer_error": "生产方业务错误",
     "trash_failed": "移入回收站失败",

@@ -1,4 +1,4 @@
-"""音频库用例：录音、内录、生成物三类音频的索引，以及「入库 / 删除」两个写动作。
+"""历史用例：录音、内录、生成物三类音频的索引，以及「入库 / 删除」两个写动作。
 
 **索引只读盘，不建第二份状态。** 三类音频各自有家：
 
@@ -11,7 +11,7 @@
 
 **入库 = 复制一份进音色目录**，源文件不动。样例必须落在音色目录里才活得过缓存清理，
 所以这里不做「引用缓存」那种省磁盘的做法。入库后两处 sidecar 各记一笔：目标音色记
-``source``（这条样例从音频库哪一条来），源目录记 ``absorbed``（这条音频进了哪几条音色）。
+``source``（这条样例从历史哪一条来），源目录记 ``absorbed``（这条音频进了哪几条音色）。
 归属（``origin``）只写给平台音色——本地音色的目录就是它自己的家；写完盘当场把索引
 跟上（:meth:`LibraryService.sync_local_folder`），不依赖下一次扫描。
 """
@@ -48,7 +48,7 @@ _CACHE: dict[str, Any] = {"at": 0.0, "revision": -1, "items": []}
 
 
 class AudioError(RuntimeError):
-    """音频库的业务错误；``code`` 进错误码表，``message`` 可直接展示。"""
+    """历史的业务错误；``code`` 进错误码表，``message`` 可直接展示。"""
 
     def __init__(self, message: str, *, code: str = "audio_failed", status: int = 400) -> None:
         super().__init__(message)

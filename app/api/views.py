@@ -49,7 +49,7 @@ from app.usecase.engines import (
     settings_payload,
 )
 
-__all__ = ["AsrModelIn", "AsrOptionsIn", "AvatarApplyIn", "ClientLogIn", "DesignPromptIn", "FoldersIn", "MainSampleIn", "OutputIn", "PrefsIn", "PronunciationEntryIn", "PronunciationsIn", "SamplePatch", "StorageIn", "StorageOpenIn", "SynthesizeIn", "TextsIn", "TranscribeIn", "VocabEmotionsIn", "VocabIn", "VocabInstructionsIn", "VoicePatch", "bind_host", "bind_scheme", "set_bind_host", "set_bind_scheme"]
+__all__ = ["AsrModelIn", "AsrOptionsIn", "AvatarApplyIn", "AvatarSourceIn", "ClientLogIn", "DesignPromptIn", "FoldersIn", "MainSampleIn", "OutputIn", "PrefsIn", "PronunciationEntryIn", "PronunciationsIn", "SamplePatch", "StorageIn", "StorageOpenIn", "SynthesizeIn", "TextsIn", "TranscribeIn", "VocabEmotionsIn", "VocabIn", "VocabInstructionsIn", "VoicePatch", "bind_host", "bind_scheme", "set_bind_host", "set_bind_scheme"]
 
 #: 幂等记录的有效期（秒）。24 小时覆盖"当天整章重跑"这种最常见的重试场景。
 _IDEMPOTENCY_TTL = 24 * 3600
@@ -227,6 +227,12 @@ class AvatarApplyIn(BaseModel):
     """选中的头像候选。token 由候选列表接口发，只活在内存里十分钟。"""
 
     token: str
+
+
+class AvatarSourceIn(BaseModel):
+    """头像来源：取 ``/avatar/status`` 下发的 key，一次只查一个。"""
+
+    source: str = ""
 
 
 class SynthesizeIn(BaseModel):
