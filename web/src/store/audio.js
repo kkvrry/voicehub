@@ -133,6 +133,12 @@ export function toggleRow(id) {
   else store.audio.selected.push(id)
 }
 
+/** 整批替换选择：点行与连选用它，顺序即列表顺序。 */
+/** @param {string[]} ids */
+export function setSelected(ids) {
+  store.audio.selected = [...new Set(ids)]
+}
+
 /** 全选当前列表；已经全选就清空。 */
 export function toggleAllVisible() {
   const rows = store.audio.items

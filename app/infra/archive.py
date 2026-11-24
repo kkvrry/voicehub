@@ -214,7 +214,6 @@ def record_sample(
     emotion: str = "",
     params: Mapping[str, Any] | None = None,
     origin: Mapping[str, str] | None = None,
-    source: str = "",
 ) -> None:
     """把"这一段念的是什么、拿什么参数生成的"写进该音色文件夹的 sidecar。
 
@@ -223,8 +222,6 @@ def record_sample(
 
     :param origin: 音频属于库里哪条音色（``{"voice_id": …, "engine": …}``），
         与音频一起写——文件夹名会变，认得回归属靠这个。
-    :param source: 这条样例从历史里的哪一条来（历史条目的 id）。历史据此回答
-        "这条入库了没有"，不必反查所有音色目录。
     """
     text = str(text or "").strip()
     emotion = str(emotion or "").strip()
@@ -234,8 +231,7 @@ def record_sample(
         if shown:
             extra[str(key)] = shown
     recorded_origin = {str(k): str(v) for k, v in (origin or {}).items() if str(v).strip()}
-    recorded_source = str(source or "").strip()
-    if not (text or emotion or extra or recorded_origin or recorded_source):
+    if not (text or emotion or extra or recorded_origin):
         return  # 没东西可记就不动文件
     side = read_sidecar(folder)
     entries = dict(side.samples)
@@ -259,10 +255,8 @@ def record_sample(
         "tags": list(known.get("tags") or []),
         "params": extra,
     }
-    # 历史回写的那两栏是这条样例的事实，重写记录时不能丢：丢了之后「它从哪来、
-    # 已经入库到哪几条音色」就说不出来，再入一次库会重复记一条。
-    if recorded_source:
-        entries[filename]["source"] = recorded_source
+    # 历史在源目录写的「已入库到哪几条音色」是这条样例的事实，重写记录时不能丢：
+    # 丢了之后同一条音频会在列表里重新标成"未入库"。
     if known.get("absorbed"):
         entries[filename]["absorbed"] = list(known["absorbed"])
     if duration > 0 and size > 0:

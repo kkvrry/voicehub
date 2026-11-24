@@ -1,7 +1,8 @@
 <template>
   <!-- 历史：录音 / 内录 / 生成三类音频放在同一张表里，按时间倒序。
        数据表页不叠卡——标题、筛选、表格依次铺在平面上，用分隔线分层（与创作页同一政策）。
-       行内动作只有一层主操作（入库），低频动作收进行尾「⋯」。 -->
+       选中与创作页、配音段落表同一套：点行选中，Ctrl 逐条、Shift 连选。
+       行内主操作只有「入库」，低频动作在行尾「⋯」与右键菜单，两处共用一份定义。 -->
   <div class="audio-page">
     <header class="audio-head">
       <h1>
@@ -53,7 +54,7 @@
       </button>
     </div>
 
-    <!-- 批量动作贴着勾选列放：全选在最左，动作就紧跟其后，不必横跨整行去找。 -->
+    <!-- 批量动作贴着选择列放：全选在最左，动作就紧跟其后，不必横跨整行去找。 -->
     <div v-if="selected.length" class="audio-bulk">
       <span class="audio-bulk-count">已选 {{ selected.length }} 条</span>
       <ActionButton size="sm" variant="soft" @click="openAbsorb(selected)">入库到…</ActionButton>
@@ -63,13 +64,17 @@
 
     <div class="audio-table">
       <div class="audio-tr is-head">
-        <span class="audio-check">
-          <input
-            type="checkbox"
-            :checked="allPicked"
+        <span class="audio-pick">
+          <button
+            type="button"
+            class="audio-ord"
+            role="checkbox"
+            :class="{ 'is-on': allPicked, 'is-mixed': somePicked }"
+            :aria-checked="allPicked ? 'true' : somePicked ? 'mixed' : 'false'"
+            :title="allPicked ? '取消全选' : '全选当前列表'"
             :aria-label="allPicked ? '取消全选' : '全选当前列表'"
-            @change="toggleAllVisible"
-          />
+            @click="toggleAllVisible"
+          >#</button>
         </span>
         <span>试听</span>
         <span>内容</span>
@@ -80,18 +85,23 @@
       </div>
 
       <div
-        v-for="row in rows"
+        v-for="(row, index) in rows"
         :key="row.id"
         class="audio-tr"
-        :class="{ 'is-picked': selected.includes(row.id), 'is-playing': playing(row) }"
+        :class="{ 'is-picked': picked(row), 'is-playing': playing(row) }"
+        @click="pickRow(row, $event)"
+        @contextmenu="openRowMenu(row, $event)"
       >
-        <span class="audio-check">
-          <input
-            type="checkbox"
-            :checked="selected.includes(row.id)"
-            :aria-label="`选择 ${row.text || row.file}`"
-            @change="toggleRow(row.id)"
-          />
+        <span class="audio-pick">
+          <button
+            type="button"
+            class="audio-ord"
+            :class="{ 'is-on': picked(row) }"
+            :aria-pressed="picked(row) ? 'true' : 'false'"
+            :title="picked(row) ? '取消选择' : '选择；Shift 点另一行连选'"
+            :aria-label="picked(row) ? `取消选择第 ${index + 1} 条` : `选择第 ${index + 1} 条`"
+            @click.stop="toggleRow(row.id, $event)"
+          >{{ String(index + 1).padStart(2, '0') }}</button>
         </span>
 
         <span class="audio-listen">
@@ -102,7 +112,7 @@
             :disabled="!row.url"
             :title="row.url ? (playing(row) ? '暂停' : '试听') : '这条没有对应的音频文件'"
             :aria-label="playing(row) ? '暂停' : '试听'"
-            @click="playRow(row)"
+            @click.stop="playRow(row)"
           >
             <Pause v-if="playing(row) && store.player.playing" :size="11" :stroke-width="1.8" fill="currentColor" />
             <Play v-else :size="11" :stroke-width="1.8" fill="currentColor" />
@@ -134,24 +144,17 @@
           <template v-if="isAbsorbed(row)">
             <span class="audio-done" :title="`已入库到 ${absorbedNames(row)}`">已入库</span>
           </template>
-          <ActionButton v-else size="sm" variant="soft" @click="openAbsorb([row.id])">入库</ActionButton>
+          <ActionButton v-else size="sm" variant="soft" @click.stop="openAbsorb([row.id])">入库</ActionButton>
           <button
             type="button"
             class="audio-more"
             title="更多操作"
             aria-label="更多操作"
-            @click="toggleMenu(row.id, $event)"
+            aria-haspopup="menu"
+            @click.stop="openRowMenu(row, $event)"
           >
             <MoreHorizontal :size="14" :stroke-width="1.8" />
           </button>
-          <Popover :open="menu === row.id" :anchor="anchors[row.id]" :width="176" label="更多操作" @close="menu = ''">
-            <div class="audio-menu">
-              <button type="button" @click="absorbOther(row)">
-                {{ row.voice_name ? '入库到其他音色…' : '入库到音色…' }}
-              </button>
-              <button type="button" @click="discard([row.id])">移入回收站</button>
-            </div>
-          </Popover>
         </span>
       </div>
 
@@ -176,8 +179,8 @@ import { MoreHorizontal, Pause, Play } from 'lucide-vue-next'
 import { actions, store } from '../store'
 import { SOURCES, clock, isAbsorbed, stamp, absorb as absorbRows } from '../store/audio'
 import ActionButton from './ui/ActionButton.vue'
-import Popover from './ui/Popover.vue'
 import { emotionTone } from './ui/tones'
+import { closeContextMenu, menuState, openObjectMenu } from '../composables/contextMenu'
 import AbsorbDialog from './AbsorbDialog.vue'
 
 const SOURCE_LABELS = Object.fromEntries(SOURCES.map((item) => [item.key, item.label]))
@@ -200,6 +203,9 @@ const playableCount = computed(() => rows.value.filter((row) => row.url).length)
 const allPicked = computed(
   () => rows.value.length > 0 && rows.value.every((row) => selected.value.includes(row.id))
 )
+const somePicked = computed(
+  () => !allPicked.value && rows.value.some((row) => selected.value.includes(row.id))
+)
 const filtered = computed(
   () =>
     Boolean(store.audio.q.trim()) ||
@@ -214,6 +220,11 @@ const emptyText = computed(() => {
   if (filtered.value) return '没有符合当前筛选的音频。'
   return '还没有音频。录音、内录与生成的音频都会出现在这里。'
 })
+
+/** @param {any} row */
+function picked(row) {
+  return selected.value.includes(row.id)
+}
 
 /** @param {any} row */
 function playing(row) {
@@ -235,19 +246,37 @@ function meta(row) {
 
 const absorbOpen = ref(false)
 const absorbIds = ref(/** @type {string[]} */ ([]))
-const menu = ref('')
-/** @type {Record<string, any>} */
-const anchors = {}
+/** Shift 连选的起点：最近一次点选过的那一行。 */
+const anchorId = ref('')
 
 /**
- * 「⋯」弹层的锚点：点哪一行就贴哪一行，不需要给每个按钮挂 ref。
- * @param {string} id
- * @param {Event} event
+ * 行菜单：行尾「⋯」贴按钮，右键贴指针；两处共用 menus/catalog.js 里的一份定义。
+ * @param {any} row
+ * @param {MouseEvent} event
  */
-function toggleMenu(id, event) {
-  const el = /** @type {HTMLElement | null} */ (event.currentTarget)
-  if (el) anchors[id] = el
-  menu.value = menu.value === id ? '' : id
+function openRowMenu(row, event) {
+  const trigger = event.currentTarget
+  if (trigger instanceof HTMLElement && trigger.classList.contains('audio-more')) {
+    if (menuState.open && menuState.trigger === trigger) {
+      closeContextMenu({ restoreFocus: true })
+      return
+    }
+    openObjectMenu('audio.row', rowMenu(row), { anchor: trigger })
+    return
+  }
+  openObjectMenu('audio.row', rowMenu(row), { event })
+}
+
+/** @param {any} row */
+function rowMenu(row) {
+  return {
+    text: row.text,
+    file: row.file,
+    url: row.url,
+    playing: playing(row) && store.player.playing,
+    play: () => playRow(row),
+    discard: () => discard([row.id]),
+  }
 }
 
 /** @param {any} row */
@@ -255,12 +284,6 @@ function absorbedNames(row) {
   /** @type {{ name: string }[]} */
   const list = row.absorbed || []
   return list.map((item) => item.name).join('、')
-}
-
-/** @param {any} row */
-function absorbOther(row) {
-  menu.value = ''
-  openAbsorb([row.id])
 }
 
 /** @param {string[]} ids */
@@ -298,17 +321,57 @@ function clearFilters() {
   actions.clearAudioFilters()
 }
 
-/** @param {string} id */
-function toggleRow(id) {
+/**
+ * 点行：普通点选 = 只选这一行；Ctrl/⌘ 逐条切换；Shift 从锚点连选到这一行。
+ * @param {any} row
+ * @param {MouseEvent} event
+ */
+function pickRow(row, event) {
+  if (event.shiftKey) {
+    selectRange(row.id)
+    return
+  }
+  if (event.ctrlKey || event.metaKey) {
+    actions.toggleRow(row.id)
+    anchorId.value = row.id
+    return
+  }
+  actions.setSelected([row.id])
+  anchorId.value = row.id
+}
+
+/** @param {string} id @param {MouseEvent} event */
+function toggleRow(id, event) {
+  if (event?.shiftKey) {
+    selectRange(id)
+    return
+  }
   actions.toggleRow(id)
+  anchorId.value = id
+}
+
+/** 从这里到锚点整段选上；锚点不在当前列表（换过筛选）就只选这一行。 */
+/** @param {string} id */
+function selectRange(id) {
+  const ids = rows.value.map((row) => row.id)
+  const from = ids.indexOf(anchorId.value)
+  const to = ids.indexOf(id)
+  if (from < 0 || to < 0) {
+    actions.setSelected([id])
+    anchorId.value = id
+    return
+  }
+  actions.setSelected(ids.slice(Math.min(from, to), Math.max(from, to) + 1))
 }
 
 function toggleAllVisible() {
   actions.toggleAllVisible()
+  anchorId.value = ''
 }
 
 function clearSelected() {
   actions.clearSelected()
+  anchorId.value = ''
 }
 
 /** @param {any} row */
@@ -322,7 +385,6 @@ function playVisible() {
 
 /** @param {string[]} ids */
 function discard(ids) {
-  menu.value = ''
   actions.discard([...ids])
 }
 </script>
@@ -436,7 +498,7 @@ function discard(ids) {
 }
 .audio-tr {
   display: grid;
-  grid-template-columns: 26px 104px minmax(0, 1fr) 84px 118px 76px 100px;
+  grid-template-columns: 32px 104px minmax(0, 1fr) 84px 118px 76px 100px;
   gap: 10px;
   align-items: center;
   padding: 9px var(--sh-gutter);
@@ -457,13 +519,38 @@ function discard(ids) {
 .audio-tr.is-playing {
   box-shadow: inset 3px 0 0 var(--sh-accent);
 }
-.audio-check {
+.audio-pick {
   display: flex;
   align-items: center;
 }
-.audio-check input {
-  margin: 0;
-  accent-color: var(--sh-accent);
+/* 行首序号与表头的 # 是同一种按钮：点一下选中这一行，选中只换底色。
+   与创作行表、配音段落表一致，不另用原生复选框。 */
+.audio-ord {
+  min-width: 28px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-r-2xs);
+  background: transparent;
+  color: var(--sh-text-4);
+  font: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.audio-ord:hover {
+  border-color: var(--sh-line-soft);
+  background: var(--sh-panel);
+  color: var(--sh-text-2);
+}
+.audio-ord.is-on {
+  border-color: transparent;
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+}
+.audio-ord.is-mixed {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
 }
 .audio-listen {
   display: flex;
@@ -595,29 +682,6 @@ function discard(ids) {
 .audio-more:hover {
   background: var(--sh-hover);
   color: var(--sh-accent);
-}
-.audio-menu {
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
-}
-.audio-menu button {
-  border: 0;
-  background: transparent;
-  color: var(--sh-text);
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  padding: 7px 9px;
-  border-radius: var(--sh-r-2xs);
-  cursor: pointer;
-}
-.audio-menu button:hover:not(:disabled) {
-  background: var(--sh-hover);
-}
-.audio-menu button:disabled {
-  color: var(--sh-text-4);
-  cursor: default;
 }
 .audio-more-note {
   padding: 10px var(--sh-gutter);

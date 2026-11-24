@@ -10,8 +10,8 @@
 与音色库看到的是同一份东西。
 
 **入库 = 复制一份进音色目录**，源文件不动。样例必须落在音色目录里才活得过缓存清理，
-所以这里不做「引用缓存」那种省磁盘的做法。入库后两处 sidecar 各记一笔：目标音色记
-``source``（这条样例从历史哪一条来），源目录记 ``absorbed``（这条音频进了哪几条音色）。
+所以这里不做「引用缓存」那种省磁盘的做法。目标音色的样例只写核心字段（文字、情绪、
+生成参数、时长）；源目录的 sidecar 记一笔 ``absorbed``（这条音频进了哪几条音色）。
 归属（``origin``）只写给平台音色——本地音色的目录就是它自己的家；写完盘当场把索引
 跟上（:meth:`LibraryService.sync_local_folder`），不依赖下一次扫描。
 """
@@ -439,7 +439,6 @@ def absorb(service: Any, ids: list[str], target: dict[str, Any]) -> list[dict[st
             emotion=emotion or row["emotion"],
             params=_sample_params(row),
             origin=origin,
-            source=row["id"],
         )
         archive.note_absorbed(
             Path(row["folder"]), row["file"], voice_id=target_voice, name=name

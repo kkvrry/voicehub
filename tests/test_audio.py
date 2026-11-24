@@ -87,7 +87,9 @@ class TestAbsorb:
         sample = read_sidecar(Path(hutao.folder)).samples[item["file"]]
         assert sample["text"] == item["text"]
         assert sample["emotion"] == "平静"
-        assert sample["source"] == item["id"]
+        # 目标音色只记核心字段：历史条目的定位串不进样例记录。
+        assert "source" not in sample
+        assert set(sample) <= {"text", "emotion", "tags", "params", "duration", "bytes", "absorbed"}
 
         again = audio_uc.index()
         assert again["unabsorbed"] == 3

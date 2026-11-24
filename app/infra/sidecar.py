@@ -65,7 +65,8 @@ class Sidecar:
     origin: dict[str, str] = field(default_factory=dict)
 
     # ``samples`` 每条的键：``text`` / ``emotion`` / ``tags`` / ``duration`` / ``bytes`` /
-    # ``params``。``params`` 只有生成出来的样例才有（见 domain/models.Sample）。
+    # ``params`` / ``absorbed``。``params`` 只有生成出来的样例才有（见 domain/models.Sample）；
+    # ``absorbed`` 只写在历史的源音频上（这条进了哪几条音色）。
     # ``duration`` + ``bytes`` 是**跟着目录走的时长备份**：字节数对得上就直接用，
     # 省掉一次 ffprobe（文件夹改名、库重建时尤其值）；对不上说明音频换过，去量真的。
 
@@ -157,12 +158,8 @@ def read_sidecar(folder: Path) -> Sidecar:
             )
             if params:
                 entry["params"] = params
-            # 历史回写的两栏：这条样例从哪一条音频来、已经入库到哪些音色。
-            # 它们是"这条文件的事实"，与 text / duration 同级；丢了之后历史既说不出来路，
-            # 也会把同一条音频在列表里重新标成"未入库"。
-            source = str(value.get("source") or "").strip()
-            if source:
-                entry["source"] = source
+            # 历史在源目录回写的「已入库到哪些音色」：这条文件的事实，与 text / duration
+            # 同级。丢了之后历史会把同一条音频重新标成"未入库"。
             absorbed = [
                 {"voice_id": str(row.get("voice_id") or ""), "name": str(row.get("name") or "")}
                 for row in (value.get("absorbed") or [])

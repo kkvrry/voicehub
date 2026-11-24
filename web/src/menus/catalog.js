@@ -136,6 +136,22 @@ const MENUS = {
     return groups
   },
 
+  // 历史的一行。入库已在行尾有按钮，菜单里不重复摆一份。
+  'audio.row': (ctx) => [
+    [
+      {
+        key: 'play',
+        label: ctx.playing ? '停止播放' : '试听',
+        icon: ctx.playing ? Square : Play,
+        disabled: !ctx.url,
+        reason: '这条没有对应的音频文件',
+        run: ctx.play,
+      },
+    ],
+    [copyItem(ctx.text, '复制文本'), copyItem(ctx.file, '复制文件名')],
+    [{ key: 'discard', label: '移入回收站', icon: Trash2, danger: true, run: ctx.discard }],
+  ],
+
   'log.line': (ctx) => [
     [copyItem(ctx.text, '复制这条日志')],
     [
