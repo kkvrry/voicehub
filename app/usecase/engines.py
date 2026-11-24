@@ -23,6 +23,7 @@ from app.domain.channel import (
 from app.domain.credential import DESIGN, PLATFORM, REFERENCE, credential_of
 from app.domain.marks import mark_groups
 from app.domain.models import platform_voice_id
+from app.domain.request_spec import ENGINE_AUTO
 from app.engines import ratelimit
 from app.engines.asr_base import AsrEngine
 from app.engines.base import (
@@ -78,9 +79,6 @@ __all__ = [
     "set_engine_enabled",
     "settings_payload",
 ]
-
-#: 调用方把引擎写成这个值 = 不钉死一台，由宿主按此刻在跑的引擎选。
-ENGINE_AUTO = "auto"
 
 #: 复刻样本要整份读入内存再写归档，给一个明确的量级上限。
 _MAX_SAMPLE_BYTES = 20 * 1024 * 1024

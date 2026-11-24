@@ -15,7 +15,18 @@ from typing import Any
 
 from app.domain.models import EMOTION_CHOICES, LANGUAGE_CHOICES
 
-__all__ = ["GROUPS", "PARAM_LABELS", "SPEC_FIELDS", "Group", "SpecField", "spec_payload"]
+__all__ = [
+    "ENGINE_AUTO",
+    "GROUPS",
+    "PARAM_LABELS",
+    "SPEC_FIELDS",
+    "Group",
+    "SpecField",
+    "spec_payload",
+]
+
+#: 引擎路由字段的保留值：不钉死一台，由宿主按运行实例选。
+ENGINE_AUTO = "auto"
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,6 +352,13 @@ def spec_payload(emotions: Sequence[str] | None = None) -> dict[str, Any]:
         缺省 = 仓库默认的两组词（基础 + 复合）。
     """
     return {
+        # 路由保留值：与规范参数分开——auto 是 engine 字段的取值，不是一台引擎。
+        # 调用方一处拿到全部取值，不必读文档也不必把 auto 硬编码进前端。
+        "routing": {
+            "field": "engine",
+            "auto": ENGINE_AUTO,
+            "choices": "/api/v1/engines/choices",
+        },
         "groups": [
             {"key": g.key, "label": g.label, "folded": g.folded} for g in GROUPS
         ],

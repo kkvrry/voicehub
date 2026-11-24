@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.domain.request_spec import GROUPS, PARAM_LABELS, SPEC_FIELDS, spec_payload
+from app.domain.request_spec import ENGINE_AUTO, GROUPS, PARAM_LABELS, SPEC_FIELDS, spec_payload
 
 GROUP_KEYS = [group.key for group in GROUPS]
 
@@ -149,6 +149,19 @@ class TestPayload:
         """界面上一格只有名字、单位、区间与状态——**一句说明都不下发**。"""
         flat = payload["fields"] + payload["groups"]
         assert not [item for item in flat if "note" in item or "hint" in item]
+
+    def test_routing_declares_auto_and_where_to_get_engine_keys(self, payload):
+        """auto 与具体引擎 key 是同一字段的两种取值，一处给全。
+
+        路由声明与规范参数分开：既不让 auto 混进参数映射表，也不让调用方
+        自己硬编码这个字符串。
+        """
+        routing = payload["routing"]
+        assert ENGINE_AUTO == "auto"
+        assert routing["field"] == "engine"
+        assert routing["auto"] == ENGINE_AUTO
+        assert routing["choices"] == "/api/v1/engines/choices"
+        assert ENGINE_AUTO not in {f["key"] for f in payload["fields"]}
 
     def test_a_combo_field_still_declares_its_type(self, payload):
         """``combo`` 也要给类型：前端按它决定发出去的是数字还是字符串。
