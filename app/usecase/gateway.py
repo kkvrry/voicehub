@@ -33,7 +33,7 @@ from app.engines.traits import detect_language
 from app.infra.loghub import CHANNEL
 from app.infra.requestctx import current_request_id
 from app.usecase import pronunciation, reference
-from app.usecase.engines import active_engines, settings_for
+from app.usecase.engines import active_engines, auto_engine_keys, is_auto_engine, settings_for
 from app.usecase.library import LibraryError, LibraryService
 
 __all__ = ["normalize_voice", "synthesize", "validate_against_spec"]
@@ -390,6 +390,23 @@ def validate_against_spec(
     return tuple(problems)
 
 
+def _resolve_auto_engine(
+    service: LibraryService, voice_id: str, engines: Mapping[str, EnginePlugin]
+) -> str:
+    """``engine=auto`` 此刻落到哪台；没有可用返回空串。
+
+    与实时对话的自动档同一判据（见 :func:`app.usecase.engines.auto_engine_keys`）：
+    只认已启用、此刻可用、本地、且这条音色能落的引擎。库里没有这条音色时
+    只看当前在跑的本地引擎，交给后面的音色回落去分辨。
+    """
+    try:
+        voice = service.get_voice(voice_id)
+    except LibraryError:
+        voice = None
+    keys = auto_engine_keys(voice, engines=dict(engines))
+    return keys[0] if keys else ""
+
+
 async def synthesize(
     service: LibraryService,
     *,
@@ -439,10 +456,10 @@ async def synthesize(
             CHANNEL.debug(line, **fields)
         raise
     CHANNEL.info(
-        f"合成完成：{engine_key} / {voice_id} / {len(text)} 字 / "
+        f"合成完成：{result.engine or engine_key} / {voice_id} / {len(text)} 字 / "
         f"{time.perf_counter() - started:.2f}s",
         source="gateway",
-        engine=engine_key,
+        engine=result.engine or engine_key,
         voice=voice_id,
         chars=len(text),
         request_id=current_request_id(),
@@ -486,17 +503,30 @@ async def _route(
     # 默认只从**已启用**的引擎里取：停用之后不该还能被调用。测试可以直接注入
     # ``engines`` 覆盖这一层（见 tests/test_gateway.py）。
     available = engines if engines is not None else active_engines()
-    engine = available.get(engine_key.strip())
+    requested = engine_key.strip()
+    if is_auto_engine(requested):
+        # 「自动」在服务端解析：调用方不必跟随内部实例变化改配置。音色解析要读库
+        # （同步 IO），与 normalize_voice 一样丢进线程。
+        requested = await asyncio.to_thread(
+            _resolve_auto_engine, service, voice_id, available
+        )
+        if not requested:
+            raise EngineError(
+                "没有可用的引擎：自动选择只认已启用、此刻有实例在跑的本地引擎。"
+                "先在「引擎」页启动一台，或直接指定引擎。",
+                code="engine_auto_unavailable",
+            )
+    engine = available.get(requested)
     if engine is None:
         # 适配了但没启用，与"根本没有这台"要分开说——前者一步就能解决。
-        known = detect_engine(engine_key) if engines is None else None
+        known = detect_engine(requested) if engines is None else None
         if known is not None:
             raise EngineError(
                 f"引擎 {known.label} 未启用。在「引擎」页把它打开后再用。",
                 code=CODE_NOT_ENABLED,
             )
         raise EngineError(
-            f"引擎 {engine_key} 不存在。可用引擎：{'、'.join(sorted(available)) or '（无）'}。",
+            f"引擎 {requested} 不存在。可用引擎：{'、'.join(sorted(available)) or '（无）'}。",
             code=CODE_NOT_FOUND,
         )
     # 语气词标签（``[[倒吸气]]`` / ``[[停顿:0.4]]``）：认的换成这一家的写法，不认的从
@@ -566,7 +596,7 @@ async def _route(
         "发送参数："
         + json.dumps(
             {
-                "engine": engine_key,
+                "engine": engine.key,
                 "voice": request.voice_id,
                 "text": _short(text),
                 "reference": Path(request.reference_audio).name if request.reference_audio else "",
@@ -577,17 +607,20 @@ async def _route(
             ensure_ascii=False,
         ),
         source="gateway",
-        engine=engine_key,
+        engine=engine.key,
     )
     problems = validate_against_spec(engine, request, cfg)
     if problems:
         raise EngineError(" ".join(problems))
     # 用这台引擎真实的配置（密钥等），不用空模型。
     result = await _call_engine(engine, cfg, request)
+    # 实际引擎随结果返回：`engine=auto` 时调用方要据此归档与回显。
     # 准备步骤的改动（转码、补逐字稿）作为 prep_notes 说给用户，与引擎自己的 notes 分开。
-    if prep_notes:
-        result = replace(result, prep_notes=prep_notes)
-    return result
+    return replace(
+        result,
+        engine=result.engine or engine.key,
+        prep_notes=prep_notes or result.prep_notes,
+    )
 
 
 async def _call_engine(

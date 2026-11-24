@@ -505,6 +505,9 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
         ``Idempotency-Key``：同一键在 24 小时内重复提交时直接返回首次结果，
         不再次调用引擎（按量计费的引擎因此不会因网络重试重复计费）。
         ``persist="none"`` 的首次结果把音频一并记进幂等记录，重放时原样回字节。
+
+        ``engine`` 可传 ``auto``：由网关从已启用、此刻有实例在跑的本地引擎里选一台
+        （见 ``usecase.engines.auto_engine_keys``），实际引擎随响应返回，落盘归属也按它。
         """
         if idempotency_key:
             payload = body.model_dump()
@@ -543,11 +546,14 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
                 raise ApiError(
                     status=502, code="engine_no_audio", message="引擎未返回音频。", type="engine_error"
                 )
+            # engine=auto 时实际引擎由网关选定：响应与落盘归属都按它，不按请求里的 "auto"。
+            used_engine = result.engine or body.engine.strip()
             now = int(time.time())
             meta: dict[str, Any] = {
                 "object": "synthesis",
                 "id": f"syn-{now}-{uuid.uuid4().hex[:8]}",
                 "created": now,
+                "engine": used_engine,
                 "format": result.format,
                 "cost_note": result.cost_note,
                 # notes 保留为消息列表（兼容旧读取方）；warnings 带 code/source，供程序分支。
@@ -585,8 +591,8 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
                 voice = None
             # 取的是插件名，不是可用性：能走到这里说明这台引擎刚合成成功（网关只放
             # 已启用的进来），这里只要它目录名里那个中文标签。
-            engine = list_engines().get(body.engine.strip())
-            key = body.engine.strip()
+            engine = list_engines().get(used_engine)
+            key = used_engine
             rel, absolute = await asyncio.to_thread(
                 archive.write_audio,
                 key,

@@ -163,6 +163,8 @@ class SynthesisOut(BaseModel):
     object: Literal["synthesis"] = "synthesis"
     id: str
     created: int
+    #: 实际使用的引擎键（请求写 ``auto`` 时由网关选定）。
+    engine: str = ""
     format: str
     cost_note: str
     notes: list[str] = Field(default_factory=list)

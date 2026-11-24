@@ -845,3 +845,59 @@ class TestEnableDisable:
         assert engine_caps() == {}
         client.put("/api/v1/engines/minimax/enabled", json={"enabled": True})
         assert set(engine_caps()) == {"minimax"}
+
+
+class TestAutoEngine:
+    """「自动」的候选：已启用、此刻可用、本地、且这条音色能落到。"""
+
+    @staticmethod
+    def _engine(key: str, *, kind: str = "local", reference_audio: bool = True):
+        from app.engines.base import Capabilities
+
+        class Fake(EnginePlugin):
+            label = key
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities(kind=kind, reference_audio=reference_audio)
+
+        Fake.key = key
+        return Fake()
+
+    @staticmethod
+    def _voice():
+        class Voice:
+            source = "local"
+            is_local = True
+            has_sample = True
+            payload = None
+
+        return Voice()
+
+    def test_cloud_and_idle_engines_are_not_auto_picked(self, monkeypatch, data_dir):
+        """云端按量计费不参与；本地引擎没有实例在跑也不算。"""
+        from app.usecase import engines as engines_uc
+
+        engines = {
+            "a_cloud": self._engine("a_cloud", kind="cloud"),
+            "b_idle": self._engine("b_idle"),
+            "c_live": self._engine("c_live"),
+        }
+        monkeypatch.setattr(engines_uc, "active_engines", lambda: engines)
+        monkeypatch.setattr(engines_uc, "live_engine_keys", lambda keys: {"c_live": {}})
+        assert engines_uc.auto_engine_keys() == ["c_live"]
+
+    def test_engines_that_cannot_use_the_voice_are_dropped(
+        self, monkeypatch, data_dir
+    ):
+        """本地音色要参考音频：不认参考音频的引擎不能被自动选中。"""
+        from app.usecase import engines as engines_uc
+
+        engines = {
+            "a_plain": self._engine("a_plain", reference_audio=False),
+            "b_ref": self._engine("b_ref"),
+        }
+        monkeypatch.setattr(engines_uc, "active_engines", lambda: engines)
+        monkeypatch.setattr(
+            engines_uc, "live_engine_keys", lambda keys: {key: {} for key in keys}
+        )
+        assert engines_uc.auto_engine_keys(self._voice()) == ["b_ref"]

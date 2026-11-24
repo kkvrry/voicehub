@@ -44,12 +44,14 @@ from app.infra.loghub import CHANNEL
 from app.usecase.live_models import live_engine_keys
 
 __all__ = [
+    "ENGINE_AUTO",
     "AsrConfigError",
     "EngineConfigError",
     "EngineSettingsError",
     "active_engines",
     "asr_payload",
     "asr_settings_for",
+    "auto_engine_keys",
     "catalog_payload",
     "channel_of",
     "clear_engine_voices",
@@ -59,6 +61,7 @@ __all__ = [
     "engine_identity",
     "engine_settings",
     "engine_voices",
+    "is_auto_engine",
     "is_enabled",
     "marks_payload",
     "output_info",
@@ -75,6 +78,9 @@ __all__ = [
     "set_engine_enabled",
     "settings_payload",
 ]
+
+#: 调用方把引擎写成这个值 = 不钉死一台，由宿主按此刻在跑的引擎选。
+ENGINE_AUTO = "auto"
 
 #: 复刻样本要整份读入内存再写归档，给一个明确的量级上限。
 _MAX_SAMPLE_BYTES = 20 * 1024 * 1024
@@ -319,16 +325,11 @@ def engine_settings(key: str) -> tuple[EnginePlugin, BaseModel]:
 # --------------------------------------------------------------------------- #
 
 
-def engines_for_voice(voice: Any) -> list[str]:
-    """这条音色能被哪些引擎用——**唯一一处**算这个问题的循环。
-
-    判据来自 :func:`app.domain.credential.credential_of`：一种凭据对应一项能力，
-    凭据为空（:data:`~app.domain.credential.NONE`）就不出现在这里。不看就绪状态：
-    "能不能用"是路由问题，"配没配好"是界面该灰掉的另一件事。
-    """
+def _engines_for(engines: dict[str, EnginePlugin], voice: Any) -> list[str]:
+    """一条音色能落到 ``engines`` 里的哪几台（按 key 顺序）。**唯一一处**这个循环。"""
     source = str(voice.source or "")
     out: list[str] = []
-    for key, engine in active_engines().items():
+    for key, engine in engines.items():
         caps = engine.capabilities()
         cred = credential_of(voice, engine_key=key)
         if cred == REFERENCE:
@@ -340,6 +341,54 @@ def engines_for_voice(voice: Any) -> list[str]:
         else:
             usable = False
         if usable:
+            out.append(key)
+    return out
+
+
+def engines_for_voice(voice: Any) -> list[str]:
+    """这条音色能被哪些引擎用。
+
+    判据来自 :func:`app.domain.credential.credential_of`：一种凭据对应一项能力，
+    凭据为空（:data:`~app.domain.credential.NONE`）就不出现在这里。不看就绪状态：
+    "能不能用"是路由问题，"配没配好"是界面该灰掉的另一件事。
+    """
+    return _engines_for(active_engines(), voice)
+
+
+def is_auto_engine(key: str) -> bool:
+    """这个引擎键是不是「自动」。"""
+    return (key or "").strip() == ENGINE_AUTO
+
+
+def auto_engine_keys(
+    voice: Any | None = None, engines: dict[str, EnginePlugin] | None = None
+) -> list[str]:
+    """「自动」此刻能选的引擎，按优先级（引擎 key 顺序）排好。
+
+    判据与实时对话的自动档一致，只是从服务端算：
+
+    - 只在**已启用**的引擎里挑；
+    - 只挑**此刻可用**的：本地引擎要有实例在跑（与界面绿点同一个 ``available``），
+      云端按量计费，不参与自动——不能替用户悄悄花钱；
+    - 给了音色就只在这条音色能落的引擎里挑（:func:`engines_for_voice`），
+      否则平台音色会被派给一台不认识它的引擎。
+
+    :param engines: 候选集合；不传 = 当前已启用的引擎（测试注入时用）。
+    """
+    pool = engines if engines is not None else active_engines()
+    keys = _engines_for(pool, voice) if voice is not None else list(pool)
+    if not keys:
+        return []
+    live = live_engine_keys(keys)
+    out: list[str] = []
+    for key in keys:
+        engine = pool.get(key)
+        if engine is None:
+            continue
+        _cfg, caps, note = _facts(engine)
+        if caps.kind == KIND_CLOUD:
+            continue
+        if _available(caps.kind, not note, key in live):
             out.append(key)
     return out
 

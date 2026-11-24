@@ -961,3 +961,45 @@ def test_an_unsupported_reference_language_is_dropped_too():
     code, message = notes[0]
     assert code == "language_ignored"
     assert "参考语言" in message
+
+
+def test_auto_engine_resolves_before_routing(scanned, monkeypatch):
+    """``engine=auto`` 由网关选一台实际引擎，结果里带回去，调用方不用跟随实例改。"""
+    from app.usecase import gateway
+
+    hutao = _hutao(scanned)
+    scanned.set_main_sample(hutao.id, "开心.wav")
+    FakeRefEngine.seen = None
+    monkeypatch.setattr(
+        gateway, "auto_engine_keys", lambda voice=None, engines=None: ["fake_ref"]
+    )
+    result = asyncio.run(
+        synthesize(
+            scanned,
+            engine_key="auto",
+            voice_id=hutao.id,
+            text="你好",
+            engines=ENGINES,
+        )
+    )
+    assert result.engine == "fake_ref"
+    assert FakeRefEngine.seen is not None and FakeRefEngine.seen.text == "你好"
+
+
+def test_auto_without_an_available_engine_is_a_clear_error(scanned, monkeypatch):
+    from app.usecase import gateway
+
+    hutao = _hutao(scanned)
+    monkeypatch.setattr(gateway, "auto_engine_keys", lambda voice=None, engines=None: [])
+    with pytest.raises(EngineError) as caught:
+        asyncio.run(
+            synthesize(
+                scanned,
+                engine_key="auto",
+                voice_id=hutao.id,
+                text="你好",
+                engines=ENGINES,
+            )
+        )
+    assert caught.value.code == "engine_auto_unavailable"
+    assert "自动选择" in caught.value.reason

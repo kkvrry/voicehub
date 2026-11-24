@@ -77,6 +77,7 @@ CODES: dict[str, str] = {
     "engine_unsupported": "引擎不支持该操作",
     "engine_no_audio": "引擎未返回音频",
     "engine_required": "缺少目标引擎",
+    "engine_auto_unavailable": "自动选择没有可用引擎",
     "invalid_settings": "引擎设置值不合法",
     "rate_limited": "平台限流，请求过快",
     "voice_not_usable": "音色无法用于该引擎",

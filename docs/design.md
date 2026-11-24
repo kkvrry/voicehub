@@ -210,6 +210,8 @@ FastAPI（单进程）
 | `cache` | 落缓存目录，返回 `audio_url` | 生成页扇出 |
 | `sample` | 落该引擎的音色保存目录，并登记为该音色的样例 | 音色详情的「生成样例」 |
 
+`engine` 可传 `auto`：网关在发请求前从已启用、此刻可用、本地、且这条音色能落的引擎里选一台（与实时对话的自动档同一判据，云端按量计费不参与）。实际引擎写进响应元数据的 `engine`，`cache` / `sample` 的落盘归属也按它算；没有可用引擎时回 400 `engine_auto_unavailable`。
+
 ## 7. 语音识别
 
 识别是与 TTS 方向相反的插件域，契约在 `engines/asr_base.py`：`transcribe` / `readiness` / 能力自描述。

@@ -389,6 +389,9 @@ class SynthesisResult:
     prep_notes: tuple[tuple[str, str], ...] = ()
     #: 平台顺带生成的字幕下载链接（有时效，要留须先落盘）。空 = 没给或未开。
     subtitle_url: str = ""
+    #: 这次实际使用的引擎键。``engine=auto`` 时由网关填，调用方据此归档与回显；
+    #: 插件自己不用写。
+    engine: str = ""
 
 
 @dataclass(frozen=True, slots=True)
