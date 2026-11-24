@@ -803,7 +803,7 @@ export async function speak(char, message) {
   if (!engine) {
     // 没有可发的引擎是这一句的事，不是整页的事：写在行上，不弹一个每句都来的错。
     message.audio_url = ''
-    message.audio_error = '没有可用的合成引擎：需要一台已开启、实例在跑的本地引擎。'
+    message.audio_error = '没有可用的合成引擎：在角色设置里选一台可用的引擎（自动档只挑本地且实例在跑的）。'
     scheduleSave()
     return false
   }
@@ -1241,12 +1241,12 @@ export async function loadVoiceSamples(force = false) {
         now.voice_engines = engines
         changed = true
       }
-      // 用户明确选的那台如果现在不能用了（停用 / 实例没跑 / 本身就是云端），
-      // 回到自动，别让下一句必然失败；自动档只会挑此刻有绿点的本地引擎。
+      // 用户明确选的那台：只要这条音色还落得到它、它自身也可用（云端照样算），就留着。
+      // 落不到或真不能用了才回到自动，别让下一句必然失败。
       if (
         now.voice_engine &&
         now.voice_engine !== 'auto' &&
-        !usableEngineKeys(now).includes(now.voice_engine)
+        !(engines.includes(now.voice_engine) && engineSendable(engineOf(now.voice_engine)))
       ) {
         now.voice_engine = now.voice_id ? 'auto' : ''
         changed = true
@@ -1373,13 +1373,20 @@ export function engineLabel(key) {
 }
 
 /**
- * 这台引擎此刻能不能真的合成：生成页那颗绿点就是它（后端算好的 ``available``）。
- *
- * 云端引擎不算：它按量计费，不能悄悄被自动选中；角色设置里也不列它。
+ * 这台引擎此刻能不能合成：后端算好的 ``available`` 是唯一判据（云端看密钥，本地看实例）。
+ * 用户显式钉住某台时照这个发——云端按量计费由用户自己点头，不在这里替他改。
+ * @param {any} engine
+ */
+function engineSendable(engine) {
+  return Boolean(engine?.available)
+}
+
+/**
+ * 自动档的候选判据：本地 + 此刻可用。云端按量计费，不能悄悄被自动选中。
  * @param {any} engine
  */
 function engineUsable(engine) {
-  return Boolean(engine) && engine.kind !== 'cloud' && Boolean(engine.available)
+  return engineSendable(engine) && engine.kind !== 'cloud'
 }
 
 /** 这条音色可用的引擎里，此刻真有绿点的那几台。 */
@@ -1392,7 +1399,7 @@ export function usableEngineKeys(char) {
 /**
  * 「自动」此刻落在哪台：这条音色可用的引擎里，挑一台**此刻可用（绿点）的本地引擎**。
  *
- * - 云端引擎按量计费，不参与自动；要花钱得由用户明确选（本页也不列云端）。
+ * - 云端引擎按量计费，不参与自动；要花钱由用户在下拉里明确选那台。
  * - 本地引擎光填了地址不算数：实例没起就是不能用，不能拿它顶上去。
  * - 一台都没有就返回空串，由界面说清"没有可用的本地引擎"。
  *
@@ -1402,16 +1409,16 @@ export function resolveAutoEngine(char) {
   return usableEngineKeys(char)[0] || ''
 }
 
-/** 这次真正发给哪台引擎：`auto` 现算；钉住的云端 / 已不可用的引擎也不硬发。 */
+/** 这次真正发给哪台引擎：`auto` 现算；用户钉住的那台照发，不可用时才回落。 */
 /** @param {Character|null} char */
 export function resolveEngine(char) {
   if (!char) return ''
   if (char.voice_engine === 'auto') return resolveAutoEngine(char)
   const pinned = String(char.voice_engine || '')
   if (!pinned) return ''
-  // 云端与当下不可用的引擎一律回落到自动档：宁可这一句没声音并说明原因，
-  // 也不要把一句没配好的请求发出去。
-  return engineUsable(engineOf(pinned)) ? pinned : resolveAutoEngine(char)
+  // 云端也按用户的选择发：按量计费是他自己点的头，不在这里替他省钱。
+  // 只有真不可用（停用 / 没配好 / 实例没跑）才回落到自动档。
+  return engineSendable(engineOf(pinned)) ? pinned : resolveAutoEngine(char)
 }
 
 /**
@@ -1431,7 +1438,10 @@ export function isLocalVoice(char) {
   })
 }
 
-/** 角色设置里引擎候选：只列**本地的**，并带上此刻有没有绿点（能不能真跑）。 */
+/**
+ * 角色设置里引擎候选：这条音色能落到的引擎都列，云端也列——按量计费由用户自己选。
+ * ``available`` 仍是后端算好的绿点；自动档另有判据，不会挑云端。
+ */
 /** @param {Character|null} char */
 export function engineChoices(char) {
   const keys = Array.isArray(char?.voice_engines) ? char.voice_engines : []
@@ -1439,12 +1449,13 @@ export function engineChoices(char) {
   const out = []
   for (const key of keys) {
     const engine = engineOf(key)
-    // 云端不列；已停用 / 已找不到的也不列——列出来只会让人选了才发现用不了。
-    if (!engine || engine.kind === 'cloud') continue
+    // 已停用 / 已找不到的不列——列出来只会让人选了才发现用不了。
+    if (!engine) continue
     out.push({
       key,
       label: engine.label || key,
-      available: Boolean(engine.available),
+      kind: engine.kind,
+      available: engineSendable(engine),
       note: engine.available ? '' : engine.note || '没有实例在跑',
     })
   }

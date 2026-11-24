@@ -540,7 +540,7 @@
                     @change="onEngineChange"
                   >
                     <option value="auto">
-                      自动{{ autoEngine ? ` · ${engineLabel(autoEngine)}` : '（没有可用引擎）' }}
+                      自动{{ autoEngine ? ` · ${engineLabel(autoEngine)}` : '（没有可用的本地引擎）' }}
                     </option>
                     <option v-if="pinnedEngineLabel" :value="char.voice_engine" disabled>
                       {{ pinnedEngineLabel }}（不可用）
@@ -551,7 +551,7 @@
                       :value="item.key"
                       :disabled="!item.available"
                     >
-                      {{ item.label }}{{ item.available ? '' : '（不可用）' }}
+                      {{ item.label }}{{ item.kind === 'cloud' ? '（按量计费）' : '' }}{{ item.available ? '' : '（不可用）' }}
                     </option>
                   </select>
                 </div>
@@ -559,7 +559,7 @@
                   v-if="!autoEngine && !engineOptions.some((item) => item.available)"
                   class="rc-note is-warn"
                 >
-                  没有可用的本地引擎：先在「引擎」页把那几台启起来（有绿点才算可用）。云端引擎不参与这里。
+                  没有可用的引擎：本地引擎要在「引擎」页启起来并有实例在跑；云端引擎要配好密钥。
                 </p>
               </div>
 
@@ -1020,7 +1020,7 @@ function sampleMeta(item) {
   return bits.join(' · ')
 }
 
-/** 角色设置里引擎候选：只有本地引擎，且带上"此刻有没有绿点"。 */
+/** 角色设置里引擎候选：含云端，带上"此刻有没有绿点"；自动档另按本地判据挑。 */
 const engineOptions = computed(() => engineChoices(char.value))
 /** 自动档此刻落在哪台可用引擎；空 = 一台能跑的都没有。 */
 const autoEngine = computed(() => resolveAutoEngine(char.value))
@@ -1030,7 +1030,7 @@ const currentEngine = computed(() => resolveEngine(char.value))
 const currentEngineReady = computed(() =>
   engineOptions.value.some((item) => item.key === currentEngine.value && item.available)
 )
-/** 钉住了一台已经不在候选里的引擎（云端 / 停用 / 没装）：显式列出来，别让下拉空着。 */
+/** 钉住了一台已经不在候选里的引擎（停用 / 没装）：显式列出来，别让下拉空着。 */
 const pinnedEngineLabel = computed(() => {
   const key = String(char.value?.voice_engine || '')
   if (!key || key === 'auto') return ''
