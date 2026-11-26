@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -31,6 +32,7 @@ from app.producers.builtin.audiobook.patterns import (
     split_by_pattern,
     text_payload,
 )
+from app.producers.builtin.audiobook.qc_stage import QcStage
 from app.producers.builtin.audiobook.rows import (
     emotion_groups,
     emotion_words,
@@ -72,6 +74,7 @@ class AudiobookService:
         self.audio = AudioStage(self)
         self.output = MergeStage(self)
         self.loudness = LoudnessStage(self)
+        self.qc = QcStage(self)
         #: 旧项目补目录（一次查询；迁移过的项目不会重复写）。
         self._migrate_layout()
 
@@ -253,6 +256,8 @@ class AudiobookService:
                 "broken": sum(int(chapter["broken"] or 0) for chapter in chapters),
                 # 待生成里"有旧音频、只是不算数"的那部分：改回去能自己恢复。
                 "stale": sum(int(chapter["stale"] or 0) for chapter in chapters),
+                # 预检结论：与 status 正交，同样不与上面几项相加。
+                "suspect": sum(int(chapter["suspect"] or 0) for chapter in chapters),
             },
         }
 
@@ -260,7 +265,7 @@ class AudiobookService:
         # 上一个进程崩溃时来不及写终态：先把"确实没人推进"的那批收掉，再回答。
         # 另一个实例正在跑时心跳新鲜、进程也在，这里不会动它。
         self.store.reclaim_jobs()
-        job = self.store.latest_job(project_id)
+        job = self.store.latest_job(project_id, exclusive_only=True)
         if job and job["state"] in ("running", "cancelling"):
             return job
         return None
@@ -295,11 +300,12 @@ class AudiobookService:
         # 项目根只取一次：每行都去查一次库，一百行就是大半秒的空白。
         root = self.project_folder(project_id)
         loudness_plan = self.loudness.plan(root) if self.settings.row_balance_enabled else {}
+        qc_map = self.store.qc_map(project_id)
         # 单章正文跟着走：没拆句之前界面要能看「这一章是什么」，拆完以行表为准。
         return {
             "chapter": chapter,
             "rows": [
-                self._row_view(project_id, row, root, loudness_plan)
+                self._row_view(project_id, row, root, loudness_plan, qc_map.get(row["id"]))
                 for row in self.store.rows(chapter_id)
             ],
         }
@@ -713,6 +719,7 @@ class AudiobookService:
     def _row_view(
         self, project_id: str, row: dict[str, Any], root: Path | None = None,
         loudness_plan: dict[str, Any] | None = None,
+        qc: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """给前端的行：参数摊平，再加上音频文件的写入时刻。
 
@@ -733,6 +740,13 @@ class AudiobookService:
                 view["audio_version"] = path.stat().st_mtime_ns
             except OSError:
                 view["audio_version"] = 0
+        view["qc"] = ""
+        if qc is not None and qc.get("audio_key") == str(row.get("audio_key") or ""):
+            view["qc"] = str(qc.get("verdict") or "")
+            try:
+                view["qc_detail"] = json.loads(qc.get("detail") or "{}")
+            except ValueError:
+                view["qc_detail"] = {}
         return view
 
     def _audio_version(
@@ -777,8 +791,10 @@ class AudiobookService:
         kind: str,
         total: int,
         runner: Callable[[str], Any],
+        exclusive: bool = True,
+        after: Callable[[str], Any] | None = None,
     ) -> dict[str, Any]:
-        job = self.store.create_job(project_id, kind, total)
+        job = self.store.create_job(project_id, kind, total, exclusive=exclusive)
         job_id = job["id"]
 
         async def guard() -> None:
@@ -802,6 +818,17 @@ class AudiobookService:
                 raise
             cancelled = self.store.job_cancelled(job_id)
             self.store.update_job(job_id, state="cancelled" if cancelled else "done")
+            # 收尾动作在本任务标完终态之后跑：此刻 ``_ensure_idle`` 不再拦它，
+            # 失败也只记一条日志，不回退已完成的终态。
+            if after is not None and not cancelled:
+                try:
+                    after(job_id)
+                except Exception as exc:  # noqa: BLE001 - 收尾失败不该吞掉已完成的任务
+                    CHANNEL.warning(
+                        f"{kind} 任务收尾失败：{exc}",
+                        source="audiobook",
+                        project=project_id,
+                    )
 
         def on_done(task: asyncio.Task) -> None:
             # 取一次异常：CancelledError / BaseException 两个分支会重新抛，

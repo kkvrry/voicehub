@@ -222,6 +222,14 @@ class AudiobookSettings(BaseModel):
         ),
         json_schema_extra=ui_hints("合成并发", widget="number", group=GROUP_SYNTH),
     )
+    qc_enabled: bool = Field(
+        default=False,
+        description=(
+            "生成结束后把新音频再识别一遍，与原文比对，疑似行入行表的「疑似」档。"
+            "只作提示，不改行状态、不阻断合并；识别引擎与「设置 → 识别」用的是同一台。"
+        ),
+        json_schema_extra=ui_hints("生成后预检", widget="switch", group=GROUP_SYNTH),
+    )
 
     # ---- 成品合并（把逐行产物拼成章节） ------------------------------------
     merge_format: str = Field(

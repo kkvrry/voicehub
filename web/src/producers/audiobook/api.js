@@ -194,6 +194,12 @@ export const runStep = (key, id, step, body) =>
 
 /**
  * @param {string} key
+ * @param {string} id
+ */
+export const qcReport = (key, id) => request(`${base(key)}/projects/${id}/qc`)
+
+/**
+ * @param {string} key
  * @param {string} jobId
  */
 export const job = (key, jobId) => request(`${base(key)}/jobs/${jobId}`)

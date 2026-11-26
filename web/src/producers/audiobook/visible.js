@@ -23,6 +23,7 @@ export function isBroken(row) {
 export function matchesFilter(row, filter) {
   if (filter === 'failed') return row.status === 'failed'
   if (filter === 'broken') return isBroken(row)
+  if (filter === 'suspect') return row.qc === 'suspect'
   return true
 }
 

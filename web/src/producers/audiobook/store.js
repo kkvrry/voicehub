@@ -34,7 +34,7 @@ export const state = reactive({
   mergeBatch: /** @type {any} */ (null), // 逐章合并进度：{ done, total, title }
   mergeProgress: /** @type {any} */ (null), // 当前章节处理阶段：{ stage, message, done, total }
   mergeStopping: false, // 已请求停止合并，等待当前进程退出
-  job: /** @type {any} */ (null), // 后台任务：analysis / audio / loudness
+  job: /** @type {any} */ (null), // 后台任务：analysis / audio / qc
   projectOpen: false, // 项目管理卡片：导入栏 + 已有项目的改名 / 作者 / 删除
   importing: false,
   // 分章与文本处理：原文只在打开面板时取一次，章节是它的派生物。
@@ -157,7 +157,10 @@ function resumeJob() {
 }
 
 export function runningJob() {
-  return state.job && ACTIVE.has(state.job.state) ? state.job : null
+  const job = state.job
+  if (!job || !ACTIVE.has(job.state)) return null
+  // 预检是旁路任务：只读行音频，不参与「同时只跑一个任务」的判定。
+  return job.exclusive === 0 ? null : job
 }
 
 /** 重取项目列表与当前项目。列表里的项目被删掉时自动落到第一个。 */
@@ -700,7 +703,7 @@ function announceSplit(report) {
 }
 
 /**
- * 跑一步：分章/拆句是同步的；分析/生成/响度处理返回任务，进度由轮询推进。
+ * 跑一步：分章/拆句是同步的；分析/生成/预检返回任务，进度由轮询推进。
  * 拆句默认重切全部章节（文本未变的行保留角色、情绪与音频）；`scope: 'pending'`
  * 只处理还没有行的章。两个入口同一套规则，差别只在范围。
  *
@@ -736,6 +739,17 @@ export async function runStep(step, options = {}) {
   }
 }
 
+/** 预检摘要：已检 / 疑似 / 未检，以及识别引擎现在能不能用。 */
+export async function loadQcReport() {
+  const detail = state.detail
+  if (!detail) return null
+  try {
+    return await api.qcReport(key(), detail.id)
+  } catch {
+    return null
+  }
+}
+
 function startPoll() {
   stopPoll()
   const startedAt = Date.now()
@@ -753,12 +767,12 @@ function startPoll() {
       await refresh()
       if (job.state === 'failed') {
         say(job.message || '任务失败', { kind: 'error' })
-      } else if (job.state === 'done' && (job.total || job.kind === 'loudness')) {
-        const label = job.kind === 'loudness' ? '响度处理' : job.kind === 'audio' ? '生成' : '分析'
+      } else if (job.state === 'done' && job.total) {
+        const label = job.kind === 'audio' ? '生成' : job.kind === 'qc' ? '预检' : '分析'
         const summary = job.failed
           ? `${label}结束：成功 ${job.done} 行，失败 ${job.failed} 行`
           : `${label}完成：${job.done} 行`
-        say(job.kind === 'loudness' ? job.message || summary : summary, {
+        say(summary, {
           kind: job.failed ? 'warn' : 'success',
         })
       }

@@ -238,9 +238,15 @@ def build_router(service: AudiobookService) -> APIRouter:
             project_id, request.app.state.library, plan
         )
 
-    @router.post("/projects/{project_id}/steps/loudness", summary="处理全书行音频响度", status_code=202)
-    async def loudness(project_id: str) -> dict[str, Any]:
-        return service.loudness.start(project_id)
+    @router.post("/projects/{project_id}/steps/qc", summary="回读预检", status_code=202)
+    async def qc(project_id: str) -> dict[str, Any]:
+        return service.qc.start(project_id)
+
+    @router.get("/projects/{project_id}/qc", summary="预检结果")
+    def qc_report(project_id: str) -> dict[str, Any]:
+        if not service.store.project_meta(project_id):
+            raise ProducerError("项目不存在。")
+        return service.qc.report(project_id)
 
     @router.get("/projects/{project_id}/merge-progress", summary="合并处理进度")
     def merge_progress(project_id: str) -> dict[str, Any]:

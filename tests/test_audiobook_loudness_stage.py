@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import math
 import struct
@@ -335,18 +334,3 @@ def test_cancel_mid_merge_keeps_previous_product(tmp_path: Path, monkeypatch) ->
     assert abs_path(svc.project_folder(project_id), refreshed["audio"]) == output
     assert svc.output.progress(project_id)["stage"] == "cancelled"
     assert svc.output.cancel(project_id) is False
-
-
-def test_async_job_reports_progress_and_completes(tmp_path: Path) -> None:
-    svc, project_id = project(tmp_path, AudiobookSettings(row_balance_enabled=True))
-
-    async def run():
-        job = svc.loudness.start(project_id)
-        assert job["kind"] == "loudness"
-        await svc._tasks[job["id"]]
-        return svc.store.job(job["id"])
-
-    job = asyncio.run(run())
-    assert job["state"] == "done"
-    assert job["done"] == job["total"] == 8
-    assert "测量" in job["message"]

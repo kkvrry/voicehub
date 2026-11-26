@@ -178,6 +178,7 @@ function pickProject(id) {
 const FILTER_LABELS = {
   failed: '失败',
   broken: '需校对',
+  suspect: '疑似',
 }
 const rowFilter = computed(() => state.rowFilter || 'all')
 

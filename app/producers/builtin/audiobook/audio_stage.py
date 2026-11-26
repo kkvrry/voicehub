@@ -684,6 +684,16 @@ class AudioStage:
             raise ProducerError(missing)
         return self._audio_plan(project_id, rows)
 
+    def _after_audio(self, project_id: str, job_id: str) -> None:
+        """生成任务收尾：开关开着就接一趟预检。独占任务已经标完终态，不会撞锁。"""
+        if not self.settings.qc_enabled:
+            return
+        self.svc.qc.start(project_id)
+        current = (self.svc.store.job(job_id) or {}).get("message") or ""
+        self.svc.store.update_job(
+            job_id, message=f"{current}；已启动预检" if current else "已启动预检"
+        )
+
     def start_audio(self, project_id: str, library: Any) -> dict[str, Any]:
         """同步入口：准备 + 建任务。API 那边拆成两步，好把准备放进线程。"""
         return self.start_audio_planned(project_id, library, self.prepare_audio(project_id))
@@ -712,6 +722,7 @@ class AudioStage:
             len(plan.tasks),
             # 计划直接带进任务：同一份东西算两遍，用户就多等一遍。
             lambda job_id: self.synthesize(project_id, library, job_id, plan),
+            after=lambda job_id: self._after_audio(project_id, job_id),
         )
         if note:
             # 启动时就说清楚跳过了谁：任务跑起来后，这句话会被进度说明顶掉。

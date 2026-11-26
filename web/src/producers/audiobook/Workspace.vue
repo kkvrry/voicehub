@@ -1,7 +1,7 @@
 <template>
   <section class="app-panel producer-panel">
 
-    <div v-if="running" class="producer-job" role="status" aria-live="polite">
+    <div v-if="activeJob" class="producer-job" role="status" aria-live="polite">
       <span class="job-kind">{{ jobLabel }}</span>
       <span class="job-count">
         {{ state.job.done }}/{{ state.job.total }}
@@ -560,7 +560,8 @@
       @close="paramsRow = null"
       @saved="onParamsSaved"
     />
-    <MergeDialog :open="mergeOpen" :loudness-only="loudnessOnly" @close="mergeOpen = false" />
+    <MergeDialog :open="mergeOpen" @close="mergeOpen = false" />
+    <QcDialog :open="qcOpen" @close="qcOpen = false" @run="startQc" />
     <GenerateDialog :open="generateOpen" @close="generateOpen = false" @run="startGenerate" />
     <AnalysisDialog
       :open="analysisOpen"
@@ -590,6 +591,7 @@ import {
   AlignLeft,
   BookOpen,
   Combine,
+  Ear,
   Loader2,
   Mic,
   Play,
@@ -613,6 +615,7 @@ import EmotionField from './EmotionField.vue'
 import Rail from './Rail.vue'
 import GenerateDialog from './GenerateDialog.vue'
 import MergeDialog from './MergeDialog.vue'
+import QcDialog from './QcDialog.vue'
 import ProjectDialog from './ProjectDialog.vue'
 import RowMenu from './RowMenu.vue'
 import RowParamsDialog from './RowParamsDialog.vue'
@@ -657,7 +660,7 @@ const plugin = computed(() => store.producers.find(/** @param {any} item */ (ite
 const settings = useSettingsStore()
 const optionsOpen = ref(false)
 const mergeOpen = ref(false)
-const loudnessOnly = ref(false)
+const qcOpen = ref(false)
 const analysisOpen = ref(false)
 const generateOpen = ref(false)
 const voiceToolsOpen = ref(false)
@@ -721,7 +724,7 @@ const STEP_META = {
   sentences: { label: '语句拆分', icon: Scissors },
   analysis: { label: '对话分析', icon: Sparkles },
   audio: { label: 'TTS 生成', icon: Mic },
-  loudness: { label: '响度处理', icon: SlidersHorizontal },
+  qc: { label: '预检', icon: Ear },
   merge: { label: '合并音频', icon: Combine },
 }
 
@@ -776,8 +779,15 @@ async function openStep(key) {
     generateOpen.value = true
     return
   }
-  if (key === 'loudness' || key === 'merge') {
-    loudnessOnly.value = key === 'loudness'
+  if (key === 'qc') {
+    if (!detail.value?.stats?.audio) {
+      say('还没有逐行音频：先生成音频。', { kind: 'warn' })
+      return
+    }
+    qcOpen.value = true
+    return
+  }
+  if (key === 'merge') {
     mergeOpen.value = true
   }
 }
@@ -810,6 +820,11 @@ function startAnalysis() {
 function startGenerate() {
   generateOpen.value = false
   run('audio')
+}
+
+function startQc() {
+  qcOpen.value = false
+  run('qc')
 }
 
 const detail = computed(() => state.detail)
@@ -912,9 +927,12 @@ const emotionGroups = computed(() =>
 const chapter = computed(
   () => detail.value?.chapters.find(/** @param {any} item */ (item) => item.id === state.chapterId) || null
 )
-const running = computed(
+/** 有任务在跑（含预检）。任务条读它，预检的进度才看得见。 */
+const activeJob = computed(
   () => Boolean(state.job && ['running', 'cancelling'].includes(state.job.state))
 )
+/** 独占任务在跑：预检只读音频，不挡生成与合并。 */
+const running = computed(() => Boolean(activeJob.value && state.job.exclusive !== 0))
 const busy = computed(() => Boolean(state.busy) || running.value)
 const jobLabel = computed(() => {
   const kind = state.job?.kind
@@ -922,7 +940,7 @@ const jobLabel = computed(() => {
     (/** @type {Record<string, string>} */ ({
       audio: '生成',
       analysis: '分析',
-      loudness: '响度处理',
+      qc: '预检',
     })[kind]) || '任务'
   )
 })
@@ -943,7 +961,7 @@ const BUSY_TEXT = {
   sentences: { kind: '拆句', message: '正在拆句……' },
   analysis: { kind: '分析', message: '正在分析对话……' },
   audio: { kind: '生成', message: '正在启动生成任务……' },
-  loudness: { kind: '响度处理', message: '正在启动全书行音频处理……' },
+  qc: { kind: '预检', message: '正在回读行音频……' },
   merge: { kind: '合并', message: '正在合并本章：拼接音频、写字幕与 BGM……' },
   'merge-all': { kind: '合并', message: '正在逐章合并……' },
   export: { kind: '导出', message: '正在打包 ZIP……' },
@@ -991,7 +1009,7 @@ function stepBlocked(key) {
   if (key === 'sentences') return !stats.chapters
   if (key === 'analysis') return !stats.rows || !stats.dialogue
   if (key === 'audio') return !stats.rows
-  if (key === 'loudness' || key === 'merge') return !stats.audio
+  if (key === 'qc' || key === 'merge') return !stats.audio
   return false
 }
 
@@ -1014,8 +1032,8 @@ function stepTitle(key) {
   if (key === 'audio') {
     return stepBlocked(key) ? '还没有可生成的行：先拆句。' : '按角色音色逐行生成音频'
   }
-  if (key === 'loudness') {
-    return stepBlocked(key) ? '还没有逐行音频：先生成音频。' : '可选：调整行级均衡与成品响度，不覆盖原始音频'
+  if (key === 'qc') {
+    return stepBlocked(key) ? '还没有逐行音频：先生成音频。' : '回读已生成的音频，找出念错、漏读与截断'
   }
   if (key === 'merge') {
     return stepBlocked(key) ? '还没有逐行音频：先生成音频。' : '把逐行音频合成章节成品'
@@ -1032,12 +1050,13 @@ const filter = computed({
     state.rowFilter = value
   },
 })
-// 只留"要人动手"的两类：失败与缺字。未定角色、待生成都能从行上直接看出来，
-// 且每个角色在音色管理里已按行数列出，不另立两个统计档。
+// 只留"要人动手"的几类：失败、缺字、预检疑似。未定角色、待生成都能从行上直接
+// 看出来，且每个角色在音色管理里已按行数列出，不另立两个统计档。
 const filters = [
   { key: 'all', label: '全部' },
   { key: 'failed', label: '失败' },
   { key: 'broken', label: '需校对' },
+  { key: 'suspect', label: '疑似' },
 ]
 // 章节栏要读同一份角色筛选，所以与 rowFilter 一样放在生产方 store 里。
 const speakerFilter = computed({
@@ -1121,6 +1140,7 @@ const emptyText = computed(() => {
   if (speakerFilter.value) return '这个角色在本章没有行。'
   if (filter.value === 'failed') return '没有失败的行。'
   if (filter.value === 'broken') return '这一章没有缺字的行。'
+  if (filter.value === 'suspect') return '这一章没有疑似读错的行。'
   return '这一章还没有拆句。'
 })
 
@@ -1130,6 +1150,7 @@ const emptyText = computed(() => {
 function filterCount(kind) {
   if (kind === 'failed') return state.rows.filter(/** @param {any} row */ (row) => row.status === 'failed').length
   if (kind === 'broken') return state.rows.filter(isBroken).length
+  if (kind === 'suspect') return state.rows.filter(/** @param {any} row */ (row) => row.qc === 'suspect').length
   return state.rows.length
 }
 

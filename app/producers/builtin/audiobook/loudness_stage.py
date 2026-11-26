@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import os
@@ -129,37 +128,6 @@ class LoudnessStage:
         remaining = {key: value for key, value in rows.items() if key not in row_ids}
         if len(remaining) != len(rows):
             _write_json(root / "loudness" / "rows.json", {**plan, "rows": remaining})
-
-    def start(self, project_id: str) -> dict[str, Any]:
-        self.svc._ensure_idle(project_id)
-        if not self.svc.store.project_meta(project_id):
-            raise ProducerError("项目不存在。")
-        if not self.svc.settings.row_balance_enabled:
-            raise ProducerError("先开启行级响度均衡。")
-
-        async def run(job_id: str) -> None:
-            await asyncio.to_thread(self._run_job, project_id, job_id)
-
-        return self.svc._start_job(project_id, "loudness", 0, run)
-
-    def _run_job(self, project_id: str, job_id: str) -> None:
-        from app.producers.builtin.audiobook.merge_stage import _merge_lock
-
-        lock = _merge_lock(project_id)
-        if not lock.acquire(blocking=False):
-            raise ProducerError("这个项目正在合并，等当前合并结束再处理。")
-        try:
-            def progress(stage: str, done: int, total: int, message: str) -> None:
-                self.svc.store.update_job(job_id, done=done, total=total, message=message)
-
-            result = self.process(
-                project_id, self.svc.settings, progress,
-                cancelled=lambda: self.svc.store.job_cancelled(job_id),
-            )
-            if not result.get("cancelled"):
-                self.svc.store.update_job(job_id, message=result["message"])
-        finally:
-            lock.release()
 
     def process(
         self,

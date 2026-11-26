@@ -2,10 +2,10 @@
   <Teleport :to="overlayTarget">
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="$emit('close')">
-        <div class="vh-modal merge-dialog" role="dialog" aria-modal="true" :aria-label="loudnessOnly ? '响度处理' : '合并音频'">
+        <div class="vh-modal merge-dialog" role="dialog" aria-modal="true" aria-label="合并音频">
           <header class="merge-head">
             <div>
-              <h2 class="merge-title">{{ loudnessOnly ? '响度处理' : '合并音频' }}</h2>
+              <h2 class="merge-title">合并音频</h2>
               <p class="merge-note">{{ note }}</p>
             </div>
             <button class="sh-btn is-icon" title="关闭" @click="$emit('close')">
@@ -14,7 +14,7 @@
           </header>
 
           <div class="merge-body">
-            <section v-if="!loudnessOnly" class="merge-group">
+            <section class="merge-group">
               <div class="merge-group-title">成品</div>
               <div class="merge-pair">
                 <label class="merge-field" for="merge-format">
@@ -139,21 +139,11 @@
                     </label>
                   </template>
                 </div>
-                <ActionButton
-                  v-if="section.enabled === 'row_balance_enabled'"
-                  variant="ghost"
-                  size="sm"
-                  :disabled="!form.row_balance_enabled || !audioCount || taskBusy || saving"
-                  :title="processRowsHint"
-                  @click="processRows"
-                >
-                  处理全书行音频
-                </ActionButton>
               </div>
-              <p class="merge-hint">保存后需重新处理行音频或合并；已有成品不会自动改变。</p>
+              <p class="merge-hint">合并后生效。</p>
             </section>
 
-            <section v-if="!loudnessOnly" class="merge-group">
+            <section class="merge-group">
               <div class="merge-group-title">字幕</div>
               <div class="merge-switches">
                 <div class="merge-toggle">
@@ -187,7 +177,7 @@
               </label>
             </section>
 
-            <section v-if="!loudnessOnly" class="merge-group">
+            <section class="merge-group">
               <div class="merge-group-title">背景音乐</div>
               <div class="merge-toggle">
                 <span class="merge-toggle-main">
@@ -250,8 +240,7 @@
             </ActionButton>
             <span class="spacer"></span>
             <button
-              v-if="!loudnessOnly"
-              class="sh-btn is-ghost"
+                            class="sh-btn is-ghost"
               :disabled="!chapter || !chapter.rows || taskBusy || saving"
               @click="run('chapter')"
             >
@@ -259,8 +248,7 @@
               合并本章
             </button>
             <button
-              v-if="!loudnessOnly"
-              class="sh-btn is-ghost"
+                            class="sh-btn is-ghost"
               :disabled="!audioCount || taskBusy || saving"
               :title="
                 pendingCount
@@ -273,8 +261,7 @@
               {{ pendingCount ? '合并全部章节' : '重新合并全部' }}
             </button>
             <button
-              v-if="!loudnessOnly"
-              class="sh-btn is-ghost"
+                            class="sh-btn is-ghost"
               :disabled="!allMerged || taskBusy || saving"
               title="每章一个文件，打包成书名.zip"
               @click="run('export')"
@@ -283,8 +270,7 @@
               导出 ZIP
             </button>
             <button
-              v-if="!loudnessOnly"
-              class="sh-btn is-ghost"
+                            class="sh-btn is-ghost"
               :disabled="!allMerged || taskBusy || saving"
               title="整本一个文件，章节内嵌，手机播放器可直接跳章"
               @click="run('m4b')"
@@ -315,14 +301,12 @@ import {
   downloadChapters,
   downloadM4b,
   runningJob,
-  runStep,
   selectChapter,
 } from './store'
 import { overlayTarget } from '../../composables/overlayTarget'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  loudnessOnly: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close'])
 
@@ -394,13 +378,6 @@ const loudnessSections = [
 ]
 const form = reactive(/** @type {Record<string, any>} */ ({}))
 const taskBusy = computed(() => Boolean(state.busy || runningJob() || state.importing))
-const processRowsHint = computed(() => {
-  if (!form.row_balance_enabled) return '需先开启行级均衡。'
-  if (!audioCount.value) return '全书还没有可处理的行音频。'
-  if (taskBusy.value || saving.value) return '等待当前任务结束。'
-  return '保存当前设置后处理全书已有行音频；旧成品需重新合并。'
-})
-
 const saving = ref(false)
 const saved = ref(/** @type {Record<string, any>} */ ({}))
 
@@ -478,7 +455,7 @@ async function save() {
     if (plugin.value?.key !== producerKey) return false
     syncFrom(payload.values)
     if (detail.value?.id === projectId) await selectChapter(state.chapterId)
-    say(props.loudnessOnly ? '响度设置已保存' : '合并设置已保存')
+    say('合并设置已保存')
     return true
   } catch (error) {
     say(String(error instanceof Error ? error.message : String(error)), { kind: 'error' })
@@ -486,17 +463,6 @@ async function save() {
   } finally {
     saving.value = false
   }
-}
-
-async function processRows() {
-  if (!form.row_balance_enabled || !audioCount.value || taskBusy.value || saving.value) return
-  const projectId = detail.value?.id
-  const producerKey = plugin.value?.key
-  if (!(await save())) return
-  // 保存期间可能切换项目或开始另一项任务，不能把处理请求发给新项目。
-  if (detail.value?.id !== projectId || plugin.value?.key !== producerKey || taskBusy.value) return
-  emit('close')
-  await runStep('loudness')
 }
 
 /**

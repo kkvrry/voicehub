@@ -28,6 +28,8 @@ dependencies = [
     "tokenizers>=0.20",
     # 头像裁切与向量计算直接 import numpy，不靠 onnxruntime 的传递依赖碰运气。
     "numpy>=1.26",
+    # 回读预检按音节比对，同音字才能归并成一致；纯字典，不下载权重。
+    "pypinyin>=0.53",
     # 内录：WASAPI loopback。浏览器拿不到其他程序的输出，只能在本机采；
     # 这一个库直接调系统音频接口，不要求用户另装虚拟声卡。
     "soundcard>=0.4.6",

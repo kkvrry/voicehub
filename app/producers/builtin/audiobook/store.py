@@ -133,6 +133,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     owner TEXT NOT NULL DEFAULT '',
     -- 心跳（秒级时间戳）。任务活着就每几秒写一次，停了会被判成中断。
     heartbeat_at INTEGER NOT NULL DEFAULT 0,
+    -- 0 = 旁路任务（当前只有预检）：只读行音频、只写自己的结果表，
+    -- 不参与「同一项目同时只跑一个任务」的判定，合并与生成不必等它。
+    exclusive INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -149,6 +152,19 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     payload TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+-- 回读预检结果：一行一条。``audio_key`` 是检查时那一版音频的指纹，读的时候
+-- 对不上就当没检过——换引擎或重生成后旧结论自动失效，不需要谁去清。
+CREATE TABLE IF NOT EXISTS row_qc (
+    row_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    audio_key TEXT NOT NULL DEFAULT '',
+    verdict TEXT NOT NULL,
+    score REAL NOT NULL DEFAULT 0,
+    detail TEXT NOT NULL DEFAULT '{}',
+    engine TEXT NOT NULL DEFAULT '',
+    checked_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_row_qc_project ON row_qc(project_id, verdict);
 """
 
 
@@ -247,6 +263,9 @@ class AudiobookStore:
         # 历史数据：批量改角色时曾把行状态写成非法的 'analysis'（正确是 'analyzed'），
         # 那些行永远不算"已标注"，每次开库顺手订正。
         conn.execute("UPDATE rows SET status = 'analyzed' WHERE status = 'analysis'")
+        job_columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+        if "exclusive" not in job_columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN exclusive INTEGER NOT NULL DEFAULT 1")
         project_columns = {row["name"] for row in conn.execute("PRAGMA table_info(projects)")}
         if "author" not in project_columns:
             # 作者只进书目信息与成品标签，不参与任何路径。
@@ -551,7 +570,8 @@ class AudiobookStore:
                    COALESCE(s.unassigned, 0) AS unassigned,
                    COALESCE(s.failed, 0) AS failed,
                    COALESCE(s.pending, 0) AS pending,
-                   COALESCE(s.stale, 0) AS stale
+                   COALESCE(s.stale, 0) AS stale,
+                   COALESCE(q2.suspect, 0) AS suspect
             FROM chapters c
             LEFT JOIN (
                 SELECT chapter_id, COUNT(*) AS total,
@@ -574,6 +594,13 @@ class AudiobookStore:
                 FROM rows
                 GROUP BY chapter_id
             ) s ON s.chapter_id = c.id
+            -- 预检结论跟着那一版音频走：指纹对不上的行按没检过算。
+            LEFT JOIN (
+                SELECT r.chapter_id, COUNT(*) AS suspect
+                FROM row_qc q JOIN rows r ON r.id = q.row_id
+                WHERE q.verdict = 'suspect' AND q.audio_key = COALESCE(r.audio_key, '')
+                GROUP BY r.chapter_id
+            ) q2 ON q2.chapter_id = c.id
             WHERE c.project_id = ?
             ORDER BY c.ordinal
             """,
@@ -1131,6 +1158,47 @@ class AudiobookStore:
             conn.execute(
                 "DELETE FROM row_claims WHERE row_id = ? AND owner = ?", (row_id, self.owner)
             )
+
+    # ---- 回读预检 ---------------------------------------------------------
+
+    def qc_map(self, project_id: str) -> dict[str, dict[str, Any]]:
+        rows = self._query("SELECT * FROM row_qc WHERE project_id = ?", (project_id,))
+        return {row["row_id"]: dict(row) for row in rows}
+
+    def qc_put(self, project_id: str, items: list[dict[str, Any]]) -> None:
+        if not items:
+            return
+        now = _now()
+        with self._conn() as conn:
+            conn.executemany(
+                "INSERT INTO row_qc(row_id, project_id, audio_key, verdict, score, detail,"
+                " engine, checked_at) VALUES(?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(row_id) DO UPDATE SET project_id = excluded.project_id,"
+                " audio_key = excluded.audio_key, verdict = excluded.verdict,"
+                " score = excluded.score, detail = excluded.detail,"
+                " engine = excluded.engine, checked_at = excluded.checked_at",
+                [
+                    (
+                        item["row_id"], project_id, item.get("audio_key", ""),
+                        item["verdict"], float(item.get("score", 0.0)),
+                        json.dumps(item.get("detail") or {}, ensure_ascii=False),
+                        item.get("engine", ""), now,
+                    )
+                    for item in items
+                ],
+            )
+
+    def qc_prune(self, project_id: str, alive: set[str]) -> None:
+        """删掉已经不存在的行留下的结论：重新分章之后旧结论没有宿主。"""
+        rows = self._query("SELECT row_id FROM row_qc WHERE project_id = ?", (project_id,))
+        dead = [(row["row_id"],) for row in rows if row["row_id"] not in alive]
+        if dead:
+            with self._conn() as conn:
+                conn.executemany("DELETE FROM row_qc WHERE row_id = ?", dead)
+
+    def qc_clear(self, project_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute("DELETE FROM row_qc WHERE project_id = ?", (project_id,))
 
     def row(self, row_id: str) -> dict[str, Any] | None:
         with self._conn() as conn:
@@ -1821,14 +1889,17 @@ class AudiobookStore:
 
     # ---- 任务 -------------------------------------------------------------
 
-    def create_job(self, project_id: str, kind: str, total: int = 0) -> dict[str, Any]:
+    def create_job(
+        self, project_id: str, kind: str, total: int = 0, exclusive: bool = True
+    ) -> dict[str, Any]:
         job_id = _new_id()
         now = _now()
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO jobs(id, project_id, kind, state, total, owner, heartbeat_at,"
-                " created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                (job_id, project_id, kind, "running", total, self.owner, _stamp(), now, now),
+                " exclusive, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (job_id, project_id, kind, "running", total, self.owner, _stamp(),
+                 1 if exclusive else 0, now, now),
             )
         return self.job(job_id) or {}
 
@@ -1871,13 +1942,15 @@ class AudiobookStore:
         return len(interrupted)
 
     def latest_job(
-        self, project_id: str, conn: sqlite3.Connection | None = None
+        self,
+        project_id: str,
+        conn: sqlite3.Connection | None = None,
+        exclusive_only: bool = False,
     ) -> dict[str, Any] | None:
-        rows = self._query(
-            "SELECT * FROM jobs WHERE project_id = ? ORDER BY rowid DESC LIMIT 1",
-            (project_id,),
-            conn,
-        )
+        sql = "SELECT * FROM jobs WHERE project_id = ?"
+        if exclusive_only:
+            sql += " AND exclusive = 1"
+        rows = self._query(f"{sql} ORDER BY rowid DESC LIMIT 1", (project_id,), conn)
         return dict(rows[0]) if rows else None
 
     def update_job(

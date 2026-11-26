@@ -79,7 +79,7 @@ def test_registry_lists_steps_and_settings() -> None:
         "sentences",
         "analysis",
         "audio",
-        "loudness",
+        "qc",
         "merge",
     ]
     assert data["settings_group"] == {"key": "producer:audiobook", "label": "创作"}
