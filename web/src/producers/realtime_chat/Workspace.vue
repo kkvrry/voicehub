@@ -38,10 +38,7 @@
         </div>
       </Transition>
       <header v-if="char" class="rc-plate" title="滚轮切换角色" @wheel.prevent="onPlateWheel">
-        <div class="rc-kicker"><b aria-hidden="true" />角色</div>
         <div class="rc-name-row">
-          <h1 class="rc-name">{{ char.name }}</h1>
-          <!-- 换人不铺一排名字：当前角色名旁边一颗键，点开才列。 -->
           <span ref="switchEl" class="rc-switch-wrap">
             <button
               type="button"
@@ -76,35 +73,20 @@
               </div>
             </Transition>
           </span>
+          <h1 class="rc-name">{{ char.name }}</h1>
+          <button
+            type="button"
+            class="rc-edit"
+            title="编辑角色"
+            aria-label="编辑角色"
+            aria-haspopup="dialog"
+            :aria-expanded="sheetOpen"
+            @click="openSheet"
+          >
+            <PenLine :size="14" :stroke-width="1.8" />
+          </button>
         </div>
         <p class="rc-intro">{{ introLine(char) }}</p>
-        <div class="rc-plate-acts">
-          <button
-            type="button"
-            class="rc-chip"
-            aria-haspopup="dialog"
-            :aria-expanded="sheetOpen"
-            @click="openSheet"
-          >
-            <PenLine :size="13" :stroke-width="1.8" aria-hidden="true" />
-            编辑角色
-          </button>
-          <button
-            type="button"
-            class="rc-chip"
-            :class="{ 'is-quiet': !char.voice_id }"
-            :title="cellVoiceTitle"
-            aria-haspopup="dialog"
-            :aria-expanded="sheetOpen"
-            @click="openSheet"
-          >
-            <span v-if="state.speakingId" class="rc-bars" aria-hidden="true">
-              <i /><i /><i />
-            </span>
-            <Volume2 v-else :size="13" :stroke-width="1.8" aria-hidden="true" />
-            {{ char.voice_id ? char.voice_name : '未指定音色' }}
-          </button>
-        </div>
       </header>
 
       <section v-if="char && !readHidden" class="rc-read">
@@ -121,20 +103,20 @@
             <button
               type="button"
               class="rc-tool"
-              :title="`记录：共 ${sessions.length} 份`"
+              :title="`对话：共 ${sessions.length} 个`"
               aria-haspopup="dialog"
               :aria-expanded="tocOpen"
               @click="openToc"
             >
               <List :size="14" :stroke-width="1.8" aria-hidden="true" />
-              <span class="rc-tool-label">记录</span>
+              <span class="rc-tool-label">对话</span>
               <span class="rc-tool-n">{{ sessions.length }}</span>
             </button>
             <button
               type="button"
               class="rc-tool is-icon"
-              title="新的一份记录"
-              aria-label="新的一份记录"
+              title="创建对话"
+              aria-label="创建对话"
               @click="onNewSession"
             >
               <Plus :size="15" :stroke-width="1.8" />
@@ -222,7 +204,6 @@
 
           <div v-else class="rc-blank">
             <p class="rc-blank-line">还没有开始。</p>
-            <p class="rc-blank-sub">写一句，{{ char.name }} 就接住了。</p>
           </div>
 
           <div v-if="state.liveText" class="rc-line user is-live">
@@ -284,7 +265,7 @@
                 type="button"
                 class="rc-model"
                 :class="{ 'is-open': modelOpen, 'is-warn': Boolean(providerNote()) }"
-                title="对话模型"
+                :title="modelFullHint()"
                 aria-haspopup="dialog"
                 :aria-expanded="modelOpen"
                 @click="toggleModel"
@@ -339,17 +320,17 @@
           </div>
         </div>
 
-        <!-- 记录：压在台本这一层上，她的名字与人设仍露在外面。 -->
+        <!-- 对话列表：压在台本这一层上，她的名字与人设仍露在外面。 -->
         <Transition name="rc-toc">
-          <div v-if="tocOpen" class="rc-toc" aria-label="聊天记录">
+          <div v-if="tocOpen" class="rc-toc" aria-label="对话列表">
             <header class="rc-toc-head">
-              <h2>记录</h2>
-              <span class="rc-toc-count">{{ sessions.length }} 份</span>
+              <h2>对话</h2>
+              <span class="rc-toc-count">{{ sessions.length }} 个</span>
               <button
                 type="button"
                 class="rc-tool is-icon"
                 title="收起"
-                aria-label="收起记录"
+                aria-label="收起对话"
                 @click="tocOpen = false"
               >
                 <X :size="15" :stroke-width="1.8" />
@@ -368,14 +349,13 @@
                   <span class="rc-toc-n">{{ sessionCount(row) }} 条</span>
                 </button>
                 <div v-if="confirmId === row.id" class="rc-toc-confirm">
-                  <span>删掉这一份？</span>
                   <button
                     type="button"
                     class="rc-danger"
                     :disabled="Boolean(state.busy)"
                     @click="dropSession(row.id)"
                   >
-                    删除
+                    确认删除
                   </button>
                   <button type="button" @click="confirmId = ''">取消</button>
                 </div>
@@ -384,8 +364,8 @@
                   type="button"
                   class="rc-toc-del"
                   :disabled="Boolean(state.busy)"
-                  title="删除这一份记录"
-                  aria-label="删除这一份记录"
+                  title="删除这个对话"
+                  aria-label="删除这个对话"
                   @click="confirmId = row.id"
                 >
                   <Trash2 :size="13" :stroke-width="1.8" />
@@ -395,7 +375,7 @@
             <footer class="rc-toc-foot">
               <button type="button" class="sh-btn is-soft is-sm" @click="onNewSession">
                 <Plus :size="13" :stroke-width="1.8" />
-                新的一份记录
+                创建对话
               </button>
             </footer>
           </div>
@@ -689,7 +669,7 @@
                   ? '至少留一个角色'
                   : state.busy
                     ? '等这一轮对话结束再删'
-                    : '删除这个角色与它的全部记录'
+                    : '删除角色与它的全部对话'
               "
               @click="onDeleteCharacter"
             >
@@ -750,6 +730,7 @@ import {
   listenStop,
   listenToggle,
   messages,
+  modelFullHint,
   modelHint,
   newSession,
   playMessage,
@@ -810,6 +791,16 @@ const sheetOpen = computed({
     state.sheetOpen = value
   },
 })
+
+/** 角色设置开着的时候，左栏那颗按钮是「指定」：点卡片给正在编辑的角色挑声音。
+ *  收起后回到插件声明的「创建」——点卡片是新建一个角色。 */
+watch(
+  () => sheetOpen.value && Boolean(char.value),
+  (editing) => {
+    hostStore.railModeOverride = editing ? 'assign' : ''
+  },
+  { immediate: true }
+)
 const tocOpen = ref(false)
 const rosterOpen = ref(false)
 const modelOpen = ref(false)
@@ -1134,11 +1125,6 @@ function onPersona() {
   void generatePersona(char.value)
 }
 
-/** 名牌第二枚胶囊的悬停说明：说清"这个声音现在能不能出声"。 */
-const cellVoiceTitle = computed(() =>
-  char.value?.voice_id ? '这条音色会在每句回复后念出来' : '还没有音色：用左栏音色卡右端「创建」新建一个角色'
-)
-
 /** 输入框右下的那句话：正在发生的事优先，其次才是模型名。 */
 const busyHint = computed(() => {
   if (state.busy === 'thinking') return '正在想…'
@@ -1247,7 +1233,7 @@ function dropSession(id) {
 function onDeleteCharacter() {
   if (!char.value) return
   if (characters.value.length <= 1 || state.busy) return
-  if (!window.confirm(`删除角色「${char.value.name}」和它的全部记录？`)) return
+  if (!window.confirm(`确认删除「${char.value.name}」？`)) return
   removeCharacter(char.value.id)
   sheetOpen.value = false
 }
@@ -1349,6 +1335,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', syncFullscreen)
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('pointerdown', onDocPointer)
+  // 音色栏的动作改由页内状态决定：离开这一页就交回插件的声明值。
+  hostStore.railModeOverride = ''
   // 拖到一半离开页面：去掉监听，位置已经写在角色上，下次打开照旧。
   endPortrait()
   // 离开页面就收麦：没说完的冲出来发掉，不留后台采集。
@@ -1546,7 +1534,8 @@ onBeforeUnmount(() => {
 
 .rc-plate {
   position: absolute;
-  top: 30px;
+  /* 顶上是名字：不再有「角色」那行垫着，留白直接记在这里。 */
+  top: 54px;
   left: 32px;
   z-index: 2;
   display: flex;
@@ -1571,22 +1560,6 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.rc-kicker {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 2px;
-  color: color-mix(in srgb, var(--sh-warn) 42%, var(--sh-media-text));
-  font-size: 10.5px;
-  letter-spacing: 0.16em;
-}
-
-.rc-kicker b {
-  width: 16px;
-  height: 1px;
-  background: currentColor;
-}
-
 .rc-name {
   margin: 0;
   color: var(--rc-ink);
@@ -1608,79 +1581,27 @@ onBeforeUnmount(() => {
   text-wrap: pretty;
 }
 
-.rc-plate-acts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-}
-
-.rc-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 11px;
+/* 编辑角色：名字后面只留一颗图标，与切角色那颗同一副长相。 */
+.rc-edit {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 1px solid color-mix(in srgb, var(--sh-media-text) 22%, transparent);
-  border-radius: 999px;
+  border-radius: var(--sh-r-xs);
   background: color-mix(in srgb, var(--sh-media-bg) 34%, transparent);
-  color: color-mix(in srgb, var(--sh-media-text) 88%, transparent);
-  font: inherit;
-  font-size: 12px;
+  color: color-mix(in srgb, var(--sh-media-text) 74%, transparent);
   cursor: pointer;
-  backdrop-filter: blur(8px);
   transition: border-color var(--sh-t) var(--sh-ease), color var(--sh-t) var(--sh-ease),
     background var(--sh-t) var(--sh-ease);
 }
 
-.rc-chip:hover {
-  border-color: color-mix(in srgb, var(--sh-accent) 60%, transparent);
-  color: var(--rc-ink);
+.rc-edit:hover,
+.rc-edit[aria-expanded='true'] {
+  border-color: color-mix(in srgb, var(--sh-accent) 56%, transparent);
   background: color-mix(in srgb, var(--sh-media-bg) 52%, transparent);
-}
-
-.rc-chip.is-quiet {
-  color: color-mix(in srgb, var(--sh-media-text) 64%, transparent);
-}
-
-/* 正在出声：三根呼吸的条子，替掉那颗喇叭。 */
-.rc-bars {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 11px;
-}
-
-.rc-bars i {
-  display: block;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--rc-accent);
-  animation: rc-bars 1s var(--sh-ease) infinite;
-}
-
-.rc-bars i:nth-child(1) {
-  height: 5px;
-}
-.rc-bars i:nth-child(2) {
-  height: 10px;
-  animation-delay: 0.14s;
-}
-.rc-bars i:nth-child(3) {
-  height: 7px;
-  animation-delay: 0.28s;
-}
-
-@keyframes rc-bars {
-  0%,
-  100% {
-    transform: scaleY(0.45);
-    opacity: 0.7;
-  }
-  50% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
+  color: var(--rc-ink);
 }
 
 .rc-name-row {
@@ -3090,8 +3011,8 @@ onBeforeUnmount(() => {
   }
 
   .rc-plate {
-    top: 24px;
-    left: 28px;
+    top: 50px;
+    left: 32px;
     width: min(286px, 40%);
   }
 
@@ -3222,7 +3143,7 @@ onBeforeUnmount(() => {
 /* 房间很宽：画面与台本一起上一个档，字不贴着一条窄线。 */
 @container room (min-width: 1400px) {
   .rc-plate {
-    top: 40px;
+    top: 66px;
     left: 46px;
     width: 340px;
   }

@@ -707,6 +707,13 @@ export function providerNote() {
 export function modelHint() {
   const provider = effectiveProvider()
   if (!provider) return '未配置对话模型'
+  return String(state.data?.llm_model || '').trim() || '服务默认模型'
+}
+
+/** 按钮宽度只够放模型名，服务来源放在悬停提示里。 */
+export function modelFullHint() {
+  const provider = effectiveProvider()
+  if (!provider) return '未配置对话模型'
   const model = String(state.data?.llm_model || '').trim()
   return model ? `${provider.label} · ${model}` : `${provider.label} · 服务默认模型`
 }
@@ -977,14 +984,14 @@ export function syncSpeaking() {
   }
 }
 
-// ---- 记录的标题与日期 -------------------------------------------------- //
+// ---- 对话的标题与日期 -------------------------------------------------- //
 
-/** 一份记录叫什么：第一句**你说的**话。没有就按日期说，不再造一个假标题。 */
+/** 一段对话叫什么：第一句**你说的**话。没有就按日期说，不再造一个假标题。 */
 /** @param {Session|null} target */
 export function sessionTitle(target = session.value) {
-  if (!target) return '新的记录'
+  if (!target) return '新对话'
   const first = target.messages.find((row) => row.role === 'user' && row.text.trim())
-  if (!first) return '新的记录'
+  if (!first) return '新对话'
   const line = first.text.replace(/\s+/g, ' ').trim()
   return line.length > 24 ? `${line.slice(0, 24)}…` : line
 }

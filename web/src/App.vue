@@ -245,8 +245,11 @@ const showProducerRail = computed(() => {
 
 /** 音色栏怎么用：`pick` = 点卡即选中（处理型工作区），`assign` = 卡右「指定」
  *  （创作型），`create` = 卡右「创建」用这条音色新建角色（角色对话）。
- *  缺省按指定——老插件没这个字段。 */
+ *  缺省按指定——老插件没这个字段。生产方可在编辑角色期间用 `railModeOverride`
+ *  把它临时改成 `assign`：那时点卡片是给正在编辑的角色挑声音，不是又建一个。 */
 const railMode = computed(() => {
+  const forced = store.railModeOverride
+  if (forced === 'pick' || forced === 'assign' || forced === 'create') return forced
   const entry = store.producers.find((item) => item.key === store.producer.key)
   return entry?.rail_mode === 'pick' || entry?.rail_mode === 'create' ? entry.rail_mode : 'assign'
 })
