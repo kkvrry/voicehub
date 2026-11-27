@@ -34,7 +34,7 @@ from app.engines.base import KIND_LABELS, VoiceMeta
 from app.engines.registry import list_engines
 from app.infra import archive, sidecar
 from app.infra.audioprobe import probe_duration_cached
-from app.infra.config import load_config, save_config
+from app.infra.config import load_config, update_config
 from app.infra.db import HubDB, path_key
 from app.infra.duration_cache import DurationCache
 from app.infra.loghub import CHANNEL
@@ -1677,9 +1677,8 @@ class LibraryService:
 
     def save_folders(self, folders: list[str]) -> dict[str, Any]:
         """改扫描根目录并**立刻重扫**——界面不需要一颗单独的「保存后记得扫描」按钮。"""
-        config = load_config()
-        config.folders = [str(f).strip() for f in folders if str(f).strip()]
-        save_config(config)
+        cleaned = [str(f).strip() for f in folders if str(f).strip()]
+        update_config(lambda cfg: setattr(cfg, "folders", cleaned))
         return self.scan()
 
     # ------------------------------------------------------------------ #

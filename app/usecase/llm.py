@@ -13,7 +13,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from app.infra import secrets as secret_store
-from app.infra.config import load_config, save_config
+from app.infra.config import load_config, update_config
 from app.infra.loghub import CHANNEL
 from app.llm.base import (
     ChatMessage,
@@ -187,9 +187,8 @@ def save_provider_settings(key: str, patch: Mapping[str, Any]) -> BaseModel:
         clean[name] = ""
 
     model = _tolerant(schema, {**stored, **clean})
-    config = load_config()
-    config.llm[key] = secret_store.seal_fields(model.model_dump(), secrets)
-    save_config(config)
+    sealed = secret_store.seal_fields(model.model_dump(), secrets)
+    update_config(lambda cfg: cfg.llm.__setitem__(key, sealed))
     return model
 
 
@@ -198,9 +197,7 @@ def save_default_provider(key: str) -> str:
     cleaned = (key or "").strip()
     if cleaned:
         require_provider(cleaned)
-    config = load_config()
-    config.llm_default = cleaned
-    save_config(config)
+    update_config(lambda cfg: setattr(cfg, "llm_default", cleaned))
     return default_provider()
 
 

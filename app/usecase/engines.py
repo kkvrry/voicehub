@@ -40,7 +40,7 @@ from app.engines.registry import detect_asr_engine, detect_engine, list_asr_engi
 from app.infra import archive
 from app.infra import migrate as migrate_mod
 from app.infra import secrets as secret_store
-from app.infra.config import load_config, save_config
+from app.infra.config import load_config, update_config
 from app.infra.loghub import CHANNEL
 from app.usecase.live_models import live_engine_keys
 
@@ -211,14 +211,16 @@ def require_active_engine(key: str) -> EnginePlugin:
 def set_engine_enabled(key: str, enabled: bool) -> dict[str, Any]:
     """启用 / 停用一台引擎。配置与库内音色都不动——停用只是不再出现。"""
     engine = require_engine(key)
-    keys = enabled_keys()
-    if enabled:
-        keys.add(engine.key)
-    else:
-        keys.discard(engine.key)
-    config = load_config()
-    config.engines_enabled = sorted(keys)
-    save_config(config)
+    def _apply(cfg) -> None:
+        keys = enabled_keys()
+        if enabled:
+            keys.add(engine.key)
+        else:
+            keys.discard(engine.key)
+        cfg.engines_enabled = sorted(keys)
+
+    updated = update_config(_apply)
+    keys = set(updated.engines_enabled or [])
     CHANNEL.info(
         f"{'已启用' if enabled else '已停用'}引擎：{engine.label}",
         source="engines",
@@ -456,18 +458,19 @@ def save_engine_channel(key: str, patch: dict[str, Any]) -> dict[str, Any]:
     )
     channel = resolve_channel(default, allowed, patch or {})
 
-    config = load_config()
-    channels = dict(config.channels)
-    if channel == default:
-        # 写回默认 = 不留这一段：留着"与默认一样"的段，改默认值时会成为看不见的钉子。
-        channels.pop(key, None)
-    else:
-        channels[key] = {
-            "mode": channel.mode,
-            "scope": channel.scope,
-        }
-    config.channels = channels
-    save_config(config)
+    def _apply_channel(cfg) -> None:
+        channels = dict(cfg.channels)
+        if channel == default:
+            # 写回默认 = 不留这一段：留着"与默认一样"的段，改默认值时会成为看不见的钉子。
+            channels.pop(key, None)
+        else:
+            channels[key] = {
+                "mode": channel.mode,
+                "scope": channel.scope,
+            }
+        cfg.channels = channels
+
+    update_config(_apply_channel)
     return channel_payload(engine)
 
 
@@ -579,16 +582,18 @@ def save_engine_output_dir(key: str, directory: str, *, migrate: bool = False) -
         界面保存前用 :func:`preview_engine_output_dir` 询问。搬完不删旧目录本身。
     """
     engine = require_engine(key)
-    config = load_config()
-    outputs = dict(config.engine_outputs)
     cleaned = (directory or "").strip()
     previous = output_info(key, engine.label)["dir"]  # 改之前那个"生效值"
-    if cleaned:
-        outputs[key] = cleaned
-    else:
-        outputs.pop(key, None)
-    config.engine_outputs = outputs
-    save_config(config)
+
+    def _apply_output(cfg) -> None:
+        outputs = dict(cfg.engine_outputs)
+        if cleaned:
+            outputs[key] = cleaned
+        else:
+            outputs.pop(key, None)
+        cfg.engine_outputs = outputs
+
+    update_config(_apply_output)
     info = output_info(key, engine.label)
 
     moved: dict[str, Any] | None = None
@@ -675,13 +680,16 @@ def _save_settings(plugin: EnginePlugin | AsrEngine, patch: dict[str, Any]) -> B
         if broken & set(clean):
             raise EngineSettingsError(_invalid_settings_message(schema, exc)) from exc
         model = _tolerant(schema, merged)
-    config = load_config()
-    config.engines[plugin.key] = secret_store.seal_fields(model.model_dump(), secrets)
-    # 填了配置就等于在用：保存设置顺手把它添加进来，省一次「先添加、再配置」的往返。
-    # 识别引擎不走这套——识别的"当前那台"由 ``config.asr_engine`` 单独回答。
-    if isinstance(plugin, EnginePlugin) and not is_enabled(plugin.key):
-        config.engines_enabled = sorted(enabled_keys() | {plugin.key})
-    save_config(config)
+    sealed = secret_store.seal_fields(model.model_dump(), secrets)
+
+    def _apply_settings(cfg) -> None:
+        cfg.engines[plugin.key] = sealed
+        # 填了配置就等于在用：保存设置顺手把它添加进来，省一次「先添加、再配置」的往返。
+        # 识别引擎不走这套——识别的"当前那台"由 ``config.asr_engine`` 单独回答。
+        if isinstance(plugin, EnginePlugin) and not is_enabled(plugin.key):
+            cfg.engines_enabled = sorted(enabled_keys() | {plugin.key})
+
+    update_config(_apply_settings)
     return model
 
 

@@ -32,7 +32,7 @@ from pydantic import BaseModel, ValidationError
 from app.engines.asr_base import AsrEngine, AsrError, Transcript
 from app.engines.registry import list_asr_engines
 from app.engines.traits import detect_language
-from app.infra.config import load_config, save_config
+from app.infra.config import load_config, update_config
 from app.infra.files import file_stamp
 from app.infra.loghub import CHANNEL
 from app.usecase.engines import (
@@ -120,9 +120,8 @@ def save_options(patch: dict[str, Any]) -> dict[str, Any]:
         model = AsrOptions.model_validate({**options().model_dump(), **known})
     except ValidationError as exc:
         raise AsrError("识别选项不合法。", code="invalid_value") from exc
-    config = load_config()
-    config.asr_options = model.model_dump()
-    save_config(config)
+    dumped = model.model_dump()
+    update_config(lambda cfg: setattr(cfg, "asr_options", dumped))
     return status()
 
 
@@ -159,9 +158,7 @@ def set_current(key: str) -> dict[str, Any]:
             f"识别引擎 {wanted} 不存在。可用引擎：{'、'.join(sorted(list_asr_engines())) or '（无）'}。",
             code="engine_not_found",
         )
-    config = load_config()
-    config.asr_engine = wanted
-    save_config(config)
+    update_config(lambda cfg: setattr(cfg, "asr_engine", wanted))
     return status()
 
 

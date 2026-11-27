@@ -141,7 +141,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ListFilter } from 'lucide-vue-next'
 import { actions, store, vocab } from '../store'
-import { useSettingsStore } from '../stores/settings'
+import { useSettingsStore } from '../store/settings'
 import { comboFromEvent, recorder } from '../settings/keymap'
 import { prettyCombo } from '../settings/utils'
 import Popover from './ui/Popover.vue'

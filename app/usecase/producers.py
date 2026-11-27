@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from app.infra import secrets as secret_store
-from app.infra.config import data_dir, load_config, save_config
+from app.infra.config import data_dir, load_config, update_config
 from app.infra.shell import open_folder
 from app.producers.base import ProducerError, ProducerPlugin
 from app.producers.registry import discover, require
@@ -143,20 +143,24 @@ def set_enabled(key: str, enabled: bool) -> dict[str, Any]:
     """
     plugin = find(key)
     runtime = runtime_for(plugin)
-    config = load_config()
-    config.producers_disabled = [
-        item for item in config.producers_disabled if item != key
-    ] + ([] if enabled else [key])
-    save_config(config)
+    update_config(
+        lambda cfg: setattr(
+            cfg,
+            "producers_disabled",
+            [item for item in cfg.producers_disabled if item != key] + ([] if enabled else [key]),
+        )
+    )
     if enabled:
         try:
             runtime.get()
         except Exception:
-            config = load_config()
-            config.producers_disabled = [
-                item for item in config.producers_disabled if item != key
-            ]
-            save_config(config)
+            update_config(
+                lambda cfg: setattr(
+                    cfg,
+                    "producers_disabled",
+                    [item for item in cfg.producers_disabled if item != key],
+                )
+            )
             raise
     else:
         runtime.shutdown()
@@ -281,7 +285,6 @@ def save_settings(key: str, body: dict[str, Any]) -> dict[str, Any]:
         field = ".".join(str(part) for part in first.get("loc", ())) or "配置"
         raise ProducerError(f"{field}：{first.get('msg', '取值不合法')}") from exc
 
-    config = load_config()
-    config.producers[plugin.key] = secret_store.seal_fields(model.model_dump(), secrets)
-    save_config(config)
+    sealed = secret_store.seal_fields(model.model_dump(), secrets)
+    update_config(lambda cfg: cfg.producers.__setitem__(plugin.key, sealed))
     return settings_payload(key)

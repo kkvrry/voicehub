@@ -75,13 +75,100 @@
       </div>
     </SettingCard>
 
+    <SettingCard
+      title="系统朗读（SAPI）"
+      keywords="系统 朗读 sapi 语音 引擎 桥接 默认 音色 阅读器 word windows"
+    >
+      <template #icon><Volume2 :size="16" :stroke-width="1.8" /></template>
+
+      <SettingRow
+        title="SAPI 5 语音桥接"
+        :desc="sapiInstallDesc"
+        keywords="安装 卸载 注册 管理员 权限 桥接 sapi"
+      >
+        <div class="sapi-actions">
+          <ActionButton
+            v-if="!store.sapi.installed"
+            variant="primary"
+            size="sm"
+            :loading="store.sapi.busy"
+            :disabled="!store.backend.online || !store.sapi.canInstall"
+            @click="store.installSapi()"
+          >
+            安装
+          </ActionButton>
+          <template v-else>
+            <ActionButton
+              variant="soft"
+              size="sm"
+              :loading="store.sapi.busy"
+              :disabled="!store.backend.online || !store.sapi.canInstall"
+              @click="store.installSapi()"
+            >
+              重新安装
+            </ActionButton>
+            <ActionButton
+              variant="danger"
+              size="sm"
+              :loading="store.sapi.busy"
+              :disabled="!store.backend.online || !store.sapi.canInstall"
+              @click="store.uninstallSapi()"
+            >
+              卸载
+            </ActionButton>
+          </template>
+        </div>
+      </SettingRow>
+
+      <SettingRow
+        title="朗读音色"
+        desc="引擎：自动 · 留空由引擎自动选择"
+        keywords="音色 声线 声音 选择 朗读 sapi"
+      >
+        <div class="sapi-voice">
+          <VoicePicker
+            v-model="sapiVoiceId"
+            :voices="voiceList"
+            placeholder="自动选择或搜索音色"
+          />
+          <button
+            v-if="sapiVoiceId"
+            type="button"
+            class="sh-btn is-icon is-sm"
+            title="清空音色（恢复自动选择）"
+            aria-label="清空音色"
+            @click="sapiVoiceId = ''"
+          >
+            <X :size="14" :stroke-width="1.8" />
+          </button>
+        </div>
+      </SettingRow>
+
+      <SettingRow
+        title="设为系统默认音色"
+        desc="走 SAPI 5 的系统程序自动使用 VoiceHub 朗读"
+        keywords="默认 音色 接管 系统朗读 sapi"
+      >
+        <ToggleSwitch
+          v-model="sapiDefault"
+          label="设为系统默认音色"
+          :disabled="!store.sapi.supported || !store.sapi.installed || store.sapi.busy"
+        />
+      </SettingRow>
+
+      <div class="service-foot">
+        <span class="sh-hint">{{ sapiFoot }}</span>
+      </div>
+    </SettingCard>
+
   </SettingsSection>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Power, Server, SlidersHorizontal } from 'lucide-vue-next'
-import { useSettingsStore } from '../../stores/settings'
+import { computed, onMounted } from 'vue'
+import { Power, Server, SlidersHorizontal, Volume2, X } from 'lucide-vue-next'
+import { useSettingsStore } from '../../store/settings'
+import { actions, store as shellStore } from '../../store'
 import type { SegmentOption } from '../types'
 import SettingsSection from '../ui/SettingsSection.vue'
 import SettingCard from '../ui/SettingCard.vue'
@@ -89,8 +176,54 @@ import SettingRow from '../ui/SettingRow.vue'
 import ToggleSwitch from '../../components/ui/ToggleSwitch.vue'
 import SegmentedControl from '../../components/ui/SegmentedControl.vue'
 import TextField from '../../components/ui/TextField.vue'
+import ActionButton from '../../components/ui/ActionButton.vue'
+import VoicePicker from '../../components/VoicePicker.vue'
 
 const store = useSettingsStore()
+
+onMounted(() => {
+  if (!shellStore.allVoices.length) {
+    void actions.loadAllVoices().catch(() => {})
+  }
+})
+
+const voiceList = computed(() =>
+  shellStore.allVoices.length ? shellStore.allVoices : shellStore.voices
+)
+
+const sapiVoiceId = computed({
+  get: () => store.sapi.voiceId,
+  set: (value: string) => {
+    store.sapi.voiceId = value
+  },
+})
+
+const sapiDefault = computed({
+  get: () => store.sapi.isDefault,
+  set: (value: boolean) => {
+    store.sapi.isDefault = value
+  },
+})
+
+const sapiInstallDesc = computed(() => {
+  if (!store.backend.online) return '后端未连接'
+  if (!store.sapi.supported) return '仅 Windows 可用'
+  if (store.sapi.installed) return '已安装；修改音色与默认开关保存即生效'
+  if (!store.sapi.canInstall) return '未找到桥接安装脚本'
+  return '未安装；安装需管理员权限并编译原生桩'
+})
+
+const sapiFoot = computed(() => {
+  if (!store.backend.online) return '后端未连接'
+  if (!store.sapi.supported) return '仅支持 Windows SAPI 5'
+  const state = store.sapi.installed
+    ? store.sapi.isDefault
+      ? '已安装 · 当前为系统默认音色'
+      : '已安装 · 未设为默认'
+    : '未安装'
+  const ep = store.sapi.endpoint ? ` · ${store.sapi.endpoint}` : ''
+  return `${state}${ep} · 接口不可用时自动回落系统音色`
+})
 
 /** 局域网开关：读当前生效值，改动只进待提交状态。 */
 const lanAllowed = computed({
@@ -151,5 +284,24 @@ const autoDesc = computed(() => (store.service.autoSupported ? '' : '仅桌面�
 <style scoped>
 .service-foot {
   padding-top: 4px;
+}
+
+.sapi-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sapi-voice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 240px;
+  max-width: 100%;
+}
+
+.sapi-voice :deep(.vpick) {
+  flex: 1;
+  min-width: 0;
 }
 </style>

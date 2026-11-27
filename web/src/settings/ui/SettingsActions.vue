@@ -27,7 +27,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { Save } from 'lucide-vue-next'
-import { useSettingsStore } from '../../stores/settings'
+import { useSettingsStore } from '../../store/settings'
 import ActionButton from '../../components/ui/ActionButton.vue'
 
 const settings = useSettingsStore()

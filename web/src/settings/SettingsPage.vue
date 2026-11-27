@@ -27,7 +27,7 @@
 import { onBeforeUnmount, onMounted, provide, watch } from 'vue'
 import { SearchX } from 'lucide-vue-next'
 import { actions, say, store as appStore } from '../store'
-import { useSettingsStore } from '../stores/settings'
+import { useSettingsStore } from '../store/settings'
 import { ACTIVE_KEY, SEARCH_KEY } from './search'
 import { comboFromEvent, recorder } from './keymap'
 import {

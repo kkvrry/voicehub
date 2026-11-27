@@ -630,7 +630,7 @@ import SplitPanel from './SplitPanel.vue'
 import SpeakerField from './SpeakerField.vue'
 import VoiceToolsDialog from './VoiceToolsDialog.vue'
 import { confirmAction } from './confirm'
-import { useSettingsStore } from '../../stores/settings'
+import { useSettingsStore } from '../../store/settings'
 import { namedSpeakersOf, rolesOf } from './assign'
 import { chapterVisible, filterRows, isBroken, UNASSIGNED_SPEAKER } from './visible'
 import {

@@ -173,7 +173,7 @@ import FilterBar from './components/FilterBar.vue'
 import VoiceGrid from './components/VoiceGrid.vue'
 import DetailPanel from './components/DetailPanel.vue'
 import { jumpFirst, query as settingsQuery, searchHint } from './settings/pane'
-import { useSettingsStore } from './stores/settings'
+import { useSettingsStore } from './store/settings'
 
 // 非首屏视图与工具弹层按需拆块，缩短冷启动解析与首帧体积。
 const SettingsPage = defineAsyncComponent(() => import('./settings/SettingsPage.vue'))

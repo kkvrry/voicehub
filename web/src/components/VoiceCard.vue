@@ -107,7 +107,7 @@
 import { computed } from 'vue'
 import { Pause, Play, Star } from 'lucide-vue-next'
 import { store, actions, vocab } from '../store'
-import { useSettingsStore } from '../stores/settings'
+import { useSettingsStore } from '../store/settings'
 import { useAvatarImage } from '../composables/avatar'
 import { avatarFill } from '../composables/avatarColor'
 import CoverImage from './ui/CoverImage.vue'

@@ -46,7 +46,7 @@ VoiceHub 是本地优先的有声书生产工作台：FastAPI 后端（`app/`）
 - **子进程与异步**：一律使用 argv 列表，禁止 `shell=True`，显式指定 `encoding="utf-8", errors="replace"`；事件循环内禁止同步阻塞 IO（httpx / ffmpeg / 大文件读写放线程池）。
 - **单实例与并发幂等**：同一数据目录仅允许一个服务进程（`data/service.lock`），调试/测试另起服务须指向临时 `VOICEHUB_DATA_DIR`。后台任务带 `owner` / `heartbeat_at` 回收；行合成前先 `claim_row`；付费调用先 `idempotent_begin` 抢占，失败/取消时 `abandon`；批内遇 `CODES_ENGINE_UNAVAILABLE` 停掉该引擎剩余行，不逐行报错。
 - **日志**：`app/infra/loghub.py` 是全项目日志唯一出口；跨线程入队须使用 `call_soon_threadsafe`；`emit` 永不抛异常。
-- **已知边界（勿假装已解决）**：配置读写已提供进程内 `update_config` 事务锁（但尚无跨进程锁，且仍有零散 `load_config` → `save_config` 调用待迁）；有声书合并产物的跨文件回滚事务、跨进程合并锁及 Vue 组件级渲染单测仍未补齐。
+- **已知边界（勿假装已解决）**：配置读写已全部走进程内 `update_config` 事务锁（尚无跨进程锁）；有声书合并产物的跨文件回滚事务、跨进程合并锁及 Vue 组件级渲染单测仍未补齐。
 
 ## 3. 验证与环境
 

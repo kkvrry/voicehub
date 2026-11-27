@@ -258,7 +258,7 @@
 import { computed, ref } from 'vue'
 import { Mic, Pause, Play, Sparkles } from 'lucide-vue-next'
 import { actions, say, store, vocab } from '../store'
-import { useSettingsStore } from '../stores/settings'
+import { useSettingsStore } from '../store/settings'
 import { useAvatarImage } from '../composables/avatar'
 import { avatarFill } from '../composables/avatarColor'
 import { useCardPaging } from '../composables/cardPaging'

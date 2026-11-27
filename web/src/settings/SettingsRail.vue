@@ -48,7 +48,7 @@ import {
   query,
   sections,
 } from './pane'
-import { useSettingsStore } from '../stores/settings'
+import { useSettingsStore } from '../store/settings'
 
 const settings = useSettingsStore()
 </script>

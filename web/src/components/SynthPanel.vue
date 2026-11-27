@@ -332,7 +332,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Play, RotateCcw, Square, X } from 'lucide-vue-next'
 import { store, actions, say } from '../store'
-import { useSettingsStore } from '../stores/settings'
+import { useSettingsStore } from '../store/settings'
 import { formatClock } from '../utils/format'
 import EmotionField from './EmotionField.vue'
 import InstructionField from './InstructionField.vue'

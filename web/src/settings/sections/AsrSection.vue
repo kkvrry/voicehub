@@ -134,7 +134,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { AudioLines, Mic, Sparkles } from 'lucide-vue-next'
 import { actions, say, store } from '../../store'
-import { useSettingsStore } from '../../stores/settings'
+import { useSettingsStore } from '../../store/settings'
 import SettingsSection from '../ui/SettingsSection.vue'
 import SettingCard from '../ui/SettingCard.vue'
 import SettingRow from '../ui/SettingRow.vue'
@@ -214,9 +214,9 @@ onMounted(async () => {
 }
 .asr-state {
   font-size: 12px;
-  color: var(--sh-ok, #2ea05a);
+  color: var(--sh-ok);
 }
 .asr-state.bad {
-  color: var(--sh-warn, #b7791f);
+  color: var(--sh-warn);
 }
 </style>

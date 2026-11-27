@@ -159,8 +159,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Layers, Palette, SunMoon, UserRound } from 'lucide-vue-next'
-import { useSettingsStore } from '../../stores/settings'
-import type { AccentKey, AvatarShape, AvatarSize, Density, Look, ThemeMode } from '../../stores/settings'
+import { useSettingsStore } from '../../store/settings'
+import type { AccentKey, AvatarShape, AvatarSize, Density, Look, ThemeMode } from '../../store/settings'
 import type { SegmentOption } from '../types'
 import SettingsSection from '../ui/SettingsSection.vue'
 import SettingCard from '../ui/SettingCard.vue'

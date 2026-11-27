@@ -88,7 +88,7 @@
 import { computed, ref } from 'vue'
 import { ExternalLink, GitBranch, Info, Package, RefreshCw, Scale } from 'lucide-vue-next'
 import { api } from '../../api'
-import { useSettingsStore } from '../../stores/settings'
+import { useSettingsStore } from '../../store/settings'
 import SettingsSection from '../ui/SettingsSection.vue'
 import SettingCard from '../ui/SettingCard.vue'
 import SettingRow from '../ui/SettingRow.vue'

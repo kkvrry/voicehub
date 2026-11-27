@@ -108,7 +108,7 @@
 import { computed } from 'vue'
 import { ChevronDown, ChevronUp, Play } from 'lucide-vue-next'
 import { actions, store, visibleVoices, vocab } from '../store'
-import { useSettingsStore } from '../stores/settings'
+import { useSettingsStore } from '../store/settings'
 import ActionButton from './ui/ActionButton.vue'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 

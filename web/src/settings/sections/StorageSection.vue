@@ -183,8 +183,8 @@ import {
   X,
 } from 'lucide-vue-next'
 import { actions, say } from '../../store'
-import { useSettingsStore } from '../../stores/settings'
-import type { StorageEntry } from '../../stores/settings'
+import { useSettingsStore } from '../../store/settings'
+import type { StorageEntry } from '../../store/settings'
 import { formatBytes } from '../../utils/format'
 import SettingsSection from '../ui/SettingsSection.vue'
 import SettingCard from '../ui/SettingCard.vue'

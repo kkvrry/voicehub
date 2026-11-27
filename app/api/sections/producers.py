@@ -27,7 +27,7 @@ from app.api.views import (
 )
 from app.infra import archive
 from app.infra import migrate as migrate_mod
-from app.infra.config import data_dir, load_config, save_config
+from app.infra.config import data_dir, load_config, update_config
 from app.infra.loghub import install_logging
 from app.infra.media import audio_mime
 from app.infra.shell import open_folder
@@ -290,11 +290,10 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
             code="output_local_only",
             message="生成目录只能在本机修改：改目录并迁移会移动、删除旧目录里的文件。",
         )
-        config = load_config()
         previous = str(archive.default_root())
         # 与 /storage 同口径：绝对路径、且不是盘根/系统目录。
-        config.output_dir = _absolute_dir(body.dir, "生成结果目录")
-        save_config(config)
+        new_output = _absolute_dir(body.dir, "生成结果目录")
+        update_config(lambda cfg: setattr(cfg, "output_dir", new_output))
         target = str(archive.default_root())
         moved: dict[str, Any] | None = None
         if body.migrate and previous and previous != target:
@@ -360,21 +359,33 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
                 code="storage_local_only",
                 message="存储目录只能在本机修改；回收线可以在任意设备调整。",
             )
-        config = load_config()
         previous_output = str(archive.default_root())
         pending: list[tuple[str, str, str]] = []
-        if body.output_dir is not None:
-            config.output_dir = _absolute_dir(body.output_dir, "生成结果目录")
-        if body.cache_dir is not None:
-            config.cache_dir = _absolute_dir(body.cache_dir, "缓存目录")
-            pending.append((config.cache_dir, "缓存目录", "storage_dir_unusable"))
-        if body.log_dir is not None:
-            config.log_dir = _absolute_dir(body.log_dir, "日志目录")
-            pending.append((config.log_dir, "日志目录", "storage_dir_unusable"))
-        if body.cache_limit_mb is not None:
-            config.cache_limit_mb = _cache_number(body.cache_limit_mb, "缓存上限", 102400)
-        if body.cache_keep_days is not None:
-            config.cache_keep_days = _cache_number(body.cache_keep_days, "保留天数", 3650)
+        new_output_dir = (
+            _absolute_dir(body.output_dir, "生成结果目录")
+            if body.output_dir is not None
+            else None
+        )
+        new_cache_dir = (
+            _absolute_dir(body.cache_dir, "缓存目录") if body.cache_dir is not None else None
+        )
+        if new_cache_dir is not None:
+            pending.append((new_cache_dir, "缓存目录", "storage_dir_unusable"))
+        new_log_dir = (
+            _absolute_dir(body.log_dir, "日志目录") if body.log_dir is not None else None
+        )
+        if new_log_dir is not None:
+            pending.append((new_log_dir, "日志目录", "storage_dir_unusable"))
+        new_cache_limit = (
+            _cache_number(body.cache_limit_mb, "缓存上限", 102400)
+            if body.cache_limit_mb is not None
+            else None
+        )
+        new_cache_days = (
+            _cache_number(body.cache_keep_days, "保留天数", 3650)
+            if body.cache_keep_days is not None
+            else None
+        )
         for value, label, code in pending:
             if not value:
                 continue
@@ -386,7 +397,20 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
                     code=code,
                     message=f"{label}建不出来：{exc}。换一个本机可写的目录。",
                 ) from exc
-        save_config(config)
+
+        def _apply_storage(cfg) -> None:
+            if new_output_dir is not None:
+                cfg.output_dir = new_output_dir
+            if new_cache_dir is not None:
+                cfg.cache_dir = new_cache_dir
+            if new_log_dir is not None:
+                cfg.log_dir = new_log_dir
+            if new_cache_limit is not None:
+                cfg.cache_limit_mb = new_cache_limit
+            if new_cache_days is not None:
+                cfg.cache_keep_days = new_cache_days
+
+        update_config(_apply_storage)
         moved: dict[str, Any] | None = None
         target_output = str(archive.default_root())
         if body.output_dir is not None and body.migrate_output and previous_output != target_output:

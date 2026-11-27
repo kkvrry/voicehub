@@ -1,6 +1,6 @@
 // @ts-check
 import { computed } from 'vue'
-import { useSettingsStore } from '../stores/settings'
+import { useSettingsStore } from '../store/settings'
 
 /** 某个位置是否显示图片头像；关闭时由组件回落到首字母。 */
 /** @param {string} scope */

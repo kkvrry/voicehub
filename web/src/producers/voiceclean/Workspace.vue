@@ -675,7 +675,7 @@ import {
 } from 'lucide-vue-next'
 import { actions, labelOf, say, store, vocab } from '../../store'
 import Popover from '../../components/ui/Popover.vue'
-import { useSettingsStore } from '../../stores/settings'
+import { useSettingsStore } from '../../store/settings'
 import { avatarFill } from '../../composables/avatarColor'
 import { canTakeOver, openObjectMenu } from '../../composables/contextMenu'
 import Waveform from './Waveform.vue'

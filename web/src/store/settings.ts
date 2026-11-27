@@ -12,7 +12,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '../api'
-import { actions, say, setThemeMode, store as shellStore } from '../store'
+import { actions, say, setThemeMode, store as shellStore } from './index'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type AccentKey = 'azure' | 'indigo' | 'violet' | 'teal'
@@ -256,6 +256,7 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     dirs: clone(DEFAULTS.storage.dirs),
     asr: clone(DEFAULTS.asr),
     listen: { lan: false, https: 'auto' as HttpsMode, token: '', autostart: false },
+    sapi: { voiceId: '', isDefault: false },
   })
 
   /** 后端里当前生效的回收线：只提交改过的那一格。 */
@@ -289,6 +290,17 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     autostart: false,
     autoSupported: false,
   })
+  /** Windows SAPI 5 系统朗读桥接状态与配置；引擎固定自动路由。 */
+  const sapi = reactive({
+    supported: false,
+    installed: false,
+    isDefault: false,
+    canInstall: false,
+    voiceId: '',
+    engine: 'auto',
+    endpoint: '',
+    busy: false,
+  })
   const savedSnapshot = ref('')
   const saving = ref(false)
   const loaded = ref(false)
@@ -304,6 +316,10 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
         https: service.https,
         token: service.token,
         autostart: service.autostart,
+      },
+      sapi: {
+        voiceId: sapi.voiceId,
+        isDefault: sapi.isDefault,
       },
       scanRoots: scanRoots.value,
       dirs: clone(dirs),
@@ -327,7 +343,11 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     const now = JSON.parse(snapshot.value)
     const diff = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b)
     const sections: Record<SectionKey, boolean> = {
-      general: Boolean(saved) && diff(now.general, saved.general),
+      general:
+        Boolean(saved) &&
+        (diff(now.general, saved.general) ||
+          diff(now.listen, saved.listen) ||
+          diff(now.sapi, saved.sapi)),
       appearance: Boolean(saved) && diff(now.appearance, saved.appearance),
       shortcuts: Boolean(saved) && diff(now.shortcuts, saved.shortcuts),
       asr: Boolean(saved) && diff(now.asr, saved.asr),
@@ -485,14 +505,45 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     persist()
   }
 
+  function applySapiState(data: Record<string, unknown> | null | undefined) {
+    if (!data) return
+    sapi.supported = Boolean(data.supported)
+    sapi.installed = Boolean(data.installed)
+    sapi.isDefault = Boolean(data.is_default)
+    sapi.canInstall = Boolean(data.can_install)
+    sapi.voiceId = String(data.voice_id || '')
+    sapi.engine = String(data.engine || 'auto')
+    sapi.endpoint = String(data.endpoint || '')
+    remoteSeed.sapi = {
+      voiceId: sapi.voiceId,
+      isDefault: sapi.isDefault,
+    }
+  }
+
+  function syncSavedSapiBaseline() {
+    if (!savedSnapshot.value) {
+      savedSnapshot.value = snapshot.value
+      return
+    }
+    try {
+      const saved = JSON.parse(savedSnapshot.value)
+      saved.sapi = { voiceId: sapi.voiceId, isDefault: sapi.isDefault }
+      savedSnapshot.value = JSON.stringify(saved)
+    } catch {
+      savedSnapshot.value = snapshot.value
+    }
+  }
+
   /** 进设置页时问一遍后端：扫描根、存储位置与各自占用。后端没起就退回本机草稿。 */
-  async function loadRemote() {    try {
-      const [folders, storage, health, listen] = await Promise.all([
+  async function loadRemote() {
+    try {
+      const [folders, storage, health, listen, sapiState] = await Promise.all([
         api.folders(),
         api.storage(),
         // 版本只用于「关于」：取不到不算离线，其余两项仍照常。
         api.health().catch(() => null),
         api.service().catch(() => null),
+        api.sapi().catch(() => null),
       ])
       const roots: string[] = Array.isArray(folders?.folders) ? folders.folders : []
       entries.value = Array.isArray(storage?.entries) ? (storage.entries as StorageEntry[]) : []
@@ -533,6 +584,7 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
           autostart: service.autostart,
         }
       }
+      applySapiState(sapiState as Record<string, unknown> | null)
       // 后端值就是这一层的基线；本机偏好仍按原快照算未保存。
       savedSnapshot.value = snapshot.value
       persist()
@@ -718,6 +770,18 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
           }
         }
 
+        if (sapi.supported) {
+          const sapiPatch: { voice_id?: string; is_default?: boolean } = {}
+          if (sapi.voiceId !== remoteSeed.sapi.voiceId) sapiPatch.voice_id = sapi.voiceId
+          if (sapi.installed && sapi.isDefault !== remoteSeed.sapi.isDefault) {
+            sapiPatch.is_default = sapi.isDefault
+          }
+          if (Object.keys(sapiPatch).length) {
+            const saved = await api.saveSapi(sapiPatch)
+            applySapiState(saved as Record<string, unknown>)
+          }
+        }
+
         if (Object.keys(asrPatch).length) {
           const saved = await api.saveAsrOptions(asrPatch)
           const savedOptions = (saved?.options || {}) as Partial<AsrPrefs>
@@ -783,6 +847,41 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     say('已恢复默认设置')
   }
 
+  async function installSapi() {
+    if (sapi.busy) return
+    sapi.busy = true
+    try {
+      const state = await api.installSapi({
+        voice_id: sapi.voiceId,
+        set_default: true,
+      })
+      applySapiState(state as Record<string, unknown>)
+      syncSavedSapiBaseline()
+      persist()
+      say('系统朗读桥接已安装')
+    } catch (error) {
+      say(error instanceof Error ? error.message : String(error))
+    } finally {
+      sapi.busy = false
+    }
+  }
+
+  async function uninstallSapi() {
+    if (sapi.busy) return
+    sapi.busy = true
+    try {
+      const state = await api.uninstallSapi()
+      applySapiState(state as Record<string, unknown>)
+      syncSavedSapiBaseline()
+      persist()
+      say('系统朗读桥接已卸载')
+    } catch (error) {
+      say(error instanceof Error ? error.message : String(error))
+    } finally {
+      sapi.busy = false
+    }
+  }
+
   // 任何改动：立刻生效、立刻落盘（草稿），「保存」只负责提交后端与清掉未保存标记。
   watch(snapshot, () => {
     applyTheme()
@@ -801,6 +900,7 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     cachePolicy,
     backend,
     service,
+    sapi,
     saving,
     loaded,
     dirty,
@@ -819,6 +919,8 @@ export const useSettingsStore = defineStore('voicehub-settings', () => {
     addRoot,
     removeRoot,
     openEntry,
+    installSapi,
+    uninstallSapi,
     save,
     resetAll,
     resetSection,

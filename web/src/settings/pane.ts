@@ -20,7 +20,7 @@ import {
   SlidersHorizontal,
   Tags,
 } from 'lucide-vue-next'
-import { useSettingsStore } from '../stores/settings'
+import { useSettingsStore } from '../store/settings'
 import { hitTest, type SearchContext, type SearchRow } from './search'
 import { prettyCombo } from './utils'
 
