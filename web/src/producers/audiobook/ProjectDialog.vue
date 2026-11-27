@@ -2,15 +2,15 @@
   <Teleport :to="overlayTarget">
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="$emit('close')">
-        <div class="vh-modal project-dialog" role="dialog" aria-modal="true" aria-label="项目管理">
+        <div ref="panelEl" class="vh-modal project-dialog" role="dialog" aria-modal="true" aria-labelledby="vh-project-title">
           <header class="project-head">
             <div>
-              <h2 class="project-title">项目管理</h2>
+              <h2 id="vh-project-title" class="project-title">项目管理</h2>
               <p class="project-note">
                 {{ tab === 'import' ? '拖入文件或粘贴正文，直接建项目。' : '整理已有项目的书名、作者，或删除。' }}
               </p>
             </div>
-            <button class="sh-btn is-icon" title="关闭" @click="$emit('close')">
+            <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="$emit('close')">
               <X :size="16" :stroke-width="1.8" />
             </button>
           </header>
@@ -202,9 +202,12 @@ import {
   updateProject,
 } from './store'
 import { overlayTarget } from '../../composables/overlayTarget'
+import { useModalA11y } from '../../composables/modalA11y'
 
 const props = defineProps({ open: { type: Boolean, default: false } })
 const emit = defineEmits(['close'])
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => props.open, panel: panelEl, onClose: () => emit('close') })
 
 const detail = computed(() => state.detail)
 const projects = computed(() => state.overview?.projects || [])

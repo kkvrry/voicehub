@@ -312,14 +312,15 @@
     <Transition name="vh-modal">
       <div v-if="showPreview" class="vh-root" @click.self="closePreview">
         <div
+          ref="panelEl"
           class="vh-modal preview-modal"
           role="dialog"
           aria-modal="true"
-          aria-label="文本处理预览"
+          aria-labelledby="vh-preview-title"
         >
           <header class="preview-head">
             <div class="split-card-title-main">
-              <h2 class="preview-title">文本处理预览</h2>
+              <h2 id="vh-preview-title" class="preview-title">文本处理预览</h2>
               <p class="split-card-note">
                 {{
                   scoped
@@ -328,7 +329,7 @@
                 }}
               </p>
             </div>
-            <button class="sh-btn is-icon" title="关闭" @click="closePreview">
+            <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="closePreview">
               <X :size="16" :stroke-width="1.8" />
             </button>
           </header>
@@ -441,6 +442,7 @@ import {
 import { say } from '../../store'
 import { confirmAction } from './confirm'
 import RegexAssistBar from './RegexAssistBar.vue'
+import { useModalA11y } from '../../composables/modalA11y'
 import {
   applyText,
   loadAssistStatus,
@@ -472,6 +474,8 @@ const aiLast = {
 //: 用户取消勾选的那几处：默认全勾，只处理例外。
 const excluded = ref(/** @type {string[]} */ ([]))
 const showPreview = ref(false)
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => showPreview.value, panel: panelEl, onClose: () => closePreview() })
 /** 预览时实际发出去的规则：应用时必须用它，不能读"现在的勾选"。 */
 const previewRulesUsed = ref(/** @type {any} */ (null))
 

@@ -2346,3 +2346,16 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
 /* 放进列向布局里时别被拉满：标签该按内容宽，拉成一条会让"能点"这件事看不出来。 */
 .field .vchip-field { align-self: flex-start; }
 .sample-bottom .vchip-field { flex-shrink: 0; }
+
+/* ---------------- 无障碍 ---------------- */
+/* 只给读屏的文本：不占位、不被看见，仍参与可访问名计算。 */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* 系统高对比度：自绘边框与阴影会被系统色抹平，只保边界与焦点可见。 */
+@media (forced-colors: active) {
+  .vh-modal, .vpop, .ctx-menu { border: 1px solid CanvasText; }
+  :focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+}

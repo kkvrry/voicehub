@@ -2,7 +2,7 @@
   <Teleport to="body">
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="close">
-        <div class="vh-modal sh-dialog" role="dialog" aria-modal="true" :aria-label="plugin.label">
+        <div ref="panelEl" class="vh-modal sh-dialog" role="dialog" aria-modal="true" :aria-label="plugin.label">
           <header class="sh-dialog-head">
             <h2 class="sh-dialog-title">{{ plugin.label }}</h2>
             <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="close">
@@ -54,6 +54,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import ActionButton from '../../components/ui/ActionButton.vue'
 import ProducerConfig from './ProducerConfig.vue'
+import { useModalA11y } from '../../composables/modalA11y'
 
 /** 插件自描述的整包：表单只认 schema，其余字段透传给表单组件。 */
 interface PluginSchema {
@@ -94,29 +95,19 @@ async function doReset() {
   await form.value?.doReset()
 }
 
-function onKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape') return
-  event.stopPropagation()
-  close()
-}
+const panelEl = ref<HTMLElement | null>(null)
+useModalA11y({ open: () => props.open, panel: panelEl, onClose: () => close() })
 
 watch(
   () => props.open,
   (open) => {
-    if (open) {
-      document.body.style.overflow = 'hidden'
-      document.addEventListener('keydown', onKeydown)
-    } else {
-      document.body.style.overflow = ''
-      document.removeEventListener('keydown', onKeydown)
-    }
+    document.body.style.overflow = open ? 'hidden' : ''
   },
   { immediate: true }
 )
 
 onBeforeUnmount(() => {
   document.body.style.overflow = ''
-  document.removeEventListener('keydown', onKeydown)
 })
 </script>
 

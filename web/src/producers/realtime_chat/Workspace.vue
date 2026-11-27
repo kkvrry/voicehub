@@ -412,7 +412,7 @@
         @click="sheetOpen = false"
       />
       <Transition name="rc-sheet">
-        <aside v-if="sheetOpen && char" class="rc-sheet" role="dialog" aria-label="角色设置">
+        <aside v-if="sheetOpen && char" class="rc-sheet" role="dialog" aria-modal="true" aria-label="角色设置">
           <header class="rc-sheet-head">
             <h2>{{ state.sheetNew ? '新建角色' : '角色设置' }}</h2>
             <span class="rc-save" :class="{ 'is-busy': state.saving }">

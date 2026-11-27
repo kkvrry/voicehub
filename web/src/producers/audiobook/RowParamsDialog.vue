@@ -3,13 +3,12 @@
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="close">
         <div
-          ref="dialogEl"
+          ref="panelEl"
           class="vh-modal params-card"
           role="dialog"
           aria-modal="true"
           aria-labelledby="params-title"
           tabindex="-1"
-          @keydown.esc.stop="close"
         >
           <header class="params-head">
             <span class="params-glyph" aria-hidden="true">
@@ -129,6 +128,7 @@ import { store } from '../../store'
 import { ensureLexicon } from '../../store/lexicon'
 import { loadRowParams, saveRowParams } from './store'
 import { overlayTarget } from '../../composables/overlayTarget'
+import { useModalA11y } from '../../composables/modalA11y'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -136,7 +136,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['close', 'saved'])
 
-const dialogEl = ref(/** @type {any} */ (null))
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => props.open, panel: panelEl, onClose: () => close() })
 const data = reactive({
   groups: /** @type {any[]} */ ([]),
   fields: /** @type {any[]} */ ([]),
@@ -270,7 +271,7 @@ watch(
     if (!open) return
     void load()
     // 焦点收进对话框：Esc 能立刻关，读屏也从头念一遍。
-    void nextTick(() => dialogEl.value?.focus())
+    void nextTick(() => panelEl.value?.focus())
   }
 )
 

@@ -6,10 +6,10 @@
   <Teleport :to="overlayTarget">
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="close">
-        <div class="vh-modal design-card" role="dialog" aria-modal="true" aria-label="使用设计音色">
+        <div ref="panelEl" class="vh-modal design-card" role="dialog" aria-modal="true" aria-labelledby="vh-design-voice-title">
           <header class="design-head">
             <div>
-              <h2 class="design-title">使用设计音色</h2>
+              <h2 id="vh-design-voice-title" class="design-title">使用设计音色</h2>
               <p class="design-note">
                 描述每次随合成请求发送，平台不保存音色，同一描述不保证每次音色一致；
                 建好的这条会进音色库，可反复指定。
@@ -78,11 +78,14 @@ import { computed, ref, watch } from 'vue'
 import { Loader2, Sparkles, X } from 'lucide-vue-next'
 import { actions, say, store } from '../store'
 import { overlayTarget } from '../composables/overlayTarget'
+import { useModalA11y } from '../composables/modalA11y'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close'])
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => props.open, panel: panelEl, onClose: () => close() })
 
 
 /** 只有声明了 `voice_design` 的引擎能走这一路。 */

@@ -2,15 +2,15 @@
   <Teleport :to="overlayTarget">
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="$emit('close')">
-        <div class="vh-modal generate-dialog" role="dialog" aria-modal="true" aria-label="TTS 生成">
+        <div ref="panelEl" class="vh-modal generate-dialog" role="dialog" aria-modal="true" aria-labelledby="vh-generate-title">
           <header class="generate-head">
             <div>
-              <h2 class="generate-title">TTS 生成</h2>
+              <h2 id="vh-generate-title" class="generate-title">TTS 生成</h2>
               <p class="generate-note">
                 {{ rows }} 行待合成；已经是最新的行会跳过。
               </p>
             </div>
-            <button class="sh-btn is-icon" title="关闭" @click="$emit('close')">
+            <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="$emit('close')">
               <X :size="16" :stroke-width="1.8" />
             </button>
           </header>
@@ -64,9 +64,12 @@ import { X } from 'lucide-vue-next'
 import { actions, say, store } from '../../store'
 import { state } from './store'
 import { overlayTarget } from '../../composables/overlayTarget'
+import { useModalA11y } from '../../composables/modalA11y'
 
 const props = defineProps({ open: { type: Boolean, default: false } })
 const emit = defineEmits(['close', 'run'])
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => props.open, panel: panelEl, onClose: () => emit('close') })
 
 const plugin = computed(() => store.producers.find(/** @param {any} item */ (item) => item.key === store.producer.key))
 const schema = computed(() => plugin.value?.settings_schema?.properties || {})

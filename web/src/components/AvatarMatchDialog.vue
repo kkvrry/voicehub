@@ -3,15 +3,15 @@
     <Transition name="vh-modal">
       <div v-if="match.open" class="vh-root" @click.self="close">
         <div
-          ref="dialogEl"
+          ref="panelEl"
           class="vh-modal sh-dialog avatar-match"
           role="dialog"
           aria-modal="true"
-          aria-label="匹配头像"
+          aria-labelledby="vh-avatar-match-title"
           tabindex="-1"
         >
           <header class="sh-dialog-head">
-            <h2 class="sh-dialog-title">匹配头像</h2>
+            <h2 id="vh-avatar-match-title" class="sh-dialog-title">匹配头像</h2>
             <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="close">
               <X :size="16" :stroke-width="1.8" />
             </button>
@@ -44,15 +44,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { X } from 'lucide-vue-next'
 import { actions, store } from '../store'
 import { overlayTarget } from '../composables/overlayTarget'
+import { useModalA11y } from '../composables/modalA11y'
 import ActionButton from './ui/ActionButton.vue'
 import AvatarSourceChips from './AvatarSourceChips.vue'
 
 const match = store.avatarMatch
-const dialogEl = ref<HTMLElement | null>(null)
+const panelEl = ref<HTMLElement | null>(null)
 
 const minutes = computed(() => Math.max(1, Math.round((match.total * 3) / 60)))
 const hint = computed(
@@ -67,26 +68,7 @@ function start() {
   void actions.startAvatarMatch()
 }
 
-/** @param {KeyboardEvent} event */
-function onKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape') return
-  event.preventDefault()
-  close()
-}
-
-watch(
-  () => match.open,
-  (open) => {
-    if (open) {
-      window.addEventListener('keydown', onKeydown)
-      void nextTick(() => dialogEl.value?.focus())
-    } else {
-      window.removeEventListener('keydown', onKeydown)
-    }
-  }
-)
-
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+useModalA11y({ open: () => match.open, panel: panelEl, onClose: () => close() })
 </script>
 
 <style scoped>

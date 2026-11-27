@@ -2,17 +2,17 @@
   <Teleport :to="overlayTarget">
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="close">
-        <div class="vh-modal assign-card" role="dialog" aria-modal="true" aria-label="指定音色">
+        <div ref="panelEl" class="vh-modal assign-card" role="dialog" aria-modal="true" aria-labelledby="vh-assign-title">
           <header class="assign-head">
             <div class="assign-heading">
-              <h2 class="assign-title">指定音色</h2>
+              <h2 id="vh-assign-title" class="assign-title">指定音色</h2>
               <p class="assign-note">
                 <span v-if="voiceName" class="assign-voice">{{ voiceName }}</span>
                 <span v-if="voiceName && engineLabel" class="assign-sep">·</span>
                 <span v-if="engineLabel" class="assign-engine">{{ engineLabel }}</span>
               </p>
             </div>
-            <button class="sh-btn is-icon" title="关闭" @click="close">
+            <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="close">
               <X :size="16" :stroke-width="1.8" />
             </button>
           </header>
@@ -220,6 +220,7 @@ import SegmentedControl from './ui/SegmentedControl.vue'
 import { actions, store } from '../store'
 import { api } from '../api'
 import { overlayTarget } from '../composables/overlayTarget'
+import { useModalA11y } from '../composables/modalA11y'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -244,6 +245,8 @@ const props = defineProps({
   busy: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close', 'assign'])
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => props.open, panel: panelEl, onClose: () => close() })
 
 // Array 型 prop 推出来是 unknown[]；按真实形状收窄一次。
 const roleList = computed(() => /** @type {any[]} */ (props.roles))

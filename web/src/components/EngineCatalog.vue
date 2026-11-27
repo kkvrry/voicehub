@@ -6,16 +6,16 @@
     <Transition name="vh-modal">
       <div v-if="store.catalogOpen" class="vh-root" @click.self="close">
         <div
-          ref="cardEl"
+          ref="panelEl"
           class="vh-modal catalog-card"
           role="dialog"
           aria-modal="true"
-          aria-label="引擎清单"
+          aria-labelledby="vh-catalog-title"
           tabindex="-1"
         >
           <header class="catalog-head">
             <div class="catalog-head-main">
-              <h2 class="catalog-title">引擎清单</h2>
+              <h2 id="vh-catalog-title" class="catalog-title">引擎清单</h2>
               <p class="catalog-note">{{ summary }}</p>
             </div>
             <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="close">
@@ -70,16 +70,17 @@
 
 <script setup>
 // @ts-check
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { X } from 'lucide-vue-next'
 import { actions, say, store } from '../store'
 import { overlayTarget } from '../composables/overlayTarget'
 import { openObjectMenu } from '../composables/contextMenu'
+import { useModalA11y } from '../composables/modalA11y'
 import ToggleSwitch from './ui/ToggleSwitch.vue'
 
 /** 这一层常驻：挂的是**壳登记的那个元素**，不是挂载时 query 出来的一个——
  *  壳会被整个换掉（进设置页），绑死旧元素就再也画不出来（见 composables/overlayTarget）。 */
-const cardEl = ref(/** @type {any} */ (null))
+const panelEl = ref(/** @type {any} */ (null))
 const busyKey = ref('')
 
 const rows = computed(() => store.engineCatalog || [])
@@ -165,29 +166,9 @@ function close() {
 }
 
 /**
- * @param {any} event
+ * Esc 走共用弹层行为：忙碌时 `close()` 自己会拦住，同一条判据不重复写。
  */
-function onKeydown(event) {
-  if (event.key === 'Escape' && store.catalogOpen) {
-    event.preventDefault()
-    close()
-  }
-}
-
-watch(
-  () => store.catalogOpen,
-  async (open) => {
-    if (open) {
-      window.addEventListener('keydown', onKeydown)
-      await nextTick()
-      cardEl.value?.focus()
-    } else {
-      window.removeEventListener('keydown', onKeydown)
-    }
-  }
-)
-
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+useModalA11y({ open: () => store.catalogOpen, panel: panelEl, onClose: () => close() })
 </script>
 
 <style scoped>

@@ -2,15 +2,15 @@
   <Teleport :to="overlayTarget">
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="$emit('close')">
-        <div class="vh-modal analysis-dialog" role="dialog" aria-modal="true" aria-label="对话分析">
+        <div ref="panelEl" class="vh-modal analysis-dialog" role="dialog" aria-modal="true" aria-labelledby="vh-analysis-title">
           <header class="analysis-head">
             <div>
-              <h2 class="analysis-title">对话分析</h2>
+              <h2 id="vh-analysis-title" class="analysis-title">对话分析</h2>
               <p class="analysis-note">
                 {{ dialogueRows }} 行对白；通道与模型取自「引擎 → 对话」。
               </p>
             </div>
-            <button class="sh-btn is-icon" title="关闭" @click="$emit('close')">
+            <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="$emit('close')">
               <X :size="16" :stroke-width="1.8" />
             </button>
           </header>
@@ -185,9 +185,12 @@ import { api } from '../../api'
 import { actions, say, store } from '../../store'
 import { loadAssistStatus, state } from './store'
 import { overlayTarget } from '../../composables/overlayTarget'
+import { useModalA11y } from '../../composables/modalA11y'
 
 const props = defineProps({ open: { type: Boolean, default: false } })
 const emit = defineEmits(['close', 'run'])
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => props.open, panel: panelEl, onClose: () => emit('close') })
 
 const providers = ref(/** @type {any[]} */ ([]))
 const models = ref(/** @type {any[]} */ ([]))

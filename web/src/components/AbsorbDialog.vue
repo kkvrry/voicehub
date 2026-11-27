@@ -6,13 +6,14 @@
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="close">
         <div
+          ref="panelEl"
           class="vh-modal sh-dialog absorb"
           role="dialog"
           aria-modal="true"
-          aria-label="入库到音色"
+          aria-labelledby="vh-absorb-title"
         >
           <header class="sh-dialog-head">
-            <h2 class="sh-dialog-title">入库到音色</h2>
+            <h2 id="vh-absorb-title" class="sh-dialog-title">入库到音色</h2>
             <span class="absorb-count">{{ rows.length }} 条</span>
             <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="close">
               <X :size="16" :stroke-width="1.8" />
@@ -147,6 +148,7 @@
 import { computed, ref, watch } from 'vue'
 import { Play, X } from 'lucide-vue-next'
 import { overlayTarget } from '../composables/overlayTarget'
+import { useModalA11y } from '../composables/modalA11y'
 import { store } from '../store'
 import { SOURCES } from '../store/audio'
 import ActionButton from './ui/ActionButton.vue'
@@ -158,6 +160,8 @@ const props = defineProps({
   ids: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['close', 'confirm'])
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => props.open, panel: panelEl, onClose: () => close() })
 
 const SOURCE_LABELS = Object.fromEntries(SOURCES.map((item) => [item.key, item.label]))
 

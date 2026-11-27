@@ -2,13 +2,13 @@
   <Teleport :to="overlayTarget">
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="$emit('close')">
-        <div class="vh-modal options-card" role="dialog" aria-modal="true" aria-label="拆句选项">
+        <div ref="panelEl" class="vh-modal options-card" role="dialog" aria-modal="true" aria-labelledby="vh-split-options-title">
           <header class="options-head">
             <div class="split-card-title-main">
-              <h2 class="options-title">拆句选项</h2>
+              <h2 id="vh-split-options-title" class="options-title">拆句选项</h2>
               <p class="options-note">选项按项目保存；拆句与重拆都按当前选项切行。</p>
             </div>
-            <button class="sh-btn is-icon" title="关闭" @click="$emit('close')">
+            <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="$emit('close')">
               <X :size="16" :stroke-width="1.8" />
             </button>
           </header>
@@ -103,6 +103,7 @@ import SegmentedControl from '../../components/ui/SegmentedControl.vue'
 import { X } from 'lucide-vue-next'
 import { loadSplitMeta, saveSplitOptions, state } from './store'
 import { overlayTarget } from '../../composables/overlayTarget'
+import { useModalA11y } from '../../composables/modalA11y'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -112,6 +113,8 @@ const props = defineProps({
   chapters: { type: Number, default: 0 },
 })
 const emit = defineEmits(['close', 'run', 'resplit'])
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => props.open, panel: panelEl, onClose: () => emit('close') })
 
 const form = ref({ mode: 'rule', dialogue: true, quote: 'cn_double', max_chars: 200 })
 

@@ -3,7 +3,7 @@
     <Transition name="vh-modal">
       <div v-if="voice" class="vh-root" @click.self="close">
         <div
-          ref="dialogEl"
+          ref="panelEl"
           class="vh-modal avatar-picker"
           role="dialog"
           aria-modal="true"
@@ -61,11 +61,12 @@
 
 <script setup>
 // @ts-check
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { Loader2, X } from 'lucide-vue-next'
 import { api } from '../api'
 import { actions, store } from '../store'
 import { overlayTarget } from '../composables/overlayTarget'
+import { useModalA11y } from '../composables/modalA11y'
 import AvatarSourceChips from './AvatarSourceChips.vue'
 
 const props = defineProps({ voice: { type: Object, default: null } })
@@ -73,7 +74,7 @@ const emit = defineEmits(['close', 'applied'])
 
 /** 弹层挂进壳里（`overlayTarget`）：`--panel` 这套别名只在 `.app-shell` 上。 */
 
-const dialogEl = ref(/** @type {HTMLElement | null} */ (null))
+const panelEl = ref(/** @type {HTMLElement | null} */ (null))
 const items = ref(/** @type {any[]} */ ([]))
 const source = ref('')
 const loading = ref(false)
@@ -88,13 +89,6 @@ const title = computed(() => props.voice?.shown_name || props.voice?.name || '')
 function close() {
   if (applying.value) return
   emit('close')
-}
-
-/** @param {KeyboardEvent} event */
-function onKeydown(event) {
-  if (event.key !== 'Escape') return
-  event.preventDefault()
-  close()
 }
 
 /** @param {unknown} err */
@@ -154,23 +148,14 @@ watch(
         error.value = errorText(err)
       })
     }
-    void nextTick(() => dialogEl.value?.focus())
+    void nextTick(() => panelEl.value?.focus())
   },
   { immediate: true }
 )
 
 watch(source, () => void load())
 
-watch(
-  () => Boolean(props.voice),
-  (open) => {
-    if (open) window.addEventListener('keydown', onKeydown)
-    else window.removeEventListener('keydown', onKeydown)
-  },
-  { immediate: true }
-)
-
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+useModalA11y({ open: () => Boolean(props.voice), panel: panelEl, onClose: () => close() })
 </script>
 
 <style scoped>

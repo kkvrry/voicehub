@@ -6,7 +6,7 @@
   <Transition name="vh-modal">
     <div v-if="voice" class="vh-root" @click.self="close">
       <div
-        ref="dialogEl"
+        ref="panelEl"
         class="vh-modal"
         role="dialog"
         aria-modal="true"
@@ -224,12 +224,13 @@
 
 <script setup>
 // @ts-check
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { AudioLines, FolderOpen, ImagePlus, ListMusic, Pause, Play, Star, Trash2, X } from 'lucide-vue-next'
 import { api } from '../api'
 import { store, actions, vocab, say } from '../store'
 import { useSettingsStore } from '../stores/settings'
 import { useAvatarImage } from '../composables/avatar'
+import { useModalA11y } from '../composables/modalA11y'
 import { avatarFill } from '../composables/avatarColor'
 import AvatarPicker from './AvatarPicker.vue'
 import ChipSelect from './ui/ChipSelect.vue'
@@ -243,7 +244,7 @@ import { ageTone, languageTone } from './ui/tones'
 
 const voice = computed(() => store.detail)
 const showAvatarImage = useAvatarImage('detail')
-const dialogEl = ref(/** @type {any} */ (null))
+const panelEl = ref(/** @type {any} */ (null))
 const titleEl = ref(/** @type {any} */ (null))
 /** 名字正在就地编辑（点击标题进入）：编辑时那一行只留输入框，免得别的胶囊把光标挤走。 */
 const titleEditing = ref(false)
@@ -297,7 +298,7 @@ watch(
       saved[key] = key === 'tags' ? [...(value.tags || [])] : value[key] || ''
     }
     // 打开时把焦点收进对话框：Esc 能立刻关，读屏也从头念。
-    void nextTick(() => dialogEl.value?.focus())
+    void nextTick(() => panelEl.value?.focus())
   },
   { immediate: true }
 )
@@ -488,22 +489,17 @@ async function toggleHidden() {
 }
 
 /**
- * Esc 关窗：焦点可能已经在某个输入框里，所以挂在 window 上。
- * 「生成样例」的窗口比详情晚一层：先关它，别一下子把两条一起关掉。
- *
- * @param {any} event
+ * Esc 走共用弹层行为。「生成样例」的窗口比详情晚一层：先关它，别一下子把两条一起关掉。
  */
-function onKeydown(event) {
-  if (!voice.value) return
-  if (event.key !== 'Escape') return
-  event.preventDefault()
-  if (auditionOpen.value) {
-    auditionOpen.value = false
-    return
-  }
-  close()
-}
-
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+useModalA11y({
+  open: () => Boolean(voice.value),
+  panel: panelEl,
+  onClose: () => {
+    if (auditionOpen.value) {
+      auditionOpen.value = false
+      return
+    }
+    close()
+  },
+})
 </script>

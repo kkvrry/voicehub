@@ -86,7 +86,7 @@
     <Teleport to="body">
       <Transition name="vh-modal">
         <div v-if="dialog" class="vh-root" @click.self="closeDialog">
-          <div class="vh-modal sh-dialog" role="dialog" aria-modal="true" :aria-label="dialogTitle">
+          <div ref="panelEl" class="vh-modal sh-dialog" role="dialog" aria-modal="true" :aria-label="dialogTitle">
             <header class="sh-dialog-head">
               <h2 class="sh-dialog-title">{{ dialogTitle }}</h2>
               <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="closeDialog">
@@ -363,6 +363,7 @@ import SettingCard from '../ui/SettingCard.vue'
 import SettingsSection from '../ui/SettingsSection.vue'
 import TextField from '../../components/ui/TextField.vue'
 import LexiconAiPrompts from './LexiconAiPrompts.vue'
+import { useModalA11y } from '../../composables/modalA11y'
 
 /** 情绪：`rows` 是当前摆出来的行，`deleted` 是删掉的默认词（可恢复）。
  *  行带 `origin` 与默认词原名 `key`，保存时据此算 hidden / renamed / custom。 */
@@ -379,6 +380,8 @@ const draftPreset = ref({ label: '', text: '' })
 const saving = ref('')
 /** '' | 'emotions' | 'instructions' | 'pronunciation'：哪份词条正开着弹窗。 */
 const dialog = ref('')
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => Boolean(dialog.value), panel: panelEl, onClose: () => closeDialog() })
 const pronunciation = ref(/** @type {any[]} */ ([]))
 const draftPronunciation = ref({ word: '', replacement: '' })
 const pronunciationSaving = ref(false)
@@ -559,27 +562,15 @@ function openDialog(which) {
   dialog.value = which
   // 遮罩盖住页面，滚轮仍会滚到背后的设置页。
   document.body.style.overflow = 'hidden'
-  document.addEventListener('keydown', onKeydown)
 }
 
 function closeDialog() {
   dialog.value = ''
   document.body.style.overflow = ''
-  document.removeEventListener('keydown', onKeydown)
-}
-
-/**
- * @param {any} event
- */
-function onKeydown(event) {
-  if (event.key !== 'Escape') return
-  event.stopPropagation()
-  closeDialog()
 }
 
 onBeforeUnmount(() => {
   document.body.style.overflow = ''
-  document.removeEventListener('keydown', onKeydown)
 })
 
 const canAddEmotion = computed(() => {

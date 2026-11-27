@@ -25,9 +25,9 @@
     <Teleport to="body">
       <Transition name="vh-modal">
         <div v-if="dialogOpen" class="vh-root" @click.self="closeDialog">
-          <div class="vh-modal sh-dialog" role="dialog" aria-modal="true" aria-label="文案分组">
+          <div ref="panelEl" class="vh-modal sh-dialog" role="dialog" aria-modal="true" aria-labelledby="vh-texts-title">
             <header class="sh-dialog-head">
-              <h2 class="sh-dialog-title">文案分组</h2>
+              <h2 id="vh-texts-title" class="sh-dialog-title">文案分组</h2>
               <button
                 class="sh-btn is-icon"
                 title="重新读取"
@@ -132,6 +132,7 @@ import { actions, say, store as appStore } from '../../store'
 import ActionButton from '../../components/ui/ActionButton.vue'
 import SettingCard from '../ui/SettingCard.vue'
 import SettingsSection from '../ui/SettingsSection.vue'
+import { useModalA11y } from '../../composables/modalA11y'
 
 interface TextGroup {
   name: string
@@ -145,6 +146,8 @@ const error = ref('')
 
 /** 哪条文案正开着弹窗：编辑态与浏览态分开，卡上只留数量。 */
 const dialogOpen = ref(false)
+const panelEl = ref<HTMLElement | null>(null)
+useModalA11y({ open: () => dialogOpen.value, panel: panelEl, onClose: () => closeDialog() })
 
 const summary = computed(() => {
   if (!groups.value.length) return '尚未添加'
@@ -160,24 +163,15 @@ function openDialog() {
   dialogOpen.value = true
   // 遮罩盖住页面，滚轮仍会滚到背后的设置页。
   document.body.style.overflow = 'hidden'
-  document.addEventListener('keydown', onKeydown)
 }
 
 function closeDialog() {
   dialogOpen.value = false
   document.body.style.overflow = ''
-  document.removeEventListener('keydown', onKeydown)
-}
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape') return
-  event.stopPropagation()
-  closeDialog()
 }
 
 onBeforeUnmount(() => {
   document.body.style.overflow = ''
-  document.removeEventListener('keydown', onKeydown)
 })
 
 /** 界面上改的是**草稿**：保存之前后端那一份没动（与目录那一栏同一条规矩）。 */

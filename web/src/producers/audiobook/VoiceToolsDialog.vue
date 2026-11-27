@@ -3,6 +3,7 @@
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="close">
         <div
+          ref="panelEl"
           class="vh-modal voice-tools"
           role="dialog"
           aria-modal="true"
@@ -46,6 +47,7 @@ import SegmentedControl from '../../components/ui/SegmentedControl.vue'
 import VoiceAssignPanel from './VoiceAssignPanel.vue'
 import VoiceMergePanel from './VoiceMergePanel.vue'
 import { overlayTarget } from '../../composables/overlayTarget'
+import { useModalA11y } from '../../composables/modalA11y'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -55,6 +57,8 @@ const props = defineProps({
   chapterScope: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close', 'applied', 'merge'])
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => props.open, panel: panelEl, onClose: () => close() })
 
 const tabs = [
   { label: '音色分配', value: 'assign' },

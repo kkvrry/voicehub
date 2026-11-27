@@ -2,13 +2,13 @@
   <Teleport :to="overlayTarget">
     <Transition name="vh-modal">
       <div v-if="open" class="vh-root" @click.self="$emit('close')">
-        <div class="vh-modal merge-dialog" role="dialog" aria-modal="true" aria-label="合并音频">
+        <div ref="panelEl" class="vh-modal merge-dialog" role="dialog" aria-modal="true" aria-labelledby="vh-merge-title">
           <header class="merge-head">
             <div>
-              <h2 class="merge-title">合并音频</h2>
+              <h2 id="vh-merge-title" class="merge-title">合并音频</h2>
               <p class="merge-note">{{ note }}</p>
             </div>
-            <button class="sh-btn is-icon" title="关闭" @click="$emit('close')">
+            <button class="sh-btn is-icon" title="关闭" aria-label="关闭" @click="$emit('close')">
               <X :size="16" :stroke-width="1.8" />
             </button>
           </header>
@@ -304,11 +304,14 @@ import {
   selectChapter,
 } from './store'
 import { overlayTarget } from '../../composables/overlayTarget'
+import { useModalA11y } from '../../composables/modalA11y'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close'])
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => props.open, panel: panelEl, onClose: () => emit('close') })
 
 const detail = computed(() => state.detail)
 const plugin = computed(() => store.producers.find(/** @param {any} item */ (item) => item.key === store.producer.key))

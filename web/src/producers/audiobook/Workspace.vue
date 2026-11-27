@@ -572,8 +572,14 @@
     <Teleport :to="overlayTarget">
       <Transition name="vh-modal">
         <div v-if="state.splitOpen" class="vh-root" @click.self="closeSplit">
-          <div class="vh-modal split-dialog">
-            <button class="sh-btn is-icon split-dialog-close" title="关闭" @click="closeSplit">
+          <div
+            ref="panelEl"
+            class="vh-modal split-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="拆句"
+          >
+            <button class="sh-btn is-icon split-dialog-close" title="关闭" aria-label="关闭" @click="closeSplit">
               <X :size="16" :stroke-width="1.8" />
             </button>
             <SplitPanel />
@@ -653,6 +659,7 @@ import {
   state,
 } from './store'
 import { overlayTarget } from '../../composables/overlayTarget'
+import { useModalA11y } from '../../composables/modalA11y'
 import { canTakeOver, openObjectMenu } from '../../composables/contextMenu'
 
 const plugin = computed(() => store.producers.find(/** @param {any} item */ (item) => item.key === store.producer.key))
@@ -663,6 +670,8 @@ const mergeOpen = ref(false)
 const qcOpen = ref(false)
 const analysisOpen = ref(false)
 const generateOpen = ref(false)
+const panelEl = ref(/** @type {any} */ (null))
+useModalA11y({ open: () => state.splitOpen, panel: panelEl, onClose: () => closeSplit() })
 const voiceToolsOpen = ref(false)
 const viewMode = ref('table')
 //: 表格框现在的像素高度。切到原文时沿用它，两种视图的框大小一致。
