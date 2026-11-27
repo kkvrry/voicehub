@@ -28,7 +28,12 @@ from app.api.views import (
 from app.domain.request_spec import spec_payload
 from app.infra import autostart, releases
 from app.infra import secrets as secret_store
-from app.infra.config import DEFAULT_HOST, WILDCARD_HOSTS, load_config, save_config
+from app.infra.config import (
+    DEFAULT_HOST,
+    WILDCARD_HOSTS,
+    load_config,
+    update_config,
+)
 from app.infra.loghub import CHANNEL, HUB
 from app.usecase import vocab as vocab_uc
 from app.usecase.engines import marks_payload
@@ -89,19 +94,23 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
         所以 `restart_required` 只跟着前三项走，界面据此提示。
         """
         require_local(request)
-        config = load_config()
-        restart = False
-        if body.lan is not None:
-            config.host = "0.0.0.0" if body.lan else ""
-            restart = True
-        if body.https is not None:
-            config.https = body.https
-            restart = True
-        if body.access_token is not None:
-            config.access_token = secret_store.seal(body.access_token.strip())
-            restart = True
+        restart = (
+            body.lan is not None
+            or body.https is not None
+            or body.access_token is not None
+        )
         if restart:
-            save_config(config)
+            def _apply(cfg) -> None:
+                if body.lan is not None:
+                    cfg.host = "0.0.0.0" if body.lan else ""
+                if body.https is not None:
+                    cfg.https = body.https
+                if body.access_token is not None:
+                    cfg.access_token = secret_store.seal(body.access_token.strip())
+
+            config = update_config(_apply)
+        else:
+            config = load_config()
 
         # 自启不进 config.json：它是这台机器上的注册表状态，随启动器路径走。
         if body.autostart is not None:

@@ -52,7 +52,8 @@ from app.usecase.library import LibraryError, LibraryService
 _STATIC = data_path("web/dist")
 
 #: 服务版本。同时出现在 ``/health`` 与 ``/openapi.json``，供上游做能力协商。
-VERSION = "0.1.0"
+#: 与 ``pyproject.toml`` 的 ``project.version`` 保持一致。
+VERSION = "0.1.1"
 
 #: 开放局域网时额外允许的源：同网段的私有地址（本机 UI 与 API 同源，不需要 CORS；
 #: 这一条是给"另一台机器上的前端直接调这台 hub"用的）。
@@ -131,9 +132,20 @@ def _quiet_proactor_noise() -> None:
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    """启动时做两件进程级的事：清临时录音、给事件循环装噪音过滤。"""
+    """启动时清临时录音并装事件循环噪音过滤；退出时关闭复用的 HTTP 客户端。"""
     _quiet_proactor_noise()
-    yield
+    with contextlib.suppress(OSError):
+        recordings.clear()
+    try:
+        yield
+    finally:
+        from app.engines import http_pool
+        from app.llm import http as llm_http
+
+        with contextlib.suppress(Exception):
+            await http_pool.aclose()
+        with contextlib.suppress(Exception):
+            await llm_http.aclose()
 
 
 def _cors_origins() -> list[str]:

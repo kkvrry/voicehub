@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3da639?style=flat-square" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/version-0.1.0-1f6feb?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.1.1-1f6feb?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12">
   <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Vue_3-42b883?style=flat-square&logo=vuedotjs&logoColor=white" alt="Vue 3">
@@ -99,6 +99,17 @@ VoiceHub 是一个本地优先的有声书生产工作台。它以**音色**为�
 - **导出** —— 视频封装 MP4（画面拷贝、可选字幕轨），音频转 MP3 / M4A / WAV；
   字幕同时写 SRT / VTT / LRC / TXT / ASS，编码与每行字数可设。
 
+### 音色处理（内置「音色处理」生产方）
+
+- **目标来源** —— 从音色库挑选一条或多条音色样例，或直接上传本地音频文件进行处理。
+- **裁剪与链式处理** —— 波形图上拖动框选保留/删去片段，按「人声分离 → 语音降噪 → 带宽扩展」固定顺序执行并可选高通/限峰收尾，逐条 A/B 试听对比。
+- **确认落库** —— 原样保留时长内的结果可直接替换原样例（原件进回收站），也可另存为新样例或直接下载。
+
+### 角色对话（内置「角色对话」生产方）
+
+- **角色与房间** —— 从音色库一键创建角色，自定义介绍、人设、立绘与房间背景（支持拖放立绘位置与缩放），多段历史记录自动保存。
+- **对话与语音** —— 复用宿主对话模型、连续语音听写（`/asr/stream`）与本地 TTS 合成，回复在立绘旁以气泡与语音同步呈现。
+
 ### 合成与识别
 
 - **生成页** —— 一个音色同时扇出给多台引擎，按统一参数规范渲染表单；结果落盘归档，
@@ -107,6 +118,18 @@ VoiceHub 是一个本地优先的有声书生产工作台。它以**音色**为�
   用于样例补文本、正文语音输入、参考音频录音转写。可开启「连接时自动识别」，
   把库里缺逐字稿的样例逐条补齐。
 - **接口** —— `/api/v1` 对外提供音色清单、参考音频、合成与引擎自描述，可作为独立中转站使用。
+
+### 系统朗读（SAPI）
+
+装一个 SAPI 语音引擎之后，凡是走 SAPI 的程序（阅读 App、Word、资源管理器、无障碍朗读）
+念出来的声音就来自本机接口，引擎选择仍是「自动」路由；接口不可用时改用系统自带音色。
+
+```bash
+powershell -ExecutionPolicy Bypass -File packaging/sapi_bridge/install.ps1
+```
+
+需要 Rust（编译原生桩）与 .NET Framework 编译器（两者本机都有）。默认音色不自动改，
+要改加 `-SetDefault`。细节见 [`docs/sapi-bridge.md`](docs/sapi-bridge.md)。
 
 <p align="center">
   <img src="assets/screenshots/synth.png" alt="生成页：左侧参考音频列，中间正文与语气词、情绪、引擎勾选，右侧合成参数与引导指令">
@@ -200,6 +223,7 @@ app/                 FastAPI 后端（同时托管前端构建产物）
                      dubbing：抽音轨 → 转录 → 配音 → 贴齐 → 导出）
   api/               HTTP 层
 web/                 Vue 3 + Vite 前端
+packaging/sapi_bridge/ SAPI 桥接：引擎（VoiceHub.Sapi.cs）、原生桩（sapi_stub.rs）、安装脚本
 data/                config.json、hub.db、项目库、缓存、录音
 ```
 

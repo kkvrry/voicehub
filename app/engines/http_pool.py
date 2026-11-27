@@ -25,7 +25,7 @@ from typing import Any
 from app.engines.base import EngineError
 from app.infra.netenv import normalize_no_proxy_env
 
-__all__ = ["borrow", "post_within"]
+__all__ = ["aclose", "borrow", "post_within"]
 
 #: 每个事件循环最多留几个客户端。真实场景是"每台引擎一个"，8 足够覆盖设置页来回改。
 _MAX_PER_LOOP = 8
@@ -157,3 +157,14 @@ async def post_within(client: Any, path: str, *, seconds: float, **kw: Any) -> A
             return await client.post(path, **kw)
     except TimeoutError as exc:
         raise httpx.TimeoutException(f"整次请求超过 {seconds:g} 秒") from exc
+
+
+async def aclose() -> None:
+    """关闭当前事件循环下复用的全部引擎 HTTP 客户端（应用退出时调用）。"""
+    loop = asyncio.get_running_loop()
+    bucket = _BUCKETS.pop(loop, None)
+    if not bucket:
+        return
+    for client in bucket.values():
+        if not client.is_closed:
+            await client.aclose()

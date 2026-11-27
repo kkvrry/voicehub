@@ -160,32 +160,34 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted } from 'vue'
 import { AlertTriangle, CheckCircle2, Info, Loader2, XCircle } from 'lucide-vue-next'
 import { store, actions } from './store'
 import AppChrome from './shell/AppChrome.vue'
 import SourceTree from './components/SourceTree.vue'
 import SynthVoiceRail from './components/SynthVoiceRail.vue'
 import TopVoiceFilters from './components/TopVoiceFilters.vue'
-import PluginRail from './components/PluginRail.vue'
 import ProducerOverlay from './producers/ProducerOverlay.vue'
 import ProducerWorkspace from './producers/ProducerWorkspace.vue'
 import FilterBar from './components/FilterBar.vue'
 import VoiceGrid from './components/VoiceGrid.vue'
 import DetailPanel from './components/DetailPanel.vue'
-import SettingsPage from './settings/SettingsPage.vue'
-import SettingsRail from './settings/SettingsRail.vue'
 import { jumpFirst, query as settingsQuery, searchHint } from './settings/pane'
 import { useSettingsStore } from './stores/settings'
-import AsrPanel from './components/AsrPanel.vue'
-import EngineCatalog from './components/EngineCatalog.vue'
-import EnginePanel from './components/EnginePanel.vue'
-import LlmPanel from './components/LlmPanel.vue'
-import SynthPanel from './components/SynthPanel.vue'
-import AudioLibrary from './components/AudioLibrary.vue'
-import AudioRail from './components/AudioRail.vue'
-import AvatarMatchDialog from './components/AvatarMatchDialog.vue'
-import LogView from './components/LogView.vue'
+
+// 非首屏视图与工具弹层按需拆块，缩短冷启动解析与首帧体积。
+const SettingsPage = defineAsyncComponent(() => import('./settings/SettingsPage.vue'))
+const SettingsRail = defineAsyncComponent(() => import('./settings/SettingsRail.vue'))
+const PluginRail = defineAsyncComponent(() => import('./components/PluginRail.vue'))
+const AsrPanel = defineAsyncComponent(() => import('./components/AsrPanel.vue'))
+const EngineCatalog = defineAsyncComponent(() => import('./components/EngineCatalog.vue'))
+const EnginePanel = defineAsyncComponent(() => import('./components/EnginePanel.vue'))
+const LlmPanel = defineAsyncComponent(() => import('./components/LlmPanel.vue'))
+const SynthPanel = defineAsyncComponent(() => import('./components/SynthPanel.vue'))
+const AudioLibrary = defineAsyncComponent(() => import('./components/AudioLibrary.vue'))
+const AudioRail = defineAsyncComponent(() => import('./components/AudioRail.vue'))
+const AvatarMatchDialog = defineAsyncComponent(() => import('./components/AvatarMatchDialog.vue'))
+const LogView = defineAsyncComponent(() => import('./components/LogView.vue'))
 
 /** 设置屏是壳内的一屏：壳的形态（mode）与主区内容跟着它换，壳本身不换。 */
 const isSettings = computed(() => store.view === 'settings')

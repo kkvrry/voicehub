@@ -15,7 +15,7 @@ import httpx
 from app.infra.netenv import normalize_no_proxy_env
 from app.llm.base import LlmError
 
-__all__ = ["client", "endpoint", "request_json"]
+__all__ = ["aclose", "client", "endpoint", "request_json"]
 
 _CLIENT: httpx.AsyncClient | None = None
 _CLIENT_LOOP: asyncio.AbstractEventLoop | None = None
@@ -30,6 +30,20 @@ def client() -> httpx.AsyncClient:
         _CLIENT = httpx.AsyncClient()
         _CLIENT_LOOP = loop
     return _CLIENT
+
+
+async def aclose() -> None:
+    """关闭当前事件循环缓存的 LLM HTTP 客户端（应用退出时调用）。"""
+    global _CLIENT, _CLIENT_LOOP
+    client_ref = _CLIENT
+    if client_ref is None:
+        return
+    loop = asyncio.get_running_loop()
+    if _CLIENT_LOOP is loop:
+        _CLIENT = None
+        _CLIENT_LOOP = None
+        if not client_ref.is_closed:
+            await client_ref.aclose()
 
 
 def endpoint(root: str, path: str) -> str:

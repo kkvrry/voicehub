@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -205,3 +206,51 @@ class TestConfigRoundTrip:
         again = load_config()
         assert again.folders == []
         assert again.host == "0.0.0.0"
+
+    def test_corrupt_config_is_parked_instead_of_silently_overwritten(self, data_dir: Path) -> None:
+        """坏掉的 config.json 留在旁边，不让下一次保存直接抹掉用户的手写配置。"""
+        path = data_dir / "config.json"
+        path.write_text("{broken json", encoding="utf-8")
+
+        loaded = load_config()
+        assert loaded.port == 0
+        assert not path.exists()
+        parked = list(data_dir.glob("config.corrupt-*.json"))
+        assert len(parked) == 1
+        assert parked[0].read_text(encoding="utf-8") == "{broken json"
+
+    def test_concurrent_saves_do_not_corrupt_config(self, data_dir: Path) -> None:
+        def write_one(port: int) -> None:
+            save_config(Config(port=18000 + port))
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            list(pool.map(write_one, range(20)))
+
+        loaded = load_config()
+        assert 18000 <= loaded.port < 18020
+
+    def test_update_config_is_atomic_under_concurrency(self, data_dir: Path) -> None:
+        from app.infra.config import update_config
+
+        def append_folder(index: int) -> None:
+            update_config(lambda cfg: cfg.folders.append(f"dir-{index}"))
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            list(pool.map(append_folder, range(12)))
+
+        loaded = load_config()
+        assert sorted(loaded.folders) == sorted(f"dir-{i}" for i in range(12))
+
+    def test_update_config_does_not_persist_on_error(self, data_dir: Path) -> None:
+        from app.infra.config import update_config
+
+        save_config(Config(port=18123))
+
+        def broken(cfg: Config) -> None:
+            cfg.port = 19999
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            update_config(broken)
+
+        assert load_config().port == 18123

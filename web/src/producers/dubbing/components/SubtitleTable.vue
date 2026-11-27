@@ -871,6 +871,11 @@ function onKey(event) {
   padding: 0 8px 0 8px;
 }
 
+:deep(.srow) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
+}
+
 .seg-head {
   flex: none;
   height: 26px;

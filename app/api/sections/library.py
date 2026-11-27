@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 
 from app.api.clientaddr import is_local_client
 from app.api.errors import ApiError, not_found
+from app.api.localonly import require_local
 from app.api.schemas import (
     DeleteOut,
     ListResponse,
@@ -130,11 +131,16 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
         )
 
     @router.delete("/voices/{voice_id}", response_model=DeleteOut, summary="移除音色", tags=["library"])
-    def delete_voice(voice_id: str) -> dict[str, Any]:
+    def delete_voice(voice_id: str, request: Request) -> dict[str, Any]:
         """移除一条音色。本地音色的文件移入回收站（可还原），不是永久删除。
 
         仅删除库中记录时，下次扫描会重新发现它，"移除"将失去意义。
         """
+        require_local(
+            request,
+            code="delete_local_only",
+            message="删除音色或样例只能在本机使用。",
+        )
         result = service.delete_voice(voice_id)
         return {
             "id": voice_id,
@@ -189,11 +195,16 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
         summary="移除样例",
         tags=["library"],
     )
-    def delete_sample(voice_id: str, file: str) -> dict[str, Any]:
+    def delete_sample(voice_id: str, file: str, request: Request) -> dict[str, Any]:
         """移除一条样例。文件进回收站（可还原），不是永久删除。
 
         只摘库里的记录是不够的：文件还在原位的话，下次扫描又把它认回来。
         """
+        require_local(
+            request,
+            code="delete_local_only",
+            message="删除音色或样例只能在本机使用。",
+        )
         return _voice_out(service.delete_sample(voice_id, file), with_samples=True)
 
     @router.post("/voices/{voice_id}/prefs", response_model=VoiceOut, summary="收藏/隐藏", tags=["library"])

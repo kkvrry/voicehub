@@ -63,6 +63,34 @@ def test_audiocpp_settings_from_the_lan_are_refused(client: TestClient) -> None:
     assert resp.json()["error"]["code"] == "producer_settings_local_only"
 
 
+def test_audiocpp_runtime_mutations_from_the_lan_are_refused(client: TestClient) -> None:
+    """运行包下载、启停、模型安装与卸载都只能在本机执行；状态查询保持开放。"""
+    lan = _lan(client)
+    assert lan.get("/api/v1/producers/audiocpp/state").status_code == 200
+    for path, payload in (
+        ("/api/v1/producers/audiocpp/settings", {"exe": "cmd.exe"}),
+        ("/api/v1/producers/audiocpp/download", {}),
+        ("/api/v1/producers/audiocpp/start", {}),
+        ("/api/v1/producers/audiocpp/stop", {}),
+        ("/api/v1/producers/audiocpp/models/install", {"id": "demo"}),
+        ("/api/v1/producers/audiocpp/uninstall", {"confirm": True}),
+    ):
+        resp = lan.post(path, json=payload)
+        assert resp.status_code == 403, path
+        assert resp.json()["error"]["code"] == "audiocpp_local_only", path
+
+
+def test_deleting_voices_or_samples_from_the_lan_is_refused(client: TestClient) -> None:
+    """删除本地音色/样例会把宿主机文件移进回收站，只能在本机发起。"""
+    lan = _lan(client)
+    resp = lan.delete("/api/v1/voices/nonexistent")
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "delete_local_only"
+    resp2 = lan.delete("/api/v1/voices/nonexistent/samples/a.wav")
+    assert resp2.status_code == 403
+    assert resp2.json()["error"]["code"] == "delete_local_only"
+
+
 def test_reading_and_synthesis_stay_open_on_the_lan(client: TestClient) -> None:
     lan = _lan(client)
     assert lan.get("/api/v1/health").status_code == 200

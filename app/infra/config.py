@@ -9,6 +9,10 @@ from __future__ import annotations
 import copy
 import json
 import os
+import threading
+import time
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -35,6 +39,7 @@ __all__ = [
     "resolve_https",
     "resolve_port",
     "save_config",
+    "update_config",
 ]
 
 #: 服务默认端口（``127.0.0.1:17865``）。不用常用默认端口，避免与本地工具相撞且难排查。
@@ -65,6 +70,7 @@ _DATA_DIRS: dict[str, Path] = {}
 
 #: ``load_config()`` 的解析结果：``(路径, mtime_ns, 大小) → Config``。
 _CONFIG_CACHE: tuple[tuple[str, int, int], Config] | None = None
+_CONFIG_LOCK = threading.RLock()
 
 
 def _ensure(path: Path) -> Path:
@@ -293,6 +299,17 @@ def resolve_https(cli: str | None = None, host: str = "") -> bool:
     return mode == HTTPS_ON
 
 
+def _park_bad_config(path: Path) -> None:
+    """坏配置不静默覆盖：挪到旁边留档，避免下一次保存把用户手写的配置抹掉。"""
+    target = path.with_name(
+        f"{path.stem}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}{path.suffix}"
+    )
+    try:
+        path.replace(target)
+    except OSError:
+        pass
+
+
 def load_config() -> Config:
     """读配置。文件不在 / 坏了 → 空配置（服务照样起得来，界面上再配目录）。
 
@@ -303,160 +320,191 @@ def load_config() -> Config:
     设置都是这个形状），共用同一个对象会让"A 还没保存的改动"出现在 B 的读里。
     """
     global _CONFIG_CACHE
-    path = _config_file()
-    stamp = file_stamp(path)
-    if stamp is None:
-        return Config()
-    cached = _CONFIG_CACHE
-    if cached is not None and cached[0] == stamp:
-        return copy.deepcopy(cached[1])
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return Config()
-    # 旧版头像生成配置，已由公开图片来源替代。
-    for obsolete in ("avatar_engine", "avatar_options"):
-        raw.pop(obsolete, None)
-    known = {
-        "folders",
-        "ffprobe_path",
-        "output_dir",
-        "cache_dir",
-        "log_dir",
-        "cache_limit_mb",
-        "cache_keep_days",
-        "engine_outputs",
-        "channels",
-        "asr_engine",
-        "asr_options",
-        "port",
-        "host",
-        "https",
-        "access_token",
-        "cors_origins",
-        "engines",
-        "engines_enabled",
-        "llm",
-        "llm_default",
-        "producers",
-        "producers_disabled",
-    }
-    raw_engines = raw.get("engines")
-    engines = (
-        {str(key): dict(value) for key, value in raw_engines.items() if isinstance(value, dict)}
-        if isinstance(raw_engines, dict)
-        else {}
-    )
-    # 对话模型同理：只收 dict，坏值留给 usecase 那一层的容错。
-    raw_llm = raw.get("llm")
-    llm = (
-        {str(key): dict(value) for key, value in raw_llm.items() if isinstance(value, dict)}
-        if isinstance(raw_llm, dict)
-        else {}
-    )
-    raw_producers = raw.get("producers")
-    producers = (
-        {str(key): dict(value) for key, value in raw_producers.items() if isinstance(value, dict)}
-        if isinstance(raw_producers, dict)
-        else {}
-    )
-    raw_outputs = raw.get("engine_outputs")
-    outputs = (
-        {str(key): str(value).strip() for key, value in raw_outputs.items() if str(value).strip()}
-        if isinstance(raw_outputs, dict)
-        else {}
-    )
-    # 通道段只收 dict：坏值在 resolve_channel 那一层还有一道容错，这里先粗筛。
-    raw_channels = raw.get("channels")
-    channels = (
-        {str(key): dict(value) for key, value in raw_channels.items() if isinstance(value, dict)}
-        if isinstance(raw_channels, dict)
-        else {}
-    )
-    # 启用清单：**键不在**与"空列表"不是一回事——前者是升级前的配置（按用过的推导），
-    # 后者是用户真的把每一台都停用了。故先看键在不在，再收值。
-    enabled: list[str] | None = None
-    if "engines_enabled" in raw:
-        raw_enabled = raw.get("engines_enabled")
-        enabled = (
-            [str(key).strip() for key in raw_enabled if str(key).strip()]
-            if isinstance(raw_enabled, list)
-            else []
+    with _CONFIG_LOCK:
+        path = _config_file()
+        stamp = file_stamp(path)
+        if stamp is None:
+            return Config()
+        cached = _CONFIG_CACHE
+        if cached is not None and cached[0] == stamp:
+            return copy.deepcopy(cached[1])
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            _park_bad_config(path)
+            _CONFIG_CACHE = None
+            return Config()
+        except OSError:
+            return Config()
+        if not isinstance(raw, dict):
+            _park_bad_config(path)
+            _CONFIG_CACHE = None
+            return Config()
+        # 旧版头像生成配置，已由公开图片来源替代。
+        for obsolete in ("avatar_engine", "avatar_options"):
+            raw.pop(obsolete, None)
+        known = {
+            "folders",
+            "ffprobe_path",
+            "output_dir",
+            "cache_dir",
+            "log_dir",
+            "cache_limit_mb",
+            "cache_keep_days",
+            "engine_outputs",
+            "channels",
+            "asr_engine",
+            "asr_options",
+            "port",
+            "host",
+            "https",
+            "access_token",
+            "cors_origins",
+            "engines",
+            "engines_enabled",
+            "llm",
+            "llm_default",
+            "producers",
+            "producers_disabled",
+        }
+        raw_engines = raw.get("engines")
+        engines = (
+            {str(key): dict(value) for key, value in raw_engines.items() if isinstance(value, dict)}
+            if isinstance(raw_engines, dict)
+            else {}
         )
-    raw_asr_options = raw.get("asr_options")
-    asr_options = dict(raw_asr_options) if isinstance(raw_asr_options, dict) else {}
-    config = Config(
-        folders=[str(x).strip() for x in raw.get("folders", []) if str(x).strip()],
-        ffprobe_path=str(raw.get("ffprobe_path", "") or "").strip(),
-        output_dir=str(raw.get("output_dir", "") or "").strip(),
-        cache_dir=str(raw.get("cache_dir", "") or "").strip(),
-        log_dir=str(raw.get("log_dir", "") or "").strip(),
-        cache_limit_mb=_as_count(raw.get("cache_limit_mb"), DEFAULT_CACHE_LIMIT_MB),
-        cache_keep_days=_as_count(raw.get("cache_keep_days"), DEFAULT_CACHE_KEEP_DAYS),
-        engine_outputs=outputs,
-        channels=channels,
-        asr_engine=str(raw.get("asr_engine", "") or "").strip(),
-        asr_options=asr_options,
-        port=_as_port(raw.get("port")),
-        host=_as_host(raw.get("host")),
-        https=_as_https(raw.get("https")),
-        access_token=str(raw.get("access_token", "") or "").strip(),
-        cors_origins=[
-            str(origin).strip()
-            for origin in raw.get("cors_origins", [])
-            if str(origin).strip()
-        ]
-        if isinstance(raw.get("cors_origins"), list)
-        else [],
-        engines=engines,
-        engines_enabled=enabled,
-        llm=llm,
-        llm_default=str(raw.get("llm_default", "") or "").strip(),
-        producers=producers,
-        producers_disabled=[
-            str(key).strip()
-            for key in raw.get("producers_disabled", [])
-            if str(key).strip()
-        ]
-        if isinstance(raw.get("producers_disabled"), list)
-        else [],
-        extra={k: v for k, v in raw.items() if k not in known},
-    )
-    _CONFIG_CACHE = (stamp, config)
-    return copy.deepcopy(config)
+        # 对话模型同理：只收 dict，坏值留给 usecase 那一层的容错。
+        raw_llm = raw.get("llm")
+        llm = (
+            {str(key): dict(value) for key, value in raw_llm.items() if isinstance(value, dict)}
+            if isinstance(raw_llm, dict)
+            else {}
+        )
+        raw_producers = raw.get("producers")
+        producers = (
+            {
+                str(key): dict(value)
+                for key, value in raw_producers.items()
+                if isinstance(value, dict)
+            }
+            if isinstance(raw_producers, dict)
+            else {}
+        )
+        raw_outputs = raw.get("engine_outputs")
+        outputs = (
+            {str(key): str(value).strip() for key, value in raw_outputs.items() if str(value).strip()}
+            if isinstance(raw_outputs, dict)
+            else {}
+        )
+        # 通道段只收 dict：坏值在 resolve_channel 那一层还有一道容错，这里先粗筛。
+        raw_channels = raw.get("channels")
+        channels = (
+            {
+                str(key): dict(value)
+                for key, value in raw_channels.items()
+                if isinstance(value, dict)
+            }
+            if isinstance(raw_channels, dict)
+            else {}
+        )
+        # 启用清单：**键不在**与"空列表"不是一回事——前者是升级前的配置（按用过的推导），
+        # 后者是用户真的把每一台都停用了。故先看键在不在，再收值。
+        enabled: list[str] | None = None
+        if "engines_enabled" in raw:
+            raw_enabled = raw.get("engines_enabled")
+            enabled = (
+                [str(key).strip() for key in raw_enabled if str(key).strip()]
+                if isinstance(raw_enabled, list)
+                else []
+            )
+        raw_asr_options = raw.get("asr_options")
+        asr_options = dict(raw_asr_options) if isinstance(raw_asr_options, dict) else {}
+        config = Config(
+            folders=[str(x).strip() for x in raw.get("folders", []) if str(x).strip()],
+            ffprobe_path=str(raw.get("ffprobe_path", "") or "").strip(),
+            output_dir=str(raw.get("output_dir", "") or "").strip(),
+            cache_dir=str(raw.get("cache_dir", "") or "").strip(),
+            log_dir=str(raw.get("log_dir", "") or "").strip(),
+            cache_limit_mb=_as_count(raw.get("cache_limit_mb"), DEFAULT_CACHE_LIMIT_MB),
+            cache_keep_days=_as_count(raw.get("cache_keep_days"), DEFAULT_CACHE_KEEP_DAYS),
+            engine_outputs=outputs,
+            channels=channels,
+            asr_engine=str(raw.get("asr_engine", "") or "").strip(),
+            asr_options=asr_options,
+            port=_as_port(raw.get("port")),
+            host=_as_host(raw.get("host")),
+            https=_as_https(raw.get("https")),
+            access_token=str(raw.get("access_token", "") or "").strip(),
+            cors_origins=[
+                str(origin).strip()
+                for origin in raw.get("cors_origins", [])
+                if str(origin).strip()
+            ]
+            if isinstance(raw.get("cors_origins"), list)
+            else [],
+            engines=engines,
+            engines_enabled=enabled,
+            llm=llm,
+            llm_default=str(raw.get("llm_default", "") or "").strip(),
+            producers=producers,
+            producers_disabled=[
+                str(key).strip()
+                for key in raw.get("producers_disabled", [])
+                if str(key).strip()
+            ]
+            if isinstance(raw.get("producers_disabled"), list)
+            else [],
+            extra={k: v for k, v in raw.items() if k not in known},
+        )
+        _CONFIG_CACHE = (stamp, config)
+        return copy.deepcopy(config)
 
 
 def save_config(config: Config) -> None:
     """写配置（原子写：临时文件 + rename，写一半断电不会留下半个 JSON）。"""
     global _CONFIG_CACHE
-    path = _config_file()
-    payload = {
-        "folders": config.folders,
-        "ffprobe_path": config.ffprobe_path,
-        "output_dir": config.output_dir,
-        "cache_dir": config.cache_dir,
-        "log_dir": config.log_dir,
-        "cache_limit_mb": config.cache_limit_mb,
-        "cache_keep_days": config.cache_keep_days,
-        "engine_outputs": config.engine_outputs,
-        "channels": config.channels,
-        "asr_engine": config.asr_engine,
-        "asr_options": config.asr_options,
-        "port": config.port,
-        "host": config.host,
-        "https": config.https,
-        # 只有配了才写进文件：默认配置里不该出现一个空令牌键，看着像"设过又清空"。
-        **({"access_token": config.access_token} if config.access_token else {}),
-        "cors_origins": config.cors_origins,
-        "engines": config.engines,
-        # 没写过就不写：留着这个键缺失，升级后的推导才有机会生效。
-        **({"engines_enabled": config.engines_enabled} if config.engines_enabled is not None else {}),
-        "llm": config.llm,
-        "llm_default": config.llm_default,
-        "producers": config.producers,
-        "producers_disabled": config.producers_disabled,
-        **config.extra,
-    }
-    write_json(path, payload)
-    # 文件时间戳理论上已经变了；显式失效一次，不赌文件系统的时钟精度。
-    _CONFIG_CACHE = None
+    with _CONFIG_LOCK:
+        path = _config_file()
+        payload = {
+            "folders": config.folders,
+            "ffprobe_path": config.ffprobe_path,
+            "output_dir": config.output_dir,
+            "cache_dir": config.cache_dir,
+            "log_dir": config.log_dir,
+            "cache_limit_mb": config.cache_limit_mb,
+            "cache_keep_days": config.cache_keep_days,
+            "engine_outputs": config.engine_outputs,
+            "channels": config.channels,
+            "asr_engine": config.asr_engine,
+            "asr_options": config.asr_options,
+            "port": config.port,
+            "host": config.host,
+            "https": config.https,
+            # 只有配了才写进文件：默认配置里不该出现一个空令牌键，看着像"设过又清空"。
+            **({"access_token": config.access_token} if config.access_token else {}),
+            "cors_origins": config.cors_origins,
+            "engines": config.engines,
+            # 没写过就不写：留着这个键缺失，升级后的推导才有机会生效。
+            **({"engines_enabled": config.engines_enabled} if config.engines_enabled is not None else {}),
+            "llm": config.llm,
+            "llm_default": config.llm_default,
+            "producers": config.producers,
+            "producers_disabled": config.producers_disabled,
+            **config.extra,
+        }
+        write_json(path, payload)
+        # 文件时间戳理论上已经变了；显式失效一次，不赌文件系统的时钟精度。
+        _CONFIG_CACHE = None
+
+
+def update_config(mutator: Callable[[Config], Any]) -> Config:
+    """在进程内配置锁保护下原子完成 读 → 改 → 写，返回保存后的配置副本。
+
+    用于替代路由层散落的 ``cfg = load_config(); ...; save_config(cfg)``，避免并发
+    请求交错读改写导致后写覆盖先写。``mutator`` 抛异常时不会落盘。
+    """
+    with _CONFIG_LOCK:
+        cfg = load_config()
+        mutator(cfg)
+        save_config(cfg)
+        return copy.deepcopy(cfg)

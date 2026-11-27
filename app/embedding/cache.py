@@ -18,6 +18,7 @@ import numpy as np
 
 from app.embedding.base import EmbeddingProvider
 from app.infra.loghub import CHANNEL
+from app.infra.sqlite import connect as sqlite_connect
 
 __all__ = ["VectorCache", "cache_for"]
 
@@ -38,13 +39,14 @@ class VectorCache:
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.path, timeout=5.0)
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS vectors ("
-            " key TEXT PRIMARY KEY, version TEXT NOT NULL,"
-            " dim INTEGER NOT NULL, vector BLOB NOT NULL, updated REAL NOT NULL)"
-        )
+        conn = sqlite_connect(self.path, timeout=5.0)
         if not self._prepared:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS vectors ("
+                " key TEXT PRIMARY KEY, version TEXT NOT NULL,"
+                " dim INTEGER NOT NULL, vector BLOB NOT NULL, updated REAL NOT NULL)"
+            )
             conn.execute("DELETE FROM vectors WHERE version <> ?", (self.version,))
             conn.commit()
             self._prepared = True
@@ -57,23 +59,19 @@ class VectorCache:
             return {}
         found: dict[str, np.ndarray] = {}
         try:
-            with self._lock:
-                conn = self._connect()
-                try:
-                    for start in range(0, len(unique), _CHUNK):
-                        chunk = unique[start : start + _CHUNK]
-                        marks = ",".join("?" for _ in chunk)
-                        rows = conn.execute(
-                            f"SELECT key, vector FROM vectors"
-                            f" WHERE dim = ? AND key IN ({marks})",
-                            (dimension, *chunk),
-                        ).fetchall()
-                        for key, blob in rows:
-                            if len(blob) != dimension * 4:
-                                continue
-                            found[str(key)] = np.frombuffer(blob, dtype="<f4")
-                finally:
-                    conn.close()
+            with self._lock, self._connect() as conn:
+                for start in range(0, len(unique), _CHUNK):
+                    chunk = unique[start : start + _CHUNK]
+                    marks = ",".join("?" for _ in chunk)
+                    rows = conn.execute(
+                        f"SELECT key, vector FROM vectors"
+                        f" WHERE dim = ? AND key IN ({marks})",
+                        (dimension, *chunk),
+                    ).fetchall()
+                    for key, blob in rows:
+                        if len(blob) != dimension * 4:
+                            continue
+                        found[str(key)] = np.frombuffer(blob, dtype="<f4")
         except (sqlite3.Error, OSError) as exc:
             self._warn(f"读取向量缓存失败：{exc}")
             return {}
@@ -92,18 +90,13 @@ class VectorCache:
         if not rows:
             return
         try:
-            with self._lock:
-                conn = self._connect()
-                try:
-                    conn.executemany(
-                        "INSERT OR REPLACE INTO vectors"
-                        " (key, version, dim, vector, updated)"
-                        " VALUES (?, ?, ?, ?, ?)",
-                        rows,
-                    )
-                    conn.commit()
-                finally:
-                    conn.close()
+            with self._lock, self._connect() as conn:
+                conn.executemany(
+                    "INSERT OR REPLACE INTO vectors"
+                    " (key, version, dim, vector, updated)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    rows,
+                )
         except (sqlite3.Error, OSError) as exc:
             self._warn(f"写入向量缓存失败：{exc}")
 
