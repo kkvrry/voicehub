@@ -36,7 +36,7 @@ class AudiobookProducer(ProducerPlugin):
             ProducerStep("sentences", "拆句", "章节正文切分为发声单元，标注叙述与对白。"),
             ProducerStep("analysis", "分析", "推断对白的说话人与情绪，可人工修正。"),
             ProducerStep("audio", "生成", "按角色音色逐行合成，音色取自 VoiceHub 音色库。"),
-            ProducerStep("qc", "预检", "回读已生成的音频，找出念错、漏读与截断；只提示，不改状态。"),
+            ProducerStep("qc", "预检", "声学前置检查与 ASR 回读比对，可选是否阻断合并。"),
             ProducerStep("merge", "合并", "按章节顺序拼接逐行音频，输出成品音频。"),
         )
 

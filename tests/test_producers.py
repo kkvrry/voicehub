@@ -4240,3 +4240,50 @@ def test_audio_plan_skips_rows_of_a_disabled_engine(tmp_path) -> None:
     config.engines_enabled = sorted(set(config.engines_enabled) | {"breeze_tts"})
     save_config(config)
     assert len(service.audio._audio_plan(project["id"]).tasks) == len(rows)
+
+
+def test_set_row_error_preserves_previous_audio_and_retries_in_plan(tmp_path) -> None:
+    """重试失败时保留已有音频与指纹，但计划仍必须重跑失败行（不能按命中跳过）。"""
+    from app.producers.builtin.audiobook.pipeline import AudiobookService
+
+    service = AudiobookService(tmp_path)
+    project = service.create("样书", "第一章\n少年推门。\n风停了。\n")
+    service.split_project(project["id"], "general")
+    service.split_sentences(project["id"])
+    service.store.set_voice(project["id"], "旁白", "breeze_tts", "v-narrator", "旁白音")
+    chapter = service.store.chapters(project["id"])[0]
+    row = service.store.rows(chapter["id"])[0]
+    _record_row_audio(service, project["id"], chapter["id"], row)
+    # _record_row_audio 按 fake 算指纹，这里换回真实匹配行当前音色的键并标失败。
+    before = service.store.row(row["id"])
+    assert before is not None and before["audio"] and before["audio_key"]
+
+    service.store.set_row_error(row["id"], "临时超时")
+    after = service.store.row(row["id"])
+    assert after is not None
+    assert after["status"] == "failed"
+    assert after["error"] == "临时超时"
+    assert after["audio"] == before["audio"]
+    assert after["audio_key"] == before["audio_key"]
+
+    # 即使 audio 与 audio_key 都在，失败行也不得被 _audio_plan 跳过。
+    with service.store._conn() as conn:
+        from app.producers.builtin.audiobook.audio_stage import row_key, voice_identity
+        from app.producers.builtin.audiobook.rows import emotion_words
+        from app.usecase import engines as engines_uc
+
+        engine = engines_uc.detect_engine("breeze_tts")
+        mapping = service.store.voice_map(project["id"])["旁白"]
+        key = row_key(
+            after,
+            mapping,
+            words=set(emotion_words()),
+            identity=voice_identity(engine) if engine else "",
+            version=2,
+        )
+        conn.execute(
+            "UPDATE rows SET audio_key = ?, audio_key_v = 2 WHERE id = ?",
+            (key, row["id"]),
+        )
+    plan = service.audio._audio_plan(project["id"])
+    assert any(item[1]["id"] == row["id"] for item in plan.tasks)

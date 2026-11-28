@@ -720,8 +720,8 @@ onBeforeUnmount(() => {
   background: var(--sh-text-4);
 }
 .acp-dot.is-on {
-  background: var(--sh-ok, #35a06a);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sh-ok, #35a06a) 18%, transparent);
+  background: var(--sh-ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sh-ok) 18%, transparent);
 }
 
 /* ------------------------------------------------------------------ 日志抽屉 */

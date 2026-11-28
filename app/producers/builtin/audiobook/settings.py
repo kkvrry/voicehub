@@ -80,6 +80,7 @@ MASTER_LOUDNESS_PRESET_CHOICES: tuple[tuple[str, str], ...] = (
 GROUP_PROJECT = "项目"
 GROUP_ANALYSIS = "对话分析"
 GROUP_SYNTH = "逐行合成"
+GROUP_QC = "预检"
 GROUP_MERGE = "成品合并"
 GROUP_LOUDNESS = "响度处理"
 GROUP_SUBTITLE = "字幕"
@@ -224,11 +225,23 @@ class AudiobookSettings(BaseModel):
     )
     qc_enabled: bool = Field(
         default=False,
-        description=(
-            "生成结束后把新音频再识别一遍，与原文比对，疑似行入行表的「疑似」档。"
-            "只作提示，不改行状态、不阻断合并；识别引擎与「设置 → 识别」用的是同一台。"
-        ),
+        description="生成结束后自动执行预检。",
         json_schema_extra=ui_hints("生成后预检", widget="switch", group=GROUP_SYNTH),
+    )
+    qc_acoustic: bool = Field(
+        default=True,
+        description="检查静音/无声、尾音截断与时长异常（不依赖识别引擎）。",
+        json_schema_extra=ui_hints("声学前置检查", widget="switch", group=GROUP_QC),
+    )
+    qc_asr: bool = Field(
+        default=True,
+        description="作为最后一步，调用识别引擎转写音频并与原文音节比对。",
+        json_schema_extra=ui_hints("ASR 回读比对", widget="switch", group=GROUP_QC),
+    )
+    qc_block_merge: bool = Field(
+        default=False,
+        description="开启后，章节存在预检「疑似」行时阻止合并；关闭则仅提示，不阻断。",
+        json_schema_extra=ui_hints("疑似行阻断合并", widget="switch", group=GROUP_QC),
     )
 
     # ---- 成品合并（把逐行产物拼成章节） ------------------------------------

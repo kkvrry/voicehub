@@ -22,6 +22,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory, TemporaryFile
 from typing import TYPE_CHECKING, Any
 
+from app.infra.atomic import replace_file
 from app.infra.audioprobe import (
     find_ffprobe,
     probe_duration,
@@ -980,7 +981,25 @@ class MergeStage:
                 f"本章有 {stale} 行改过角色、情绪或文本，旧音频已过期："
                 "重新生成这几行（或改回原样）再合并。"
             )
-        rows = [row for row in all_rows if row["audio"]]
+        if self.svc.settings.qc_block_merge:
+            qc_map = self.svc.store.qc_map(project_id)
+            suspect = sum(
+                1
+                for row in all_rows
+                if row["audio"]
+                and qc_map.get(row["id"], {}).get("audio_key") == str(row.get("audio_key") or "")
+                and qc_map[row["id"]].get("verdict") == "suspect"
+            )
+            if suspect:
+                raise ProducerError(
+                    f"本章有 {suspect} 行预检疑似问题，当前已开启「疑似行阻断合并」："
+                    "请先处理疑似行或在预检设置中关闭阻断后再合并。"
+                )
+        rows = [
+            row
+            for row in all_rows
+            if row["audio"] and row["status"] != "failed"
+        ]
         if not rows:
             raise ProducerError("本章还没有已生成的音频。")
 
@@ -1101,21 +1120,27 @@ class MergeStage:
             progress("subtitles", 0, 1, "字幕与成品时长自检")
             at = time.perf_counter()
             if subtitle:
-                subtitles = self._write_timeline_subtitles(cues, folder, output.stem)
+                staged_subtitles = self._write_timeline_subtitles(cues, work, output.stem)
             else:
-                subtitles, last_cue = self._write_subtitles(
-                    chapter, rows, row_paths, folder, output.stem, gap,
+                staged_subtitles, last_cue = self._write_subtitles(
+                    chapter, rows, row_paths, work, output.stem, gap,
                     start_ms=lead, control=control,
                 )
                 expected = last_cue + max(0, tail) / 1000
             check = self._check_product(final_bgm or final_voice, expected)
             timings["subtitles_check"] = time.perf_counter() - at
             control.check()
-            final_voice.replace(output)
+            replace_file(final_voice, output)
             if final_bgm is not None and bgm is not None:
-                final_bgm.replace(bgm)
+                replace_file(final_bgm, bgm)
             else:
                 output.with_name(f"{output.stem}-bgm{output.suffix}").unlink(missing_ok=True)
+            subtitles: dict[str, str] = {}
+            for kind, staged_path in staged_subtitles.items():
+                staged_file = Path(staged_path)
+                dest = folder / staged_file.name
+                replace_file(staged_file, dest)
+                subtitles[kind] = str(dest)
         timings["master_loudness"] = sum(
             report["seconds"] for report in loudness["master"].values()
         )

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import threading
 import time
 import uuid
@@ -214,7 +215,7 @@ def _ratio(value: Any, default: float, bounds: tuple[float, float]) -> float:
         number = float(value)
     except (TypeError, ValueError):
         return default
-    if number != number or number in (float("inf"), float("-inf")):
+    if not math.isfinite(number):
         return default
     low, high = bounds
     return round(max(low, min(high, number)), 4)

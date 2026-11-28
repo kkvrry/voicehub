@@ -313,9 +313,11 @@ class AudioStage:
                     identity = voice_identity(engine)
                     identities[engine_key] = identity
                 key = row_key(row, mapping, words=words, identity=identity, version=2)
-                # 被顶掉的行旧指纹照样对得上，但文件里已经是别人的声音。
+                # 被顶掉的行旧指纹照样对得上，但文件里已经是别人的声音；
+                # 失败行不自动恢复，重跑合成时必须再次尝试。
                 if (
-                    row["audio"]
+                    row["status"] != "failed"
+                    and row["audio"]
                     and files.has(row["audio"])
                     and row["id"] not in overwritten
                 ):

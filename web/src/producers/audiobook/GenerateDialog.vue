@@ -38,9 +38,6 @@
                 <input v-model="qcEnabled" type="checkbox" />
                 生成后预检
               </label>
-              <p class="generate-hint">
-                串行执行，不与生成争用显存；疑似行入行表的「疑似」档，不阻断合并。
-              </p>
             </section>
           </div>
 
@@ -147,7 +144,7 @@ async function save(thenRun) {
   font-size: 13px;
 }
 .generate-check input {
-  accent-color: var(--color-accent, #534ab7);
+  accent-color: var(--sh-accent);
 }
 .generate-dialog {
   width: min(520px, 100%);

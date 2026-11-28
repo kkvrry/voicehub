@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Any
@@ -18,6 +19,8 @@ from app.api.views import (
     _STARTED,
     ClientLogIn,
     FoldersIn,
+    SapiConfigIn,
+    SapiInstallIn,
     ServiceIn,
     _engine_states,
     _vocab,
@@ -26,7 +29,7 @@ from app.api.views import (
     bind_scheme,
 )
 from app.domain.request_spec import spec_payload
-from app.infra import autostart, releases
+from app.infra import autostart, releases, sapi_bridge
 from app.infra import secrets as secret_store
 from app.infra.config import (
     DEFAULT_HOST,
@@ -143,6 +146,79 @@ def register(router: APIRouter, service: LibraryService, version: str) -> None:
             "autostart_enabled": autostart.enabled(),
             "restart_required": restart,
         }
+
+    # ---- 系统朗读（Windows SAPI 5 桥接）--------------------------------
+
+    def _local_endpoint() -> str:
+        return f"{bind_scheme()}://127.0.0.1:{bind_port()}"
+
+    @router.get("/sapi", summary="系统朗读（SAPI）桥接状态", tags=["system"])
+    def sapi_state() -> dict[str, Any]:
+        """返回本机 SAPI 5 桥接的安装状态、当前默认状态与音色配置。"""
+        return sapi_bridge.status(default_endpoint=_local_endpoint())
+
+    @router.put("/sapi", summary="保存系统朗读（SAPI）设置", tags=["system"])
+    def save_sapi(request: Request, body: SapiConfigIn) -> dict[str, Any]:
+        """更新 SAPI 桥接音色与默认音色开关；引擎默认自动，接口地址对齐当前服务。"""
+        require_local(request)
+        if not sapi_bridge.supported():
+            raise ApiError(
+                status=400,
+                code="sapi_unsupported",
+                message="系统朗读桥接仅支持 Windows。",
+            )
+        endpoint = _local_endpoint()
+        if body.voice_id is not None:
+            sapi_bridge.save_config(voice_id=body.voice_id, endpoint=endpoint, engine="auto")
+        if body.is_default is not None:
+            if body.is_default and not sapi_bridge.is_installed():
+                raise ApiError(
+                    status=400,
+                    code="sapi_not_installed",
+                    message="请先安装系统朗读桥接，再设为系统默认音色。",
+                )
+            if not sapi_bridge.set_default(body.is_default):
+                raise ApiError(
+                    status=500,
+                    code="sapi_default_failed",
+                    message="切换系统默认音色失败，详见日志。",
+                )
+        state = sapi_bridge.status(default_endpoint=endpoint)
+        CHANNEL.info(
+            "系统朗读（SAPI）设置已更新。",
+            source="sapi",
+            voice_id=state["voice_id"],
+            is_default=state["is_default"],
+        )
+        return state
+
+    @router.post("/sapi/install", summary="安装系统朗读（SAPI）桥接", tags=["system"])
+    async def install_sapi(request: Request, body: SapiInstallIn) -> dict[str, Any]:
+        """编译并注册 SAPI 桥接（写 HKLM 时由脚本触发 UAC 提权）。"""
+        require_local(request)
+        endpoint = _local_endpoint()
+        try:
+            state = await asyncio.to_thread(
+                sapi_bridge.install,
+                voice_id=body.voice_id,
+                endpoint=endpoint,
+                set_as_default=body.set_default,
+            )
+        except RuntimeError as exc:
+            raise ApiError(status=500, code="sapi_install_failed", message=str(exc)) from exc
+        CHANNEL.info("系统朗读（SAPI）桥接安装完成。", source="sapi", is_default=state["is_default"])
+        return state
+
+    @router.post("/sapi/uninstall", summary="卸载系统朗读（SAPI）桥接", tags=["system"])
+    async def uninstall_sapi(request: Request) -> dict[str, Any]:
+        """卸载 SAPI 桥接并恢复系统原默认音色。"""
+        require_local(request)
+        try:
+            state = await asyncio.to_thread(sapi_bridge.uninstall)
+        except RuntimeError as exc:
+            raise ApiError(status=500, code="sapi_uninstall_failed", message=str(exc)) from exc
+        CHANNEL.info("系统朗读（SAPI）桥接已卸载。", source="sapi")
+        return state
 
     @router.get("/release", summary="检查最新正式发布", tags=["system"])
     def release_check(refresh: bool = False) -> dict[str, Any]:

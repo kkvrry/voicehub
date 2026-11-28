@@ -473,8 +473,8 @@ watch(
   line-height: 18px;
 }
 .cap-mark.on {
-  background: var(--sh-ok-soft, rgba(46, 160, 90, 0.14));
-  color: var(--sh-ok, #2ea05a);
+  background: var(--sh-ok-soft);
+  color: var(--sh-ok);
 }
 /* 语言覆盖：两张表并排（30 种语言 / 22 种方言）。 */
 .asr-lang-grid {

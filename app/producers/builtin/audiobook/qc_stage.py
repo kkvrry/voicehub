@@ -1,8 +1,8 @@
-"""行音频回读预检：把合成出来的音频再听一遍，找出念错、漏读与截断。
+"""行音频预检：先做声学前置检查（静音、尾音截断、时长异常），最后做 ASR 回读比对。
 
-只读行音频、只写 ``row_qc``：不进音频指纹、不改行状态、不阻止合并。
+只读行音频、只写 ``row_qc``：不进音频指纹、不改行状态；是否阻断合并由用户设置决定。
 
-比对在**无声调拼音的音节序列**上做，不在字上做。同音字（``医院`` / ``医愿``）
+ASR 比对在**无声调拼音的音节序列**上做，不在字上做。同音字（``医院`` / ``医愿``）
 因此被当作一致，这正是识别模型转写的主要噪声源。代价是它测不出多音字读错：
 识别输出的是字，字定读音，反推的拼音已丢掉声学信息。
 """
@@ -10,13 +10,19 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 import time
+import wave
+from array import array
 from itertools import pairwise
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from pypinyin import Style, lazy_pinyin
 
+from app.infra.audioprobe import probe_duration
+from app.infra.ffmpeg import FfmpegError, to_wav
 from app.infra.loghub import CHANNEL
 from app.producers.base import ProducerError
 from app.producers.builtin.audiobook.paths import abs_path
@@ -45,7 +51,7 @@ def normalize(text: str) -> str:
 
 
 def syllables(text: str) -> list[str]:
-    return [token for token in lazy_pinyin(text, style=Style.NORMAL) if token]
+    return [token.strip() for token in lazy_pinyin(text, style=Style.NORMAL) if token.strip()]
 
 
 def _align(left: list[str], right: list[str]) -> list[tuple[str, int, int]]:
@@ -143,12 +149,85 @@ def compare(source: str, heard: str) -> dict[str, Any]:
                        "at": missing[:8]})
     if extra and (len(extra) >= 2 and len(extra) / total > 0.05):
         issues.append({"kind": "repeat", "count": len(extra)})
-    if subs and len(subs) / total > 0.25:
+    wrong_hit = (
+        (total >= 5 and len(subs) / total > 0.25)
+        or (2 <= total <= 4 and len(subs) >= 2 and len(subs) / total > 0.4)
+    )
+    if subs and wrong_hit:
         issues.append({"kind": "wrong", "count": len(subs), "at": subs[:8]})
 
     score = round((len(missing) + len(extra) + len(subs)) / total, 4)
     detail["issues"] = issues
     return {"verdict": "suspect" if issues else "ok", "score": score, "detail": detail}
+
+
+def _read_wav_pcm16(path: Path) -> tuple[int, int, array] | None:
+    try:
+        with wave.open(str(path), "rb") as handle:
+            if handle.getsampwidth() != 2:
+                return None
+            rate = handle.getframerate()
+            channels = handle.getnchannels()
+            raw = handle.readframes(handle.getnframes())
+            if not raw or not rate or not channels:
+                return None
+            samples = array("h")
+            samples.frombytes(raw)
+            return rate, channels, samples
+    except (wave.Error, OSError, EOFError):
+        return None
+
+
+def _read_pcm16(path: Path) -> tuple[int, int, array] | None:
+    direct = _read_wav_pcm16(path)
+    if direct is not None:
+        return direct
+    transient: Path | None = None
+    try:
+        transient = to_wav(path, transient=True)
+        return _read_wav_pcm16(transient)
+    except (FfmpegError, OSError, RuntimeError):
+        return None
+    finally:
+        if transient is not None and transient != path:
+            transient.unlink(missing_ok=True)
+
+
+def inspect_acoustic(path: Path, text: str) -> dict[str, Any]:
+    """声学前置检查：静音/无声、尾音截断与时长异常（不依赖识别引擎）。"""
+    issues: list[dict[str, Any]] = []
+    if not path.exists():
+        return {"issues": [{"kind": "silent", "reason": "音频文件不存在"}], "duration": 0.0}
+
+    duration = probe_duration(path)
+    if duration <= 0.0:
+        return {"issues": [{"kind": "silent", "reason": "音频为空或无法读取"}], "duration": 0.0}
+
+    units = len(syllables(normalize(text)))
+    if units > 0:
+        if duration < 0.15 or (units >= 4 and duration < max(0.25, units * 0.07)):
+            issues.append({"kind": "duration", "detail": "too_short", "duration": round(duration, 2)})
+        elif units >= 4 and duration > max(3.0, units * 0.9 + 1.5):
+            issues.append({"kind": "duration", "detail": "too_long", "duration": round(duration, 2)})
+
+    pcm = _read_pcm16(path)
+    if pcm is not None:
+        rate, channels, samples = pcm
+        if samples:
+            peak = max(abs(max(samples)), abs(min(samples))) / 32768.0
+            if peak < 0.005:
+                issues.append({"kind": "silent", "peak": round(peak, 4)})
+            elif duration >= 0.3:
+                tail_len = max(1, int(rate * channels * 0.03))
+                stride = max(1, len(samples) // 4000)
+                body_slice = samples[::stride]
+                body_rms = math.sqrt(sum(s * s for s in body_slice) / len(body_slice)) / 32768.0
+                tail_slice = samples[-tail_len:]
+                tail_rms = math.sqrt(sum(s * s for s in tail_slice) / len(tail_slice)) / 32768.0
+                if tail_rms > 0.05 and body_rms > 0 and tail_rms > body_rms * 0.4:
+                    issues.append({"kind": "truncated", "tail_rms": round(tail_rms, 4)})
+
+    return {"issues": issues, "duration": round(duration, 2)}
 
 
 class QcStage:
@@ -167,13 +246,17 @@ class QcStage:
                 continue
             counts[item["verdict"]] = counts.get(item["verdict"], 0) + 1
         checked = sum(counts.values())
+        settings = self.svc.settings
         return {
             "counts": counts, "checked": checked, "rows": len(rows),
             "audio": sum(1 for row in rows if row.get("audio")),
             "pending": max(0, len(rows) - checked),
-            # 空串 = 现在能识别；否则是禁用的原因，按钮据此置灰。
+            # 空串 = 现在能识别；否则是禁用的原因，ASR 开关据此提示。
             "reason": asr_uc.unavailable_reason(),
             "engine": asr_uc.current_key(),
+            "acoustic": bool(getattr(settings, "qc_acoustic", True)),
+            "asr": bool(getattr(settings, "qc_asr", True)),
+            "block_merge": bool(getattr(settings, "qc_block_merge", False)),
         }
 
     def start(self, project_id: str) -> dict[str, Any]:
@@ -196,6 +279,13 @@ class QcStage:
         if not result.get("cancelled"):
             self.svc.store.update_job(job_id, message=result["message"])
 
+    @staticmethod
+    def _done_checks(item: dict[str, Any]) -> set[str]:
+        detail = item.get("detail") or {}
+        if isinstance(detail, dict) and isinstance(detail.get("checks"), list):
+            return {str(c) for c in detail["checks"]}
+        return {"asr"} if item.get("engine") else set()
+
     def run(
         self,
         project_id: str,
@@ -206,11 +296,30 @@ class QcStage:
         from app.usecase import asr as asr_uc
 
         started = time.perf_counter()
-        reason = asr_uc.unavailable_reason()
-        if reason:
-            message = f"预检跳过：{reason}"
+        settings = self.svc.settings
+        use_acoustic = bool(getattr(settings, "qc_acoustic", True))
+        use_asr = bool(getattr(settings, "qc_asr", True))
+
+        if not use_acoustic and not use_asr:
+            message = "预检跳过：未启用任何检查步骤"
             CHANNEL.warning(message, source="audiobook", project=project_id)
             return {"enabled": False, "message": message, "seconds": 0.0}
+
+        if use_asr:
+            reason = asr_uc.unavailable_reason()
+            if reason:
+                if not use_acoustic:
+                    message = f"预检跳过：{reason}"
+                    CHANNEL.warning(message, source="audiobook", project=project_id)
+                    return {"enabled": False, "message": message, "seconds": 0.0}
+                CHANNEL.warning(
+                    f"ASR 不可用（{reason}），本次仅执行声学前置检查",
+                    source="audiobook",
+                    project=project_id,
+                )
+                use_asr = False
+
+        required = {c for c, on in (("acoustic", use_acoustic), ("asr", use_asr)) if on}
 
         self.svc._settle_stale(project_id)
         root = self.svc.project_folder(project_id)
@@ -219,8 +328,11 @@ class QcStage:
         self.svc.store.qc_prune(project_id, {row["id"] for row in all_rows})
 
         known = self.svc.store.qc_map(project_id)
-        todo = [row for row in live
-                if known.get(row["id"], {}).get("audio_key") != row.get("audio_key")]
+        todo = [
+            row for row in live
+            if known.get(row["id"], {}).get("audio_key") != row.get("audio_key")
+            or not required.issubset(self._done_checks(known.get(row["id"], {})))
+        ]
 
         total = len(todo)
         if not total:
@@ -237,21 +349,53 @@ class QcStage:
             if cancelled():
                 return {"cancelled": True}
             path = abs_path(root, row["audio"])
-            try:
-                heard = str(asr_uc.transcribe_file(path).get("text", "") or "")
-                verdict = compare(str(row.get("text") or ""), heard)
-                engine = asr_uc.current_key()
-            except Exception as exc:  # noqa: BLE001 - 单行失败不该中断整批
-                verdict = {"verdict": "unknown", "score": 0.0,
-                           "detail": {"error": str(exc)[:200]}}
-                failed += 1
+            text = str(row.get("text") or "")
+            issues: list[dict[str, Any]] = []
+            checks_done: list[str] = []
+            detail: dict[str, Any] = {}
+            score = 0.0
+            asr_failed = False
+
+            if use_acoustic:
+                acoustic = inspect_acoustic(path, text)
+                checks_done.append("acoustic")
+                detail["duration"] = acoustic["duration"]
+                issues.extend(acoustic["issues"])
+
+            is_silent = any(item.get("kind") == "silent" for item in issues)
+            if use_asr and not is_silent:
+                try:
+                    heard = str(asr_uc.transcribe_file(path).get("text", "") or "")
+                    asr_result = compare(text, heard)
+                    checks_done.append("asr")
+                    engine = asr_uc.current_key()
+                    asr_detail = asr_result.get("detail") or {}
+                    detail["heard"] = asr_detail.get("heard", "")
+                    detail["chars"] = asr_detail.get("chars", 0)
+                    issues.extend(asr_detail.get("issues") or [])
+                    score = float(asr_result.get("score") or 0.0)
+                except Exception as exc:  # noqa: BLE001 - 单行失败不该中断整批
+                    asr_failed = True
+                    detail["error"] = str(exc)[:200]
+                    failed += 1
+
+            detail["checks"] = checks_done
+            detail["issues"] = issues
+            if issues:
+                verdict = "suspect"
+                score = max(score, 1.0 if not score else score)
+            elif asr_failed:
+                verdict = "unknown"
+            else:
+                verdict = "ok"
+
             results.append({
                 "row_id": row["id"], "audio_key": str(row.get("audio_key") or ""),
-                "verdict": verdict["verdict"], "score": verdict["score"],
-                "detail": verdict["detail"], "engine": engine,
+                "verdict": verdict, "score": score,
+                "detail": detail, "engine": engine,
             })
             checked += 1
-            if verdict["verdict"] == "suspect":
+            if verdict == "suspect":
                 suspect += 1
             if index % 20 == 0 or index == total:
                 self.svc.store.qc_put(project_id, results[-20:])

@@ -273,8 +273,8 @@ onMounted(() => {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--sh-warn, #d98a1a);
-  color: #fff;
+  background: var(--sh-warn);
+  color: var(--sh-accent-contrast);
   font-size: 10px;
   font-weight: 700;
   cursor: help;

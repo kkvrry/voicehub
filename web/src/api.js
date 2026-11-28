@@ -201,6 +201,21 @@ export const api = {
    * @param {{ lan?: boolean, https?: 'auto'|'on'|'off', access_token?: string, autostart?: boolean }} body
    */
   saveService: (body) => request('/api/v1/service', { method: 'PUT', body }),
+  // Windows SAPI 5 系统朗读桥接：读状态、改音色/默认、安装与卸载。
+  sapi: () => request('/api/v1/sapi'),
+  /**
+   * 更新 SAPI 桥接音色与是否设为系统默认音色（无需提权，立刻生效）。
+   * @param {{ voice_id?: string, is_default?: boolean }} body
+   */
+  saveSapi: (body) => request('/api/v1/sapi', { method: 'PUT', body }),
+  /**
+   * 安装或重装 SAPI 桥接（编译 + 注册 HKLM，会触发 UAC 提权）。
+   * @param {{ voice_id?: string, set_default?: boolean }} [body]
+   */
+  installSapi: (body = {}) =>
+    request('/api/v1/sapi/install', { method: 'POST', body, timeout: 180_000 }),
+  /** 卸载 SAPI 桥接并恢复系统原默认音色。 */
+  uninstallSapi: () => request('/api/v1/sapi/uninstall', { method: 'POST', timeout: 120_000 }),
   tree: () => request('/api/v1/tree'),
   folders: () => request('/api/v1/folders'),
   // 保存扫描根会同步扫一遍（大库几十秒），不能按普通请求的 30 秒掐断。

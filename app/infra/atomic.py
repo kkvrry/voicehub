@@ -24,7 +24,19 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-__all__ = ["write_bytes", "write_json"]
+__all__ = ["replace_file", "write_bytes", "write_json"]
+
+
+def replace_file(scratch: Path, target: Path, *, attempts: int = 6) -> None:
+    """用临时文件原子替换目标；Windows 上被短暂占用时退避重试。"""
+    for attempt in range(attempts):
+        try:
+            os.replace(scratch, target)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def write_json(path: Path, payload: Any, *, indent: int | None = 2, allow_nan: bool = True) -> None:
@@ -33,10 +45,8 @@ def write_json(path: Path, payload: Any, *, indent: int | None = 2, allow_nan: b
     两个格式参数只在明确需要时覆盖：大表用 ``indent=None`` 免得体积翻倍，
     数值必须可被标准 JSON 解析时传 ``allow_nan=False``（宁可抛错也不写出 ``NaN``）。
     """
-    tmp = path.with_suffix(".tmp")
     text = json.dumps(payload, ensure_ascii=False, indent=indent, allow_nan=allow_nan)
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    write_bytes(path, text.encode("utf-8"))
 
 
 def write_bytes(path: Path, data: bytes, *, attempts: int = 6) -> None:
@@ -49,13 +59,6 @@ def write_bytes(path: Path, data: bytes, *, attempts: int = 6) -> None:
     tmp = path.with_name(f"{path.name}.{tag}.part")
     try:
         tmp.write_bytes(data)
-        for attempt in range(attempts):
-            try:
-                os.replace(tmp, path)
-                return
-            except PermissionError:
-                if attempt == attempts - 1:
-                    raise
-                time.sleep(0.05 * (attempt + 1))
+        replace_file(tmp, path, attempts=attempts)
     finally:
         tmp.unlink(missing_ok=True)

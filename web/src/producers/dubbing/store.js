@@ -1,3 +1,4 @@
+// @ts-check
 // 配音工作区的状态与动作。宿主只保留「当前打开哪一家生产方」。
 import { computed, reactive } from 'vue'
 import { api as hostApi } from '../../api'
@@ -9,6 +10,13 @@ const LAST_KEY = 'vh.dubbing.project'
 const PANEL_KEY = 'vh.dubbing.panel'
 const PANEL_MAX_KEY = 'vh.dubbing.panel-max'
 
+/**
+ * @typedef {Record<string, any>} DubbingCue
+ * @typedef {Record<string, any>} DubbingRole
+ * @typedef {Record<string, any>} DubbingJob
+ */
+
+/** @param {string} key */
 function readNumber(key) {
   const value = Number(window.localStorage.getItem(key) || 0)
   return Number.isFinite(value) && value > 0 ? value : 0
@@ -62,12 +70,20 @@ let pollToken = 0
 let writeRev = 0
 let writesInFlight = 0
 
-/** 没写进库的改动：`cueId -> { projectId, patch }`。留着退避重试，界面照旧显示它。 */
+/**
+ * 没写进库的改动：`cueId -> { projectId, patch }`。留着退避重试，界面照旧显示它。
+ * @type {Map<string, { projectId: string, patch: Record<string, any> }>}
+ */
 const pendingWrites = new Map()
 let retryTimer = 0
 let retryDelay = 1500
 
-/** 包一次写库：进场和落地都算一次版本变化。 */
+/**
+ * 包一次写库：进场和落地都算一次版本变化。
+ * @template T
+ * @param {() => Promise<T>} action
+ * @returns {Promise<T>}
+ */
 async function mutate(action) {
   writesInFlight += 1
   writeRev += 1
@@ -79,7 +95,11 @@ async function mutate(action) {
   }
 }
 
-/** 把没写进去的改动盖在服务端数据上（只盖当前项目的那几条）。 */
+/**
+ * 把没写进去的改动盖在服务端数据上（只盖当前项目的那几条）。
+ * @param {DubbingCue[]} list
+ * @returns {DubbingCue[]}
+ */
 function withPending(list) {
   if (!pendingWrites.size) return list
   return list.map((cue) => {
@@ -88,6 +108,7 @@ function withPending(list) {
   })
 }
 
+/** @param {string} cueId */
 function forgetWrite(cueId) {
   pendingWrites.delete(cueId)
   delete state.pending[cueId]
@@ -112,12 +133,13 @@ async function flushPending() {
     try {
       const updated = await mutate(() => api.updateCue(item.projectId, cueId, item.patch))
       forgetWrite(cueId)
-      const list = state.detail?.cues || []
+      const list = /** @type {DubbingCue[]} */ (state.detail?.cues || [])
       const at = list.findIndex((cue) => cue.id === cueId)
       if (at >= 0) list[at] = updated
     } catch (error) {
+      const status = /** @type {{ status?: number }} */ (error)?.status
       // 请求本身不被接受（段落已删）：留着也没用，别再重试。
-      if (error?.status && error.status < 500) forgetWrite(cueId)
+      if (status && status < 500) forgetWrite(cueId)
     }
   }
   if (pendingWrites.size) {
@@ -129,18 +151,20 @@ async function flushPending() {
 }
 
 export const project = computed(() => state.detail?.project || null)
-export const cues = computed(() => state.detail?.cues || [])
-export const roles = computed(() => state.detail?.roles || [])
+export const cues = computed(() => /** @type {DubbingCue[]} */ (state.detail?.cues || []))
+export const roles = computed(() => /** @type {DubbingRole[]} */ (state.detail?.roles || []))
 export const steps = computed(() => state.detail?.steps || [])
 export const job = computed(() => state.detail?.job || null)
 export const mixReady = computed(() => Boolean(state.detail?.paths?.mix))
 
+/** @param {DubbingCue} cue */
 export function roleOf(cue) {
   const list = roles.value
   if (!list.length) return null
   return list.find((role) => role.id === cue.role_id) || list[0]
 }
 
+/** @param {DubbingCue} cue */
 export function roleName(cue) {
   return roleOf(cue)?.name || '旁白'
 }
@@ -158,20 +182,25 @@ export function clearPicks() {
   state.anchorId = ''
 }
 
+/** @param {string} id */
 export function togglePick(id) {
   state.selectedIds = state.selectedIds.includes(id)
-    ? state.selectedIds.filter((item) => item !== id)
+    ? state.selectedIds.filter((/** @type {string} */ item) => item !== id)
     : [...state.selectedIds, id]
   state.anchorId = id
 }
 
-/** Shift 连选：范围由表格按当前筛选结果给出，这里只负责替换这段区间。 */
+/**
+ * Shift 连选：范围由表格按当前筛选结果给出，这里只负责替换这段区间。
+ * @param {string[]} ids
+ */
 export function pickRange(ids) {
-  const keep = state.selectedIds.filter((id) => !ids.includes(id))
+  const keep = state.selectedIds.filter((/** @type {string} */ id) => !ids.includes(id))
   state.selectedIds = [...new Set([...keep, ...ids])]
   state.anchorId = ids[ids.length - 1] || state.anchorId
 }
 
+/** @param {string[]} ids */
 export function setPicks(ids) {
   state.selectedIds = [...new Set(ids)]
   state.anchorId = ids[ids.length - 1] || ''
@@ -202,7 +231,10 @@ let errorTimer = 0
 /** 这一次由界面发起的任务：跑完要把结果说一声（尤其是"有 N 段失败"）。 */
 let watchingJob = ''
 
-/** 任务落定：失败或部分失败时给出原因。以前只在行上写"失败"，用户不知道是引擎没起。 */
+/**
+ * 任务落定：失败或部分失败时给出原因。以前只在行上写"失败"，用户不知道是引擎没起。
+ * @param {DubbingJob | null} job
+ */
 function reportJob(job) {
   if (!job || !job.id || job.id !== watchingJob || job.state === 'running') return
   watchingJob = ''
@@ -232,6 +264,7 @@ function reportJob(job) {
   }
 }
 
+/** @param {unknown} error */
 function fail(error) {
   const text = error instanceof Error ? error.message : String(error)
   state.error = text
@@ -246,14 +279,20 @@ function fail(error) {
   return text
 }
 
-/** 把播放头移到某处：预览媒体与段落表共用同一个入口。 */
+/**
+ * 把播放头移到某处：预览媒体与段落表共用同一个入口。
+ * @param {number} seconds
+ */
 export function seekTo(seconds) {
   const at = Math.max(0, Number(seconds) || 0)
   state.playTime = at
   state.seek = { at, n: state.seek.n + 1 }
 }
 
-/** 试听一段原声：预览从这一段开头放到结尾。 */
+/**
+ * 试听一段原声：预览从这一段开头放到结尾。
+ * @param {DubbingCue | null} cue
+ */
 export function auditionCue(cue) {
   if (!cue) return
   const start = cue.start_ms / 1000
@@ -268,7 +307,10 @@ export function pausePreview() {
   state.pause = { n: state.pause.n + 1 }
 }
 
-/** 下区高度：抽屉式地用一次记一次，下次打开还是这个高度。 */
+/**
+ * 下区高度：抽屉式地用一次记一次，下次打开还是这个高度。
+ * @param {number} pixels
+ */
 export function setPanelHeight(pixels) {
   const value = Math.max(0, Math.round(Number(pixels) || 0))
   state.panelHeight = value
@@ -309,10 +351,11 @@ export async function open() {
     return
   }
   const remembered = window.localStorage.getItem(LAST_KEY) || ''
-  const exists = state.projects.some((item) => item.id === remembered)
+  const exists = state.projects.some((/** @type {Record<string, any>} */ item) => item.id === remembered)
   if (exists) await select(remembered)
 }
 
+/** @param {string} id */
 export async function select(id) {
   stopPolling()
   state.currentId = id || ''
@@ -342,7 +385,9 @@ export async function refresh({ silent = false } = {}) {
     const fresh = withPending(payload.cues)
     if (state.editing) {
       // 只保住正在改的那一段，其余照常更新：以前整表冻结，合成进度在编辑时全停。
-      const local = new Map((state.detail?.cues || []).map((cue) => [cue.id, cue]))
+      const local = new Map(
+        /** @type {DubbingCue[]} */ (state.detail?.cues || []).map((cue) => [cue.id, cue])
+      )
       state.detail = {
         ...payload,
         cues: fresh.map((cue) =>
@@ -354,12 +399,15 @@ export async function refresh({ silent = false } = {}) {
     }
     state.error = ''
     reportJob(payload.job)
-    if (state.selectedCue && !payload.cues.some((cue) => cue.id === state.selectedCue)) {
+    if (
+      state.selectedCue &&
+      !payload.cues.some((/** @type {DubbingCue} */ cue) => cue.id === state.selectedCue)
+    ) {
       state.selectedCue = ''
     }
     // 段落被删掉后多选里会留下不存在的 id：留给批量操作只会报"找不到这一段"。
-    const ids = new Set(payload.cues.map((cue) => cue.id))
-    state.selectedIds = state.selectedIds.filter((id) => ids.has(id))
+    const ids = new Set(payload.cues.map((/** @type {DubbingCue} */ cue) => cue.id))
+    state.selectedIds = state.selectedIds.filter((/** @type {string} */ itemId) => ids.has(itemId))
     if (state.anchorId && !ids.has(state.anchorId)) state.anchorId = ''
     if (payload.job && payload.job.state === 'running') schedulePoll()
     return payload
@@ -369,7 +417,10 @@ export async function refresh({ silent = false } = {}) {
   }
 }
 
-/** 这份快照能不能落地：在飞时不能，版本变了也不能（变了就再拉一轮）。 */
+/**
+ * 这份快照能不能落地：在飞时不能，版本变了也不能（变了就再拉一轮）。
+ * @param {number} rev
+ */
 function quietStale(rev) {
   if (!writesInFlight && rev === writeRev) return false
   schedulePoll()
@@ -391,6 +442,7 @@ function schedulePoll() {
   }, 1000)
 }
 
+/** @param {File} file */
 export async function uploadFile(file) {
   state.uploading = true
   try {
@@ -456,6 +508,7 @@ export async function relinkSource() {
   }
 }
 
+/** @param {File} file */
 export async function importSubtitles(file) {
   if (!state.currentId || !file) return null
   state.uploading = true
@@ -477,6 +530,7 @@ export async function importSubtitles(file) {
   }
 }
 
+/** @param {string} name */
 export async function renameProject(name) {
   if (!state.currentId) return null
   try {
@@ -508,6 +562,10 @@ export async function removeProject() {
   }
 }
 
+/**
+ * @param {() => Promise<any>} action
+ * @param {string} label
+ */
 async function runJob(action, label) {
   state.busy = label
   try {
@@ -549,6 +607,7 @@ export function synthAll() {
   return runJob(() => api.synth(state.currentId), 'synth')
 }
 
+/** @param {string} cueId */
 export function synthOne(cueId) {
   // 用户点名「重配这一段」：同一个键也重新请求引擎，不拿旧产物糊弄。
   return runJob(() => api.synth(state.currentId, [cueId], true), 'synth')
@@ -562,7 +621,10 @@ export function exportFilm(allowIncomplete = false) {
   return runJob(() => api.exportFilm(state.currentId, allowIncomplete), 'export')
 }
 
-/** 批量改角色：角色的「配音 / 原声」处理方式决定这些段要不要重配。 */
+/**
+ * 批量改角色：角色的「配音 / 原声」处理方式决定这些段要不要重配。
+ * @param {string} roleId
+ */
 export async function applyRoleToSelection(roleId) {
   const ids = [...state.selectedIds]
   if (!ids.length) return null
@@ -607,7 +669,9 @@ export async function deleteSelection() {
     }
     const first = state.selectedCue
     clearPicks()
-    if (first && !payload.data.some((cue) => cue.id === first)) state.selectedCue = ''
+    if (first && !payload.data.some((/** @type {DubbingCue} */ cue) => cue.id === first)) {
+      state.selectedCue = ''
+    }
     say(`已删除 ${ids.length} 段。`, { kind: 'success' })
     return payload
   } catch (error) {
@@ -616,8 +680,12 @@ export async function deleteSelection() {
   }
 }
 
+/**
+ * @param {DubbingCue} cue
+ * @param {Record<string, any>} patch
+ */
 export async function patchCue(cue, patch) {
-  const list = state.detail?.cues || []
+  const list = /** @type {DubbingCue[]} */ (state.detail?.cues || [])
   const index = list.findIndex((item) => item.id === cue.id)
   const before = index >= 0 ? { ...list[index] } : null
   // 先上屏：写库这几十毫秒里，用户看到的也该是自己刚敲的那一句。
@@ -625,14 +693,17 @@ export async function patchCue(cue, patch) {
   try {
     const updated = await mutate(() => api.updateCue(state.currentId, cue.id, patch))
     forgetWrite(cue.id)
-    const at = (state.detail?.cues || []).findIndex((item) => item.id === cue.id)
+    const cuesNow = /** @type {DubbingCue[]} */ (state.detail?.cues || [])
+    const at = cuesNow.findIndex((item) => item.id === cue.id)
     if (at >= 0) state.detail.cues[at] = updated
     return updated
   } catch (error) {
+    const status = /** @type {{ status?: number }} */ (error)?.status
     // 请求本身不被接受（段落已删、参数不合法）：退回原样，别把界面留在假状态。
-    if (error?.status && error.status < 500) {
+    if (status && status < 500) {
       if (before) {
-        const at = (state.detail?.cues || []).findIndex((item) => item.id === cue.id)
+        const cuesNow = /** @type {DubbingCue[]} */ (state.detail?.cues || [])
+        const at = cuesNow.findIndex((item) => item.id === cue.id)
         if (at >= 0) state.detail.cues[at] = before
       }
       fail(error)
@@ -653,10 +724,14 @@ export async function patchCue(cue, patch) {
   }
 }
 
+/**
+ * @param {DubbingRole} role
+ * @param {Record<string, any>} patch
+ */
 export async function patchRole(role, patch) {
   try {
     const updated = await mutate(() => api.updateRole(state.currentId, role.id, patch))
-    const list = state.detail?.roles || []
+    const list = /** @type {DubbingRole[]} */ (state.detail?.roles || [])
     const index = list.findIndex((item) => item.id === role.id)
     if (index >= 0) list[index] = updated
     // 换音色会把该角色名下的段标成过期：重拉一次状态，行上的标记才会变。
@@ -668,6 +743,7 @@ export async function patchRole(role, patch) {
   }
 }
 
+/** @param {string} name */
 export async function createRole(name) {
   try {
     const role = await mutate(() => api.addRole(state.currentId, { name }))
@@ -679,6 +755,7 @@ export async function createRole(name) {
   }
 }
 
+/** @param {DubbingRole} role */
 export async function removeRole(role) {
   try {
     await mutate(() => api.deleteRole(state.currentId, role.id))
@@ -688,6 +765,10 @@ export async function removeRole(role) {
   }
 }
 
+/**
+ * @param {DubbingCue} cue
+ * @param {number} atMs
+ */
 export async function splitCue(cue, atMs) {
   try {
     const payload = await mutate(() => api.splitCue(state.currentId, cue.id, atMs))
@@ -700,6 +781,7 @@ export async function splitCue(cue, atMs) {
   }
 }
 
+/** @param {DubbingCue} cue */
 export async function mergeCue(cue) {
   try {
     const payload = await mutate(() => api.mergeCue(state.currentId, cue.id))
@@ -712,18 +794,23 @@ export async function mergeCue(cue) {
   }
 }
 
+/** @param {DubbingCue} cue */
 export async function removeCue(cue) {
   try {
     const payload = await mutate(() => api.deleteCue(state.currentId, cue.id))
     if (state.detail) state.detail.cues = payload.data
     if (state.selectedCue === cue.id) state.selectedCue = ''
-    state.selectedIds = state.selectedIds.filter((id) => id !== cue.id)
+    state.selectedIds = state.selectedIds.filter((/** @type {string} */ id) => id !== cue.id)
   } catch (error) {
     fail(error)
   }
 }
 
-/** 轨道音量：`dub_gain` / `original_gain` / `accompaniment_gain`，−60 dB 为静音。 */
+/**
+ * 轨道音量：`dub_gain` / `original_gain` / `accompaniment_gain`，−60 dB 为静音。
+ * @param {string} key
+ * @param {number | string} value
+ */
 export async function saveTrackGain(key, value) {
   try {
     state.detail = await mutate(() =>

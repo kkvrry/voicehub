@@ -256,7 +256,7 @@ useModalA11y({ open: () => store.catalogOpen, panel: panelEl, onClose: () => clo
   white-space: nowrap;
 }
 .catalog-sub.is-warn {
-  color: var(--sh-warn, #d98a1a);
+  color: var(--sh-warn);
 }
 /* 停用的那一行整体压低一档：名字仍读得清，但不是当下的工作集。 */
 .catalog-row:not(.is-on) .catalog-name,

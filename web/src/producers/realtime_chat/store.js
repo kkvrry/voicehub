@@ -117,6 +117,8 @@ export const state = reactive({
   synthesizingId: '',
   /** 正在放出来的那一条（宿主播放条放的就是它）：台本上只有这一条亮着。 */
   speakingId: '',
+  /** 本轮刚收到的回复 id：气泡立即显示它，即使未配音色或播完后也保持可读，直到关闭或下一轮。 */
+  lastReplyId: '',
   /** 语音输入完成后让输入框拿焦点。 */
   focusTick: 0,
   /** 连续听写：``''`` 没开 | ``connecting`` | ``listening``。 */
@@ -313,6 +315,7 @@ export function setActive(id) {
   state.data.active_id = id
   state.chatError = ''
   state.speakingId = ''
+  state.lastReplyId = ''
   scheduleSave()
 }
 
@@ -325,6 +328,7 @@ export function setSession(id) {
   char.active_session = id
   state.chatError = ''
   state.speakingId = ''
+  state.lastReplyId = ''
   if (hostStore.player?.playing && hostStore.player.sub === '回复') hostActions.stop()
   scheduleSave()
 }
@@ -338,6 +342,8 @@ export function newSession() {
   trimSessions(char)
   char.active_session = session.id
   state.chatError = ''
+  state.speakingId = ''
+  state.lastReplyId = ''
   scheduleSave()
   void saveNow()
   return session
@@ -362,6 +368,8 @@ export function removeSession(id) {
     char.active_session = fallback.id
   }
   state.chatError = ''
+  state.speakingId = ''
+  state.lastReplyId = ''
   scheduleSave()
   void saveNow()
 }
@@ -532,8 +540,15 @@ export function removeCharacter(id) {
   if (state.data.active_id === id) {
     const fallback = state.data.characters[Math.max(0, at - 1)] || state.data.characters[0]
     state.data.active_id = fallback.id
+    state.speakingId = ''
+    state.lastReplyId = ''
   }
   scheduleSave()
+}
+
+/** 关掉当前留在画面上的回复气泡（不打断正在播放的语音）。 */
+export function dismissBubble() {
+  state.lastReplyId = ''
 }
 
 /** 改当前角色的字段；界面上的编辑都走这里。 */
@@ -879,6 +894,7 @@ export async function send(text) {
   state.draft = ''
   state.busy = 'thinking'
   state.speakingId = ''
+  state.lastReplyId = ''
   /** @type {ChatMessage} */
   const userMessage = {
     id: uid('msg'),
@@ -914,6 +930,9 @@ export async function send(text) {
     }
     latestSession.messages.push(assistant)
     trimMessages(latestSession)
+    if (active.value?.id === charId && session.value?.id === sessionId) {
+      state.lastReplyId = assistant.id
+    }
     scheduleSave()
     if (latestChar.voice_id) {
       state.busy = 'speaking'

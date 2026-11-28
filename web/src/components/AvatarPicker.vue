@@ -247,8 +247,8 @@ useModalA11y({ open: () => Boolean(props.voice), panel: panelEl, onClose: () => 
   margin: 0;
   padding: 8px 11px;
   border-radius: var(--sh-r-xs);
-  background: var(--warn-soft, rgba(255, 170, 0, 0.12));
-  color: var(--warn, #a15c00);
+  background: var(--sh-warn-soft);
+  color: var(--sh-warn);
   font-size: 12px;
   line-height: 1.6;
 }

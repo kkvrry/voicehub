@@ -125,23 +125,76 @@
         desc="引擎：自动 · 留空由引擎自动选择"
         keywords="音色 声线 声音 选择 朗读 sapi"
       >
-        <div class="sapi-voice">
-          <VoicePicker
-            v-model="sapiVoiceId"
-            :voices="voiceList"
-            placeholder="自动选择或搜索音色"
-          />
-          <button
-            v-if="sapiVoiceId"
-            type="button"
-            class="sh-btn is-icon is-sm"
-            title="清空音色（恢复自动选择）"
-            aria-label="清空音色"
-            @click="sapiVoiceId = ''"
-          >
-            <X :size="14" :stroke-width="1.8" />
-          </button>
-        </div>
+        <button
+          ref="voiceTriggerEl"
+          type="button"
+          class="sh-field sapi-voice-trigger"
+          :class="{ 'is-placeholder': !sapiVoiceId }"
+          :aria-expanded="voiceMenuOpen"
+          aria-haspopup="listbox"
+          aria-label="选择朗读音色"
+          @click="toggleVoiceMenu"
+        >
+          <span class="sapi-voice-label">{{ selectedVoiceLabel }}</span>
+          <ChevronDown :size="14" :stroke-width="1.8" class="sapi-voice-caret" aria-hidden="true" />
+        </button>
+
+        <Popover
+          :open="voiceMenuOpen"
+          :anchor="voiceTriggerEl ?? undefined"
+          :width="voiceMenuWidth"
+          label="朗读音色"
+          @close="closeVoiceMenu"
+        >
+          <div class="sapi-voice-pop">
+            <input
+              ref="voiceSearchEl"
+              v-model="voiceQuery"
+              type="text"
+              class="sh-field sapi-voice-search"
+              placeholder="搜索音色名"
+              aria-label="搜索音色名"
+              @keydown.esc.stop.prevent="closeVoiceMenu"
+            />
+            <ul class="sapi-voice-list" role="listbox" aria-label="朗读音色列表">
+              <li v-if="!voiceQuery.trim()">
+                <button
+                  type="button"
+                  role="option"
+                  class="sapi-voice-item"
+                  :class="{ 'is-active': !sapiVoiceId }"
+                  :aria-selected="!sapiVoiceId"
+                  @click="pickVoice('')"
+                >
+                  <span class="sapi-voice-name">自动选择</span>
+                  <Check v-if="!sapiVoiceId" :size="14" :stroke-width="2" class="sapi-voice-check" aria-hidden="true" />
+                </button>
+              </li>
+              <li v-for="voice in filteredVoices" :key="voice.id">
+                <button
+                  type="button"
+                  role="option"
+                  class="sapi-voice-item"
+                  :class="{ 'is-active': voice.id === sapiVoiceId }"
+                  :aria-selected="voice.id === sapiVoiceId"
+                  @click="pickVoice(voice.id)"
+                >
+                  <span class="sapi-voice-name">{{ voiceDisplayName(voice) }}</span>
+                  <Check
+                    v-if="voice.id === sapiVoiceId"
+                    :size="14"
+                    :stroke-width="2"
+                    class="sapi-voice-check"
+                    aria-hidden="true"
+                  />
+                </button>
+              </li>
+              <li v-if="!filteredVoices.length && voiceQuery.trim()" class="sapi-voice-empty">
+                没有匹配的音色
+              </li>
+            </ul>
+          </div>
+        </Popover>
       </SettingRow>
 
       <SettingRow
@@ -165,8 +218,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
-import { Power, Server, SlidersHorizontal, Volume2, X } from 'lucide-vue-next'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { Check, ChevronDown, Power, Server, SlidersHorizontal, Volume2 } from 'lucide-vue-next'
 import { useSettingsStore } from '../../store/settings'
 import { actions, store as shellStore } from '../../store'
 import type { SegmentOption } from '../types'
@@ -177,7 +230,15 @@ import ToggleSwitch from '../../components/ui/ToggleSwitch.vue'
 import SegmentedControl from '../../components/ui/SegmentedControl.vue'
 import TextField from '../../components/ui/TextField.vue'
 import ActionButton from '../../components/ui/ActionButton.vue'
-import VoicePicker from '../../components/VoicePicker.vue'
+import Popover from '../../components/ui/Popover.vue'
+
+interface VoiceItem {
+  id: string
+  name?: string
+  shown_name?: string
+  favorite?: boolean
+  hidden?: boolean
+}
 
 const store = useSettingsStore()
 
@@ -187,9 +248,19 @@ onMounted(() => {
   }
 })
 
-const voiceList = computed(() =>
-  shellStore.allVoices.length ? shellStore.allVoices : shellStore.voices
+const voiceList = computed<VoiceItem[]>(() =>
+  (shellStore.allVoices.length ? shellStore.allVoices : shellStore.voices) as VoiceItem[]
 )
+
+const voiceTriggerEl = ref<HTMLButtonElement | null>(null)
+const voiceSearchEl = ref<HTMLInputElement | null>(null)
+const voiceMenuOpen = ref(false)
+const voiceMenuWidth = ref(240)
+const voiceQuery = ref('')
+
+function voiceDisplayName(voice: VoiceItem): string {
+  return (voice.shown_name || voice.name || voice.id || '').trim()
+}
 
 const sapiVoiceId = computed({
   get: () => store.sapi.voiceId,
@@ -197,6 +268,48 @@ const sapiVoiceId = computed({
     store.sapi.voiceId = value
   },
 })
+
+const selectedVoiceLabel = computed(() => {
+  if (!sapiVoiceId.value) return '自动选择'
+  const hit = voiceList.value.find((v) => v.id === sapiVoiceId.value)
+  return hit ? voiceDisplayName(hit) : sapiVoiceId.value
+})
+
+const filteredVoices = computed(() => {
+  const words = voiceQuery.value.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const visible = voiceList.value.filter((v) => {
+    if (v.hidden) return false
+    if (!words.length) return true
+    const name = voiceDisplayName(v).toLowerCase()
+    return words.every((w) => name.includes(w))
+  })
+  const favorites = visible.filter((v) => v.favorite)
+  const rest = visible.filter((v) => !v.favorite)
+  return [...favorites, ...rest].slice(0, 100)
+})
+
+async function toggleVoiceMenu() {
+  if (voiceMenuOpen.value) {
+    closeVoiceMenu()
+    return
+  }
+  const rect = voiceTriggerEl.value?.getBoundingClientRect()
+  voiceMenuWidth.value = Math.max(220, Math.round(rect?.width || 240))
+  voiceQuery.value = ''
+  voiceMenuOpen.value = true
+  await nextTick()
+  voiceSearchEl.value?.focus()
+}
+
+function closeVoiceMenu() {
+  voiceMenuOpen.value = false
+  voiceQuery.value = ''
+}
+
+function pickVoice(id: string) {
+  sapiVoiceId.value = id
+  closeVoiceMenu()
+}
 
 const sapiDefault = computed({
   get: () => store.sapi.isDefault,
@@ -292,16 +405,102 @@ const autoDesc = computed(() => (store.service.autoSupported ? '' : '仅桌面�
   gap: 8px;
 }
 
-.sapi-voice {
+.sapi-voice-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  width: 240px;
+  justify-content: space-between;
+  gap: 8px;
+  width: 220px;
   max-width: 100%;
+  text-align: left;
+  cursor: pointer;
 }
 
-.sapi-voice :deep(.vpick) {
+.sapi-voice-trigger.is-placeholder .sapi-voice-label {
+  color: var(--sh-text-3);
+}
+
+.sapi-voice-label {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sapi-voice-caret {
+  flex: none;
+  color: var(--sh-text-4);
+}
+
+.sapi-voice-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sapi-voice-search {
+  width: 100%;
+  height: 30px;
+  font-size: 12.2px;
+}
+
+.sapi-voice-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sapi-voice-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--sh-r-xs);
+  background: transparent;
+  color: var(--sh-text);
+  font: inherit;
+  font-size: 12.6px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--sh-t) var(--sh-ease), color var(--sh-t) var(--sh-ease);
+}
+
+.sapi-voice-item:hover {
+  background: var(--sh-hover);
+}
+
+.sapi-voice-item.is-active {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+  font-weight: 600;
+}
+
+.sapi-voice-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sapi-voice-check {
+  flex: none;
+}
+
+.sapi-voice-empty {
+  padding: 10px 8px;
+  font-size: 12px;
+  color: var(--sh-text-4);
+  text-align: center;
 }
 </style>

@@ -8,36 +8,81 @@
       'is-listening': state.listening === 'listening',
     }"
   >
-    <!-- 房间：一张场景铺满工作区，她的话直接写在画面上，不再是一格一格的气泡。 -->
+    <!-- 房间：一张场景铺满工作区，立绘、气泡与悬浮输入栏落在画面上，不遮挡人物与背景。 -->
     <div
       ref="sceneEl"
       class="rc-scene has-image"
-      :class="`is-bg-${backgroundKey || 'custom'}`"
-      :style="[stageStyle, figureVars]"
+      :class="[`is-bg-${backgroundKey || 'custom'}`, { 'has-history': historyOpen }]"
+      :style="[stageStyle, stageVars]"
     >
       <div class="rc-shade" aria-hidden="true" />
-      <!-- 立绘：透明底，站在偏左的位置，人压在暗化之上，右边的台本仍比她高一层。
-           画面上直接拖动换位置、滚轮改大小，位置与大小跟着角色保存。 -->
+      <!-- 立绘：透明底，可拖动换位置、滚轮改大小，位置与大小跟着角色保存。 -->
+      <div
+        v-if="portraitImage"
+        class="rc-figure-ground"
+        :style="figureGroundStyle"
+        aria-hidden="true"
+      />
       <img
         v-if="portraitImage"
+        ref="figureEl"
         class="rc-figure"
-        :class="{ 'is-dragging': Boolean(portraitDrag) }"
+        :class="{ 'is-dragging': Boolean(portraitDrag), 'is-grounded': (char?.portrait_y ?? 0) <= 0.03 }"
         :src="portraitImage"
         :style="figureStyle"
         alt=""
         aria-hidden="true"
         title="拖动换位置，滚轮调大小"
+        @load="onPortraitLoad"
         @pointerdown="startPortraitDrag"
         @wheel.prevent="onPortraitWheel"
       />
 
-      <!-- 正在说的那一句落在她旁边：说完就散，画面回到干净的状态。 -->
+      <!-- 气泡跟随立绘位置与大小实时移动，自适应左右翻边与上下收边界，保证完整显示。 -->
       <Transition name="rc-bubble">
-        <div v-if="bubbleText" class="rc-bubble" role="status">
-          <p class="rc-bubble-text">{{ bubbleText }}</p>
+        <div
+          v-if="bubbleVisible"
+          ref="bubbleEl"
+          class="rc-bubble"
+          :class="[
+            `is-tail-${bubbleLayout.tail}`,
+            {
+              'is-thinking': bubbleThinking,
+              'is-speaking': Boolean(state.speakingId),
+            },
+          ]"
+          :style="bubbleLayout.style"
+          role="status"
+        >
+          <div v-if="bubbleThinking" class="rc-bubble-dots" aria-label="正在想">
+            <i /><i /><i />
+          </div>
+          <template v-else>
+            <div class="rc-bubble-scroll">
+              <p class="rc-bubble-text">{{ bubbleText }}</p>
+            </div>
+            <button
+              v-if="canDismissBubble"
+              type="button"
+              class="rc-bubble-close"
+              title="收起气泡"
+              aria-label="收起气泡"
+              @click="dismissBubble"
+            >
+              <X :size="12" :stroke-width="1.8" />
+            </button>
+          </template>
         </div>
       </Transition>
-      <header v-if="char" class="rc-plate" title="滚轮切换角色" @wheel.prevent="onPlateWheel">
+
+      <header
+        v-if="char"
+        ref="plateEl"
+        class="rc-plate"
+        :class="{ 'is-open': rosterOpen }"
+        title="滚轮切换角色"
+        @wheel.prevent="onPlateWheel"
+      >
         <div class="rc-name-row">
           <span ref="switchEl" class="rc-switch-wrap">
             <button
@@ -49,7 +94,7 @@
               :aria-expanded="rosterOpen"
               @click="rosterOpen = !rosterOpen"
             >
-              <ChevronsUpDown :size="15" :stroke-width="1.8" />
+              <ChevronsUpDown :size="14" :stroke-width="1.8" />
             </button>
             <Transition name="rc-menu">
               <div v-if="rosterOpen" class="rc-roster" role="menu">
@@ -64,10 +109,10 @@
                   @click="switchChar(item.id)"
                 >
                   <span class="rc-roster-name">{{ item.name }}</span>
-                  <Check v-if="item.id === char.id" :size="13" :stroke-width="1.8" />
+                  <Check v-if="item.id === char.id" :size="14" :stroke-width="1.8" />
                 </button>
                 <button type="button" class="rc-roster-row is-add" role="menuitem" @click="onAddCharacter">
-                  <Plus :size="13" :stroke-width="1.8" />
+                  <Plus :size="14" :stroke-width="1.8" />
                   新建角色
                 </button>
               </div>
@@ -89,310 +134,330 @@
         <p class="rc-intro">{{ introLine(char) }}</p>
       </header>
 
-      <section v-if="char && !readHidden" class="rc-read">
-        <div class="rc-frost" aria-hidden="true" />
+      <!-- 右上角轻量入口：只留历史记录开关与全屏，不遮挡人物与背景。 -->
+      <div v-if="char && !historyOpen" class="rc-corner-acts">
+        <button
+          type="button"
+          class="rc-corner-btn"
+          :title="`查看历史对话（共 ${sessions.length} 个）`"
+          aria-label="查看历史对话"
+          :aria-expanded="historyOpen"
+          @click="openHistory"
+        >
+          <History :size="16" :stroke-width="1.8" aria-hidden="true" />
+          <span class="rc-corner-label">历史</span>
+          <span v-if="sessions.length" class="rc-corner-n">{{ sessions.length }}</span>
+        </button>
+        <button
+          type="button"
+          class="rc-corner-btn is-icon"
+          :title="isFullscreen ? '退出全屏' : '全屏'"
+          :aria-label="isFullscreen ? '退出全屏' : '全屏'"
+          @click="toggleFullscreen"
+        >
+          <Minimize2 v-if="isFullscreen" :size="16" :stroke-width="1.8" />
+          <Maximize2 v-else :size="16" :stroke-width="1.8" />
+        </button>
+      </div>
 
-        <header class="rc-read-head">
-          <div class="rc-read-title">
-            <h2>{{ sessionTitle() }}</h2>
-            <span class="rc-read-meta">
-              {{ sessionDate(current?.created) }} · {{ sessionCount() }} 条
-            </span>
+      <!-- 底部居中悬浮输入栏：语音图标、浅浅的输入框与模型选择收成一条轻薄雾面胶囊，不挡人物与场景。 -->
+      <div v-if="char" class="rc-dock">
+        <div v-if="state.chatError || state.liveText || busyHint" class="rc-dock-meta">
+          <div v-if="state.chatError" class="rc-dock-pill is-error" role="alert">
+            <AlertCircle :size="14" :stroke-width="1.8" aria-hidden="true" />
+            <span>{{ state.chatError }}</span>
           </div>
-          <div class="rc-read-acts">
+          <div v-if="state.liveText" class="rc-dock-pill is-live">
+            <span class="rc-dock-live-dot" aria-hidden="true" />
+            <span>{{ state.liveText }}</span>
+          </div>
+          <div v-else-if="busyHint" class="rc-dock-pill">
+            <span>{{ busyHint }}</span>
+          </div>
+        </div>
+
+        <div
+          class="rc-dock-bar"
+          :class="{
+            'is-active': Boolean(state.draft.trim()) || Boolean(state.listening) || modelOpen,
+            'is-listening': state.listening === 'listening',
+          }"
+        >
+          <button
+            type="button"
+            class="rc-mic"
+            :class="{
+              'is-on': state.listening === 'listening',
+              'is-hearing': state.micSpeaking,
+            }"
+            :disabled="!hostStore.asr?.ready || state.listening === 'connecting'"
+            :title="listenTitle"
+            :aria-label="state.listening === 'listening' ? '停止语音对话' : '开始语音对话'"
+            @click="listenToggle"
+          >
+            <Loader2
+              v-if="state.listening === 'connecting'"
+              class="rc-spin"
+              :size="16"
+              :stroke-width="1.8"
+            />
+            <Mic v-else :size="16" :stroke-width="1.8" />
+          </button>
+
+          <textarea
+            ref="inputEl"
+            v-model="state.draft"
+            class="rc-input"
+            rows="1"
+            maxlength="1000"
+            placeholder="说点什么，或点麦克风语音对话…"
+            aria-label="输入对话内容"
+            @keydown.enter.exact="onEnter"
+            @input="autosize"
+          />
+
+          <!-- 模型选择：紧凑胶囊，向上展开，不占用画面视线。 -->
+          <span ref="modelWrapEl" class="rc-model-wrap">
             <button
               type="button"
-              class="rc-tool"
-              :title="`对话：共 ${sessions.length} 个`"
+              class="rc-model"
+              :class="{ 'is-open': modelOpen, 'is-warn': Boolean(providerNote()) }"
+              :title="modelFullHint()"
+              aria-label="选择对话模型"
               aria-haspopup="dialog"
-              :aria-expanded="tocOpen"
-              @click="openToc"
+              :aria-expanded="modelOpen"
+              @click="toggleModel"
             >
-              <List :size="14" :stroke-width="1.8" aria-hidden="true" />
-              <span class="rc-tool-label">对话</span>
-              <span class="rc-tool-n">{{ sessions.length }}</span>
+              <Cpu :size="14" :stroke-width="1.8" aria-hidden="true" />
+              <span class="rc-model-name">{{ modelHint() }}</span>
             </button>
-            <button
-              type="button"
-              class="rc-tool is-icon"
-              title="创建对话"
-              aria-label="创建对话"
-              @click="onNewSession"
-            >
-              <Plus :size="15" :stroke-width="1.8" />
-            </button>
-            <button
-              type="button"
-              class="rc-tool is-icon"
-              title="收起对话，只看画面"
-              aria-label="收起对话"
-              @click="hideRead"
-            >
-              <PanelRightClose :size="15" :stroke-width="1.8" />
-            </button>
-            <button
-              type="button"
-              class="rc-tool is-icon"
-              :title="isFullscreen ? '退出全屏' : '全屏'"
-              :aria-label="isFullscreen ? '退出全屏' : '全屏'"
-              @click="toggleFullscreen"
-            >
-              <Minimize2 v-if="isFullscreen" :size="15" :stroke-width="1.8" />
-              <Maximize2 v-else :size="15" :stroke-width="1.8" />
-            </button>
-          </div>
-        </header>
-
-        <div ref="chatEl" class="rc-script">
-          <template v-if="messages.length">
-            <div class="rc-stamp">{{ sessionDate(current?.created) }}</div>
-            <div
-              v-for="(message, index) in messages"
-              :key="message.id"
-              class="rc-line"
-              :class="[
-                message.role,
-                {
-                  'is-error': message.error,
-                  'is-playing': message.id === state.speakingId,
-                },
-              ]"
-            >
-              <span v-if="speakerOf(index)" class="rc-who">{{ speakerOf(index) }}</span>
-              <p class="rc-said">{{ message.text }}</p>
-              <div v-if="hasAudioActs(message)" class="rc-line-acts">
-                <button
-                  v-if="message.audio_url"
-                  type="button"
-                  class="rc-mini"
-                  :class="{ 'is-on': message.id === state.speakingId }"
-                  title="播放这一句"
-                  aria-label="播放这一句"
-                  @click="playMessage(message)"
-                >
-                  <Play :size="9" :stroke-width="1.8" fill="currentColor" />
-                </button>
-                <button
-                  v-else
-                  type="button"
-                  class="rc-mini"
-                  :disabled="Boolean(state.synthesizingId)"
-                  title="合成这一句"
-                  aria-label="合成这一句"
-                  @click="retryAudio(message)"
-                >
-                  <Loader2 v-if="message.id === state.synthesizingId" class="rc-spin" :size="10" />
-                  <Volume2 v-else :size="10" :stroke-width="1.8" />
-                </button>
-                <span class="rc-tag">
-                  {{ message.audio_url ? '已合成' : state.synthesizingId === message.id ? '合成中' : '没有语音' }}
-                </span>
+            <Transition name="rc-menu">
+              <div v-if="modelOpen" class="rc-model-pop" role="dialog" aria-label="对话模型">
+                <label class="rc-field is-flat">
+                  <span>服务</span>
+                  <select
+                    :value="state.data?.llm_provider || ''"
+                    class="sh-field"
+                    @change="onProviderChange"
+                  >
+                    <option value="">默认 · {{ defaultProviderLabel }}</option>
+                    <option v-for="item in state.providers" :key="item.key" :value="item.key">
+                      {{ item.label }}{{ item.ready ? '' : '（未就绪）' }}
+                    </option>
+                  </select>
+                </label>
+                <label class="rc-field is-flat">
+                  <span>模型</span>
+                  <select
+                    v-if="state.models.length"
+                    :value="state.data?.llm_model || ''"
+                    class="sh-field"
+                    @change="onModelChange"
+                  >
+                    <option value="">服务默认模型</option>
+                    <option v-for="item in state.models" :key="item.id" :value="item.id">
+                      {{ item.label || item.id }}
+                    </option>
+                  </select>
+                  <input
+                    v-else
+                    class="sh-field"
+                    :value="state.data?.llm_model || ''"
+                    placeholder="留空使用服务配置的模型"
+                    autocomplete="off"
+                    @input="onModelInput"
+                  />
+                </label>
+                <p v-if="state.modelsBusy" class="rc-note">读取模型清单…</p>
+                <p v-else-if="state.modelsReason" class="rc-note">{{ state.modelsReason }}</p>
+                <p v-if="providerNote()" class="rc-note is-warn">{{ providerNote() }}</p>
               </div>
-              <span
-                v-else-if="message.audio_error"
-                class="rc-tag is-warn"
-                :title="message.audio_error"
-              >
-                这一句没有语音
+            </Transition>
+          </span>
+
+          <button
+            type="button"
+            class="rc-send"
+            :disabled="!canSend"
+            :title="canSend ? '发送（Enter）' : '先写一句'"
+            aria-label="发送"
+            @click="sendDraft"
+          >
+            <Loader2 v-if="state.busy === 'thinking'" class="rc-spin" :size="16" :stroke-width="1.8" />
+            <ArrowUp v-else :size="16" :stroke-width="1.8" />
+          </button>
+        </div>
+      </div>
+
+      <!-- 右侧精简历史抽屉：呼出直接显示对话列表，点选某段对话直接查看消息详情。 -->
+      <Transition name="rc-history">
+        <aside v-if="char && historyOpen" ref="historyEl" class="rc-history" aria-label="历史对话">
+          <header class="rc-history-head">
+            <button
+              v-if="historyView === 'messages'"
+              type="button"
+              class="rc-tool is-icon"
+              title="返回对话列表"
+              aria-label="返回对话列表"
+              @click="historyView = 'list'"
+            >
+              <ArrowLeft :size="14" :stroke-width="1.8" />
+            </button>
+            <div class="rc-history-title">
+              <h2>{{ historyView === 'list' ? '历史对话' : sessionTitle() }}</h2>
+              <span class="rc-history-meta">
+                {{ historyView === 'list' ? `${sessions.length} 个` : `${sessionCount()} 条` }}
               </span>
             </div>
-
-            <div v-if="state.busy === 'thinking'" class="rc-typing" role="status">
-              <i /><i /><i />
-            </div>
-          </template>
-
-          <div v-else class="rc-blank">
-            <p class="rc-blank-line">还没有开始。</p>
-          </div>
-
-          <div v-if="state.liveText" class="rc-line user is-live">
-            <span class="rc-who">你</span>
-            <p class="rc-said">{{ state.liveText }}</p>
-          </div>
-        </div>
-
-        <div class="rc-compose">
-          <div v-if="state.chatError" class="rc-inline-error">
-            <AlertCircle :size="13" :stroke-width="1.8" aria-hidden="true" />
-            {{ state.chatError }}
-          </div>
-          <div class="rc-compose-in">
-            <textarea
-              ref="inputEl"
-              v-model="state.draft"
-              class="rc-input"
-              rows="1"
-              maxlength="1000"
-              placeholder="写一句，或按住麦克风说"
-              aria-label="写一句，或按住麦克风说"
-              @keydown.enter.exact="onEnter"
-              @input="autosize"
-            />
-            <button
-              type="button"
-              class="rc-send"
-              :disabled="!canSend"
-              :title="canSend ? '发送（Enter）' : '先写一句'"
-              aria-label="发送"
-              @click="sendDraft"
-            >
-              <Loader2 v-if="state.busy === 'thinking'" class="rc-spin" :size="15" />
-              <ArrowUp v-else :size="16" :stroke-width="2" />
-            </button>
-          </div>
-          <div class="rc-compose-foot">
-            <button
-              type="button"
-              class="rc-mic"
-              :class="{ 'is-on': state.listening === 'listening', 'is-hearing': state.micSpeaking }"
-              :disabled="!hostStore.asr?.ready || state.listening === 'connecting'"
-              :title="listenTitle"
-              @click="listenToggle"
-            >
-              <Loader2
-                v-if="state.listening === 'connecting'"
-                class="rc-spin"
-                :size="13"
-              />
-              <Mic v-else :size="13" :stroke-width="1.8" />
-              {{ state.listening === 'listening' ? '停止对话' : '对话' }}
-            </button>
-            <span class="rc-hint">{{ busyHint }}</span>
-            <!-- 对话模型挂在整份状态上，就在输入框旁边选：换角色不用再翻设置。 -->
-            <span ref="modelWrapEl" class="rc-model-wrap">
-              <button
-                type="button"
-                class="rc-model"
-                :class="{ 'is-open': modelOpen, 'is-warn': Boolean(providerNote()) }"
-                :title="modelFullHint()"
-                aria-haspopup="dialog"
-                :aria-expanded="modelOpen"
-                @click="toggleModel"
-              >
-                <Cpu :size="12" :stroke-width="1.8" aria-hidden="true" />
-                <span class="rc-model-name">{{ modelHint() }}</span>
-              </button>
-              <Transition name="rc-menu">
-                <div v-if="modelOpen" class="rc-model-pop" role="dialog" aria-label="对话模型">
-                  <label class="rc-field is-flat">
-                    <span>服务</span>
-                    <select
-                      :value="state.data?.llm_provider || ''"
-                      class="sh-field"
-                      @change="onProviderChange"
-                    >
-                      <option value="">默认 · {{ defaultProviderLabel }}</option>
-                      <option v-for="item in state.providers" :key="item.key" :value="item.key">
-                        {{ item.label }}{{ item.ready ? '' : '（未就绪）' }}
-                      </option>
-                    </select>
-                  </label>
-                  <label class="rc-field is-flat">
-                    <span>模型</span>
-                    <select
-                      v-if="state.models.length"
-                      :value="state.data?.llm_model || ''"
-                      class="sh-field"
-                      @change="onModelChange"
-                    >
-                      <option value="">服务默认模型</option>
-                      <option v-for="item in state.models" :key="item.id" :value="item.id">
-                        {{ item.label || item.id }}
-                      </option>
-                    </select>
-                    <input
-                      v-else
-                      class="sh-field"
-                      :value="state.data?.llm_model || ''"
-                      placeholder="留空使用服务配置的模型"
-                      autocomplete="off"
-                      @input="onModelInput"
-                    />
-                  </label>
-                  <p v-if="state.modelsBusy" class="rc-note">读取模型清单…</p>
-                  <p v-else-if="state.modelsReason" class="rc-note">{{ state.modelsReason }}</p>
-                  <p v-if="providerNote()" class="rc-note is-warn">{{ providerNote() }}</p>
-                </div>
-              </Transition>
-            </span>
-            <span class="rc-key">Enter 发送</span>
-          </div>
-        </div>
-
-        <!-- 对话列表：压在台本这一层上，她的名字与人设仍露在外面。 -->
-        <Transition name="rc-toc">
-          <div v-if="tocOpen" class="rc-toc" aria-label="对话列表">
-            <header class="rc-toc-head">
-              <h2>对话</h2>
-              <span class="rc-toc-count">{{ sessions.length }} 个</span>
+            <div class="rc-history-acts">
               <button
                 type="button"
                 class="rc-tool is-icon"
-                title="收起"
-                aria-label="收起对话"
-                @click="tocOpen = false"
+                title="新建对话"
+                aria-label="新建对话"
+                @click="onNewSession"
               >
-                <X :size="15" :stroke-width="1.8" />
+                <Plus :size="14" :stroke-width="1.8" />
               </button>
-            </header>
-            <div class="rc-toc-body">
-              <div
-                v-for="row in orderedSessions"
-                :key="row.id"
-                class="rc-toc-row"
-                :class="{ 'is-active': row.id === current?.id }"
+              <button
+                type="button"
+                class="rc-tool is-icon"
+                :title="isFullscreen ? '退出全屏' : '全屏'"
+                :aria-label="isFullscreen ? '退出全屏' : '全屏'"
+                @click="toggleFullscreen"
               >
-                <button type="button" class="rc-toc-main" @click="openSession(row.id)">
-                  <span class="rc-toc-date">{{ sessionDate(row.created) }}</span>
-                  <span class="rc-toc-title">{{ sessionTitle(row) }}</span>
-                  <span class="rc-toc-n">{{ sessionCount(row) }} 条</span>
-                </button>
-                <div v-if="confirmId === row.id" class="rc-toc-confirm">
-                  <button
-                    type="button"
-                    class="rc-danger"
-                    :disabled="Boolean(state.busy)"
-                    @click="dropSession(row.id)"
-                  >
-                    确认删除
-                  </button>
-                  <button type="button" @click="confirmId = ''">取消</button>
-                </div>
-                <button
-                  v-else
-                  type="button"
-                  class="rc-toc-del"
-                  :disabled="Boolean(state.busy)"
-                  title="删除这个对话"
-                  aria-label="删除这个对话"
-                  @click="confirmId = row.id"
-                >
-                  <Trash2 :size="13" :stroke-width="1.8" />
-                </button>
-              </div>
+                <Minimize2 v-if="isFullscreen" :size="14" :stroke-width="1.8" />
+                <Maximize2 v-else :size="14" :stroke-width="1.8" />
+              </button>
+              <button
+                type="button"
+                class="rc-tool is-icon"
+                title="收起历史对话"
+                aria-label="收起历史对话"
+                @click="closeHistory"
+              >
+                <X :size="14" :stroke-width="1.8" />
+              </button>
             </div>
-            <footer class="rc-toc-foot">
-              <button type="button" class="sh-btn is-soft is-sm" @click="onNewSession">
-                <Plus :size="13" :stroke-width="1.8" />
-                创建对话
-              </button>
-            </footer>
-          </div>
-        </Transition>
-      </section>
+          </header>
 
-      <!-- 对话收起来以后：右边只留一枚轻量的「<」把台本叫回来。 -->
-      <button
-        v-if="char && readHidden"
-        type="button"
-        class="rc-read-open"
-        title="展开对话"
-        aria-label="展开对话"
-        @click="showRead"
-      >
-        <ChevronLeft :size="20" :stroke-width="1.6" aria-hidden="true" />
-      </button>
+          <!-- 直接展示对话列表：不再嵌套在二级按钮里。 -->
+          <div v-if="historyView === 'list'" class="rc-toc-body">
+            <div
+              v-for="row in orderedSessions"
+              :key="row.id"
+              class="rc-toc-row"
+              :class="{ 'is-active': row.id === current?.id }"
+            >
+              <button type="button" class="rc-toc-main" @click="openSession(row.id)">
+                <span class="rc-toc-title">{{ sessionTitle(row) }}</span>
+                <span class="rc-toc-sub">
+                  {{ sessionDate(row.created) }} · {{ sessionCount(row) }} 条
+                  <template v-if="row.id === current?.id"> · 当前</template>
+                </span>
+              </button>
+              <div v-if="confirmId === row.id" class="rc-toc-confirm">
+                <button
+                  type="button"
+                  class="rc-danger"
+                  :disabled="Boolean(state.busy)"
+                  @click="dropSession(row.id)"
+                >
+                  删除
+                </button>
+                <button type="button" @click="confirmId = ''">取消</button>
+              </div>
+              <button
+                v-else
+                type="button"
+                class="rc-toc-del"
+                :disabled="Boolean(state.busy)"
+                title="删除对话"
+                aria-label="删除对话"
+                @click="confirmId = row.id"
+              >
+                <Trash2 :size="14" :stroke-width="1.8" />
+              </button>
+            </div>
+          </div>
+
+          <!-- 选中某段对话后的消息流。 -->
+          <div v-else ref="chatEl" class="rc-script">
+            <template v-if="messages.length">
+              <div class="rc-stamp">{{ sessionDate(current?.created) }}</div>
+              <div
+                v-for="(message, index) in messages"
+                :key="message.id"
+                class="rc-line"
+                :class="[
+                  message.role,
+                  {
+                    'is-error': message.error,
+                    'is-playing': message.id === state.speakingId,
+                  },
+                ]"
+              >
+                <span v-if="speakerOf(index)" class="rc-who">{{ speakerOf(index) }}</span>
+                <p class="rc-said">{{ message.text }}</p>
+                <div v-if="hasAudioActs(message)" class="rc-line-acts">
+                  <button
+                    v-if="message.audio_url"
+                    type="button"
+                    class="rc-mini"
+                    :class="{ 'is-on': message.id === state.speakingId }"
+                    title="播放这一句"
+                    aria-label="播放这一句"
+                    @click="playMessage(message)"
+                  >
+                    <Play :size="12" :stroke-width="1.8" fill="currentColor" />
+                  </button>
+                  <button
+                    v-else
+                    type="button"
+                    class="rc-mini"
+                    :disabled="Boolean(state.synthesizingId)"
+                    title="合成这一句"
+                    aria-label="合成这一句"
+                    @click="retryAudio(message)"
+                  >
+                    <Loader2
+                      v-if="message.id === state.synthesizingId"
+                      class="rc-spin"
+                      :size="12"
+                      :stroke-width="1.8"
+                    />
+                    <Volume2 v-else :size="12" :stroke-width="1.8" />
+                  </button>
+                  <span v-if="state.synthesizingId === message.id" class="rc-tag">合成中</span>
+                  <span v-else-if="message.audio_error" class="rc-tag is-warn" :title="message.audio_error">
+                    无语音
+                  </span>
+                </div>
+                <span
+                  v-else-if="message.audio_error"
+                  class="rc-tag is-warn"
+                  :title="message.audio_error"
+                >
+                  无语音
+                </span>
+              </div>
+
+              <div v-if="state.busy === 'thinking'" class="rc-typing" role="status">
+                <i /><i /><i />
+              </div>
+            </template>
+
+            <div v-else class="rc-blank">
+              <p class="rc-blank-line">暂无聊天记录</p>
+            </div>
+
+            <div v-if="state.liveText" class="rc-line user is-live">
+              <span class="rc-who">你</span>
+              <p class="rc-said">{{ state.liveText }}</p>
+            </div>
+          </div>
+        </aside>
+      </Transition>
 
       <div v-if="!char" class="rc-blank is-scene">
         <p class="rc-blank-line">{{ state.error ? '对话状态没读出来。' : '载入中…' }}</p>
@@ -502,6 +567,25 @@
                   <Square v-if="voicePlaying" :size="9" fill="currentColor" />
                   <Play v-else :size="11" fill="currentColor" />
                 </button>
+                <button
+                  v-if="char.voice_id"
+                  type="button"
+                  class="rc-voice-clear"
+                  title="清除音色"
+                  aria-label="清除音色"
+                  @click="clearVoice"
+                >
+                  <X :size="12" :stroke-width="1.8" />
+                </button>
+              </div>
+
+              <div class="rc-field rc-voice-picker">
+                <span>选择音色</span>
+                <VoicePicker
+                  v-model="pickedVoiceId"
+                  :voices="hostStore.allVoices || []"
+                  placeholder="输入名称、标签或音色 ID 检索…"
+                />
               </div>
 
               <div v-if="char.voice_id" class="rc-field is-flat">
@@ -688,18 +772,17 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowUp,
   Check,
-  ChevronLeft,
   ChevronsUpDown,
   Cpu,
+  History,
   ImageUp,
-  List,
   Loader2,
   Maximize2,
   Mic,
   Minimize2,
-  PanelRightClose,
   PenLine,
   Play,
   Plus,
@@ -712,12 +795,15 @@ import {
 } from 'lucide-vue-next'
 import { actions as hostActions, say, store as hostStore } from '../../store'
 import SegmentedControl from '../../components/ui/SegmentedControl.vue'
+import VoicePicker from '../../components/VoicePicker.vue'
 import {
   active,
   addCharacter,
+  assignVoiceToActive,
   BACKGROUNDS,
   backgroundOf,
   backgroundStyle,
+  dismissBubble,
   engineChoices,
   engineLabel,
   generatePersona,
@@ -777,13 +863,19 @@ const characters = computed(() => state.data?.characters || [])
 /** 目录里最新的一份排在最上：找的是"刚才那一段"。 */
 const orderedSessions = computed(() => [...sessions.value].reverse())
 
-const rootEl = ref(/** @type {any} */ (null))
-const sceneEl = ref(/** @type {any} */ (null))
-const chatEl = ref(/** @type {any} */ (null))
-const inputEl = ref(/** @type {any} */ (null))
+const rootEl = ref(/** @type {HTMLElement|null} */ (null))
+const sceneEl = ref(/** @type {HTMLElement|null} */ (null))
+const plateEl = ref(/** @type {HTMLElement|null} */ (null))
+const figureEl = ref(/** @type {HTMLImageElement|null} */ (null))
+const bubbleEl = ref(/** @type {HTMLElement|null} */ (null))
+const historyEl = ref(/** @type {HTMLElement|null} */ (null))
+const chatEl = ref(/** @type {HTMLElement|null} */ (null))
+const inputEl = ref(/** @type {HTMLTextAreaElement|null} */ (null))
 const isFullscreen = ref(false)
-/** 台本可以整块收起来，只留画面；这一页里不落盘，翻页回来再展开。 */
-const readHidden = ref(false)
+/** 右侧精简历史抽屉默认收起；呼出时直接展示对话列表，点选进入对应消息流。 */
+const historyOpen = ref(false)
+/** @type {import('vue').Ref<'list'|'messages'>} */
+const historyView = ref('list')
 /** 角色设置由插件状态管：音色卡「创建」在浮层里把它打开，工作区这边跟着出现。 */
 const sheetOpen = computed({
   get: () => state.sheetOpen,
@@ -801,7 +893,6 @@ watch(
   },
   { immediate: true }
 )
-const tocOpen = ref(false)
 const rosterOpen = ref(false)
 const modelOpen = ref(false)
 const switchEl = ref(/** @type {any} */ (null))
@@ -904,19 +995,167 @@ const figureStyle = computed(() => {
   }
 })
 
-/** 气泡要跟着人走：按立绘的站位与大小算出"她旁边"在哪儿，落成一个百分比。 */
-const figureVars = computed(() => {
-  const x = (char.value?.portrait_x ?? PORTRAIT_X) * 100
-  const scale = char.value?.portrait_scale ?? PORTRAIT_SCALE
-  return { '--rc-bubble-left': `${x + 26 + 8 * scale}%` }
+/** 立绘脚下的柔和接触投影，让人物贴合在房间地面上。 */
+const figureGroundStyle = computed(() => {
+  const target = char.value
+  const px = target?.portrait_x ?? PORTRAIT_X
+  const py = target?.portrait_y ?? PORTRAIT_Y
+  const scale = target?.portrait_scale ?? PORTRAIT_SCALE
+  const sw = Math.max(320, sceneSize.value.w)
+  const sh = Math.max(280, sceneSize.value.h)
+  const nat = portraitNatural.value
+  const aspect = nat.w > 0 && nat.h > 0 ? nat.w / nat.h : 0.62
+  const visW = Math.min(sw * 0.58, scale * sh * aspect)
+  return {
+    left: `${Math.round(px * sw + visW * 0.12)}px`,
+    bottom: `${Math.max(0, Math.round(py * sh - 10))}px`,
+    width: `${Math.round(visW * 0.76)}px`,
+    opacity: clamp(1 - py * 2.2, 0.28, 0.9),
+  }
+})
+const sceneSize = ref({ w: 960, h: 640 })
+const plateBounds = ref({ right: 340, bottom: 120 })
+const portraitNatural = ref({ w: 0, h: 0 })
+const bubbleSize = ref({ w: 260, h: 76 })
+const historyWidth = ref(0)
+
+function onPortraitLoad() {
+  const img = figureEl.value
+  if (!img) return
+  portraitNatural.value = { w: img.naturalWidth || 0, h: img.naturalHeight || 0 }
+}
+
+/** 窄屏下历史抽屉盖在画面上，不挤压中央输入栏；宽屏下居中区域自动让开历史抽屉。 */
+const effectiveHistoryWidth = computed(() =>
+  historyOpen.value && sceneSize.value.w > 640 ? historyWidth.value : 0
+)
+
+const stageVars = computed(() => ({
+  '--rc-history-w': `${effectiveHistoryWidth.value}px`,
+}))
+
+/** 正在想：让气泡在立绘旁亮出三颗呼吸点，收起历史也能看见反馈。 */
+const bubbleThinking = computed(() => state.busy === 'thinking')
+
+/** 气泡文案：优先显示正在播放的那一句；其次显示本轮刚收到的回复（无语音或播完仍可读）。 */
+const bubbleText = computed(() => {
+  if (bubbleThinking.value) return ''
+  const targetId = state.speakingId || state.lastReplyId
+  if (!targetId) return ''
+  const line = messages.value.find((row) => row.id === targetId)
+  if (!line || line.role !== 'assistant' || line.error) return ''
+  return String(line.text || '').trim()
 })
 
-/** 正在放的那一句：气泡只在她说话时出现，播放一结束（speakingId 清空）就散。 */
-const bubbleText = computed(() => {
-  if (!state.speakingId) return ''
-  const line = messages.value.find((row) => row.id === state.speakingId)
-  if (!line || line.role !== 'assistant') return ''
-  return String(line.text || '').trim()
+const bubbleVisible = computed(() => bubbleThinking.value || Boolean(bubbleText.value))
+const canDismissBubble = computed(
+  () => !bubbleThinking.value && !state.speakingId && Boolean(state.lastReplyId)
+)
+
+/**
+ * 气泡跟随立绘的实时几何：
+ * - 按立绘的 portrait_x / portrait_y / portrait_scale 与真实宽高比算出可见轮廓；
+ * - 锚定在立绘肩/头部高度，优先放右侧，右侧空间不足时自动翻到左侧；
+ * - 依据气泡实测高度做上下收边界，并预留底部悬浮输入栏高度，保证任何字数都能完整显示。
+ */
+const bubbleLayout = computed(() => {
+  const sw = Math.max(320, sceneSize.value.w)
+  const sh = Math.max(280, sceneSize.value.h)
+  const hw = effectiveHistoryWidth.value
+  const stageW = Math.max(260, sw - hw)
+  const safeLeft = 18
+  const safeRight = Math.max(safeLeft + 200, stageW - 18)
+  const safeTop = 20
+  const dockReserve = 104
+  const safeBottom = Math.max(safeTop + 120, sh - dockReserve)
+  const maxBubbleH = Math.max(110, safeBottom - safeTop)
+  const measuredH = Math.min(bubbleThinking.value ? 46 : Math.max(48, bubbleSize.value.h), maxBubbleH)
+
+  if (!portraitImage.value) {
+    const maxW = clamp(stageW - 64, 200, 460)
+    const top = clamp(sh * 0.26, safeTop + 56, Math.max(safeTop + 56, safeBottom - measuredH))
+    return {
+      tail: 'none',
+      style: {
+        left: `${Math.round(stageW / 2)}px`,
+        top: `${Math.round(top)}px`,
+        maxWidth: `${Math.round(maxW)}px`,
+        maxHeight: `${Math.round(maxBubbleH)}px`,
+        transform: 'translateX(-50%)',
+      },
+    }
+  }
+
+  const px = char.value?.portrait_x ?? PORTRAIT_X
+  const py = char.value?.portrait_y ?? PORTRAIT_Y
+  const scale = char.value?.portrait_scale ?? PORTRAIT_SCALE
+  const elLeft = px * sw
+  const elHeight = scale * sh
+  const elBottom = sh - py * sh
+  const maxFigW = sw * 0.58
+  const nat = portraitNatural.value
+  const aspect = nat.w > 0 && nat.h > 0 ? nat.w / nat.h : 0.62
+  let visW = elHeight * aspect
+  let visH = elHeight
+  if (visW > maxFigW) {
+    visW = maxFigW
+    visH = visW / aspect
+  }
+  const visLeft = elLeft
+  const visRight = elLeft + visW
+  const visTop = elBottom - visH
+
+  // 头部/肩部锚点：立绘顶边被裁出上沿时从画面顶向下取，保证跟着人上下走。
+  const visibleTop = Math.max(0, visTop)
+  const anchorY = clamp(visibleTop + Math.min(visH * 0.16, 110), safeTop + 24, safeBottom - 44)
+
+  // 立绘下半身裙摆通常比肩颈宽，向肩颈略微贴近一点，气泡才像贴着她在说话。
+  const overlapRatio = aspect < 0.85 ? 0.13 : 0.08
+  const overlap = Math.min(56, visW * overlapRatio)
+  const rightStart = Math.max(safeLeft, visRight - overlap)
+  const availRight = safeRight - rightStart
+  const leftEnd = Math.min(safeRight, visLeft + overlap)
+  const availLeft = leftEnd - safeLeft
+  const preferRight = availRight >= 230 || availRight >= availLeft
+
+  const desiredTop = anchorY - Math.min(34, measuredH * 0.32)
+
+  if (preferRight) {
+    const maxW = clamp(availRight, 180, 420)
+    const left = clamp(rightStart, safeLeft, Math.max(safeLeft, safeRight - Math.min(maxW, 200)))
+    const actualMaxW = clamp(safeRight - left, 160, 420)
+    const minTop = left < plateBounds.value.right + 12 ? Math.max(safeTop, plateBounds.value.bottom + 14) : safeTop
+    const top = clamp(desiredTop, minTop, Math.max(minTop, safeBottom - measuredH))
+    const tailTop = clamp(anchorY - top, 20, Math.max(20, measuredH - 22))
+    return {
+      tail: 'left',
+      style: {
+        left: `${Math.round(left)}px`,
+        top: `${Math.round(top)}px`,
+        maxWidth: `${Math.round(actualMaxW)}px`,
+        maxHeight: `${Math.round(Math.max(110, safeBottom - minTop))}px`,
+        '--rc-tail-top': `${Math.round(tailTop)}px`,
+      },
+    }
+  }
+
+  const maxW = clamp(availLeft, 180, 420)
+  const anchorRightEdge = clamp(leftEnd, safeLeft + Math.min(maxW, 200), safeRight)
+  const actualMaxW = clamp(anchorRightEdge - safeLeft, 160, 420)
+  const estLeft = anchorRightEdge - Math.min(actualMaxW, Math.max(180, bubbleSize.value.w))
+  const minTop = estLeft < plateBounds.value.right + 12 ? Math.max(safeTop, plateBounds.value.bottom + 14) : safeTop
+  const top = clamp(desiredTop, minTop, Math.max(minTop, safeBottom - measuredH))
+  const tailTop = clamp(anchorY - top, 20, Math.max(20, measuredH - 22))
+  return {
+    tail: 'right',
+    style: {
+      right: `${Math.round(sw - anchorRightEdge)}px`,
+      top: `${Math.round(top)}px`,
+      maxWidth: `${Math.round(actualMaxW)}px`,
+      maxHeight: `${Math.round(Math.max(110, safeBottom - minTop))}px`,
+      '--rc-tail-top': `${Math.round(tailTop)}px`,
+    },
+  }
 })
 
 /** 正在拖的那一次：记下起点与房间尺寸，按位移换算比例。 */
@@ -1180,45 +1419,94 @@ function scrollToBottom() {
 }
 
 function openSheet() {
-  tocOpen.value = false
   // 从名牌打开的是"改这个角色"，不是刚才那次新建。
   state.sheetNew = false
   state.personaError = ''
   sheetOpen.value = true
 }
 
-/** 收起台本：先关掉记录抽屉，别让它留在一个看不见的层里。 */
-function hideRead() {
-  tocOpen.value = false
-  readHidden.value = true
+/** 角色设置里的音色检索选择：支持输入关键词搜索音色库，或直接输入音色 ID。 */
+const pickedVoiceId = computed({
+  get: () => char.value?.voice_id || '',
+  set: (id) => {
+    void onPickVoice(id)
+  },
+})
+
+/** @param {string} id */
+async function onPickVoice(id) {
+  const target = char.value
+  if (!target) return
+  const clean = String(id || '').trim()
+  if (!clean) {
+    clearVoice()
+    return
+  }
+  const hit = (hostStore.allVoices || []).find((item) => item.id === clean)
+  if (hit) {
+    await assignVoiceToActive(hit)
+    await loadVoiceSamples(true)
+    return
+  }
+  patchActive({
+    voice_id: clean,
+    voice_name: clean,
+    voice_engine: 'auto',
+    voice_engines: [],
+    voice_cover: '',
+    voice_local: false,
+    voice_sample_mode: 'emotion',
+    voice_sample_file: '',
+  })
+  await loadVoiceSamples(true)
 }
 
-function showRead() {
-  readHidden.value = false
-  nextTick(() => inputEl.value?.focus())
+function clearVoice() {
+  if (!char.value) return
+  patchActive({
+    voice_id: '',
+    voice_name: '',
+    voice_engine: '',
+    voice_engines: [],
+    voice_cover: '',
+    voice_local: false,
+    voice_sample_mode: 'emotion',
+    voice_sample_file: '',
+  })
+  state.voiceSamples = []
+  state.voiceSamplesFor = ''
 }
 
-function openToc() {
-  sheetOpen.value = false
+/** 打开右侧精简历史抽屉：默认直接显示对话列表。 */
+function openHistory() {
   confirmId.value = ''
-  tocOpen.value = true
+  historyView.value = 'list'
+  historyOpen.value = true
+}
+
+/** 收起历史抽屉：把画面完整还给人物与背景。 */
+function closeHistory() {
+  confirmId.value = ''
+  historyOpen.value = false
 }
 
 function onNewSession() {
   newSession()
-  tocOpen.value = false
   confirmId.value = ''
-  nextTick(() => inputEl.value?.focus())
+  historyView.value = 'messages'
+  nextTick(() => {
+    scrollToBottom()
+    inputEl.value?.focus()
+  })
 }
 
 /** @param {string} id */
 function openSession(id) {
   setSession(id)
-  tocOpen.value = false
   confirmId.value = ''
+  historyView.value = 'messages'
   nextTick(() => {
     scrollToBottom()
-    inputEl.value?.focus()
   })
 }
 
@@ -1293,12 +1581,13 @@ watch(
   }
 )
 
-/** 打开角色设置（或换了角色 / 换了音色）就重取一次样例：固定样例那一档要用它列清单。 */
+/** 打开角色设置时顺带确保全量音色清单就位，并重取一次样例。 */
 watch(
   () => [sheetOpen.value, char.value?.voice_id],
   ([open, id]) => {
-    if (!open || !id) return
-    void loadVoiceSamples(true)
+    if (!open) return
+    if (!hostStore.allVoices?.length) void hostActions.loadAllVoices()
+    if (id) void loadVoiceSamples(true)
   },
   { immediate: true }
 )
@@ -1314,6 +1603,14 @@ watch(
   () => syncSpeaking()
 )
 
+/** 发送清空草稿后把输入框高度收回到单行。 */
+watch(
+  () => state.draft,
+  (val) => {
+    if (!val && inputEl.value) inputEl.value.style.height = ''
+  }
+)
+
 /** @param {KeyboardEvent} event */
 function onKeydown(event) {
   if (event.key !== 'Escape') return
@@ -1321,17 +1618,120 @@ function onKeydown(event) {
     sheetOpen.value = false
     return
   }
-  if (tocOpen.value) tocOpen.value = false
+  if (modelOpen.value) {
+    modelOpen.value = false
+    return
+  }
+  if (historyOpen.value) {
+    if (historyView.value === 'messages') {
+      historyView.value = 'list'
+      return
+    }
+    historyOpen.value = false
+    return
+  }
+  if (canDismissBubble.value) dismissBubble()
 }
 
+/** @type {ResizeObserver|null} */
+let sceneObserver = null
+/** @type {ResizeObserver|null} */
+let bubbleObserver = null
+/** @type {ResizeObserver|null} */
+let historyObserver = null
+
+function measureScene() {
+  const el = sceneEl.value
+  if (!el) return
+  sceneSize.value = { w: el.clientWidth || 960, h: el.clientHeight || 640 }
+  const plate = plateEl.value
+  if (plate) {
+    const sr = el.getBoundingClientRect()
+    const pr = plate.getBoundingClientRect()
+    plateBounds.value = {
+      right: Math.max(0, pr.right - sr.left),
+      bottom: Math.max(0, pr.bottom - sr.top),
+    }
+  }
+}
+
+watch(
+  () => [plateEl.value, char.value?.name, char.value?.intro],
+  () => void nextTick(measureScene),
+  { flush: 'post' }
+)
+
+watch(
+  () => figureEl.value,
+  (img) => {
+    if (!img) {
+      portraitNatural.value = { w: 0, h: 0 }
+      return
+    }
+    if (img.complete && img.naturalWidth) onPortraitLoad()
+  },
+  { flush: 'post' }
+)
+
+watch(
+  () => bubbleEl.value,
+  (el) => {
+    bubbleObserver?.disconnect()
+    bubbleObserver = null
+    if (!el) return
+    bubbleSize.value = { w: el.offsetWidth || 260, h: el.offsetHeight || 76 }
+    if (typeof ResizeObserver !== 'undefined') {
+      bubbleObserver = new ResizeObserver(() => {
+        if (!bubbleEl.value) return
+        bubbleSize.value = {
+          w: bubbleEl.value.offsetWidth || 260,
+          h: bubbleEl.value.offsetHeight || 76,
+        }
+      })
+      bubbleObserver.observe(el)
+    }
+  },
+  { flush: 'post' }
+)
+
+watch(
+  () => historyEl.value,
+  (el) => {
+    historyObserver?.disconnect()
+    historyObserver = null
+    if (!el) {
+      historyWidth.value = 0
+      return
+    }
+    historyWidth.value = el.offsetWidth || 0
+    if (typeof ResizeObserver !== 'undefined') {
+      historyObserver = new ResizeObserver(() => {
+        historyWidth.value = historyEl.value?.offsetWidth || 0
+      })
+      historyObserver.observe(el)
+    }
+  },
+  { flush: 'post' }
+)
+
 onMounted(() => {
-  void nextTick(scrollToBottom)
+  void nextTick(() => {
+    measureScene()
+    scrollToBottom()
+  })
+  if (typeof ResizeObserver !== 'undefined' && sceneEl.value) {
+    sceneObserver = new ResizeObserver(measureScene)
+    sceneObserver.observe(sceneEl.value)
+  }
   document.addEventListener('fullscreenchange', syncFullscreen)
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('pointerdown', onDocPointer)
 })
 
 onBeforeUnmount(() => {
+  sceneObserver?.disconnect()
+  bubbleObserver?.disconnect()
+  historyObserver?.disconnect()
   document.removeEventListener('fullscreenchange', syncFullscreen)
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('pointerdown', onDocPointer)
@@ -1386,8 +1786,7 @@ onBeforeUnmount(() => {
   isolation: isolate;
 }
 
-/* 底色压暗按设计稿走：左边几乎不动（她的画面是全的），越往右越暗——字落在那一侧。
-   只压到"字读得出来"为止：右侧再重就成了黑幕，房间的材质全没了。 */
+/* 轻度环境暗角：只托住左上名牌与底部悬浮栏的可读性，把人物与背景清晰留出来。 */
 .rc-shade {
   position: absolute;
   inset: 0;
@@ -1395,33 +1794,36 @@ onBeforeUnmount(() => {
   pointer-events: none;
   background:
     linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--sh-media-bg) 34%, transparent) 0%,
-      color-mix(in srgb, var(--sh-media-bg) 12%, transparent) 16%,
-      transparent 34%,
-      color-mix(in srgb, var(--sh-media-bg) 12%, transparent) 48%,
-      color-mix(in srgb, var(--sh-media-bg) 30%, transparent) 62%,
-      color-mix(in srgb, var(--sh-media-bg) 46%, transparent) 78%,
-      color-mix(in srgb, var(--sh-media-bg) 60%, transparent) 100%
-    ),
-    linear-gradient(
       0deg,
-      color-mix(in srgb, var(--sh-media-bg) 52%, transparent) 0%,
-      transparent 30%
+      color-mix(in srgb, var(--sh-media-bg) 34%, transparent) 0%,
+      color-mix(in srgb, var(--sh-media-bg) 10%, transparent) 16%,
+      transparent 28%
     ),
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--sh-media-bg) 36%, transparent) 0%,
-      transparent 22%
+      color-mix(in srgb, var(--sh-media-bg) 28%, transparent) 0%,
+      transparent 18%
     );
 }
 
-/* 房间底：永远是两张内置图之一（或用户自己传的那张），不再有"没设图就一块纯黑"的档。 */
-
 /* ---- 立绘 ---------------------------------------------------------- */
 
-/* 人站在左边：透明底、脚贴地面，投一层影让它落在房间里而不是浮在上面。
-   位置与大小由角色状态给（可拖动、可滚轮缩放），这里只留兜底值。 */
+/* 人站在房间里：透明底、脚贴地面，带柔和地面接触影与场景色温/明度协调，避免贴图感。 */
+.rc-figure-ground {
+  position: absolute;
+  z-index: 1;
+  height: 36px;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--sh-media-bg) 68%, transparent) 0%,
+    color-mix(in srgb, var(--sh-media-bg) 28%, transparent) 48%,
+    transparent 74%
+  );
+  filter: blur(8px);
+  pointer-events: none;
+}
+
 .rc-figure {
   position: absolute;
   bottom: 0;
@@ -1434,7 +1836,24 @@ onBeforeUnmount(() => {
   cursor: grab;
   touch-action: none;
   user-select: none;
-  filter: drop-shadow(0 18px 30px rgb(0 0 0 / 42%));
+  filter:
+    drop-shadow(0 16px 28px color-mix(in srgb, var(--sh-media-bg) 56%, transparent))
+    drop-shadow(0 2px 10px color-mix(in srgb, var(--sh-media-bg) 34%, transparent))
+    brightness(0.94)
+    contrast(1.02)
+    saturate(0.95);
+  transition: filter var(--sh-t) var(--sh-ease);
+}
+
+.rc-figure.is-grounded {
+  mask-image: linear-gradient(to top, transparent 0%, rgb(0 0 0 / 82%) 3.5%, black 9%);
+}
+
+.is-bg-dawn .rc-figure {
+  filter:
+    drop-shadow(0 14px 24px color-mix(in srgb, var(--sh-media-bg) 34%, transparent))
+    brightness(0.99)
+    saturate(1.02);
 }
 
 .rc-figure.is-dragging {
@@ -1442,19 +1861,16 @@ onBeforeUnmount(() => {
 }
 
 /* ---- 气泡 ---------------------------------------------------------- */
-/* 她说话时，这一句落在人旁边：薄薄一层雾面，说完就散。
-   不铺实心底色——背景仍看得见，才像话真的飘在房间里。 */
+/* 气泡紧跟立绘位置与大小，按空间自动翻边并在上下安全边界内完整展示全部文字。 */
 .rc-bubble {
   position: absolute;
-  z-index: 2;
-  /* 跟着立绘的站位走：人往右站，气泡也往右让，始终停在她身侧。 */
-  left: clamp(170px, var(--rc-bubble-left, 36%), 48%);
-  bottom: clamp(150px, 60%, 520px);
-  min-width: 240px;
-  max-width: min(26%, 360px);
-  padding: 15px 18px 16px;
-  border: 1px solid color-mix(in srgb, var(--sh-media-text) 20%, transparent);
-  border-radius: 20px 22px 22px 6px;
+  z-index: 3;
+  display: flex;
+  width: max-content;
+  min-width: 140px;
+  flex-direction: column;
+  border: 1px solid color-mix(in srgb, var(--sh-media-text) 22%, transparent);
+  border-radius: var(--sh-r-lg);
   background:
     linear-gradient(
       150deg,
@@ -1462,98 +1878,198 @@ onBeforeUnmount(() => {
       color-mix(in srgb, var(--sh-media-text) 4%, transparent) 48%,
       transparent 100%
     ),
-    color-mix(in srgb, var(--sh-media-bg) 30%, transparent);
+    color-mix(in srgb, var(--sh-media-bg) 42%, transparent);
   box-shadow:
-    0 22px 60px color-mix(in srgb, var(--sh-media-bg) 40%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--sh-media-text) 16%, transparent);
+    var(--sh-shadow-2),
+    inset 0 1px 0 color-mix(in srgb, var(--sh-media-text) 18%, transparent);
   color: var(--rc-ink);
-  pointer-events: none;
-  backdrop-filter: blur(16px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.14);
+  transition: border-color var(--sh-t) var(--sh-ease);
 }
 
-/* 朝她那一侧的尖角：一小块同材质的雾面，不是实心三角。 */
+.rc-bubble.is-speaking {
+  border-color: color-mix(in srgb, var(--sh-warn) 36%, color-mix(in srgb, var(--sh-media-text) 22%, transparent));
+}
+
+.rc-bubble.is-thinking {
+  min-width: 0;
+  padding: 12px 16px;
+}
+
+/* 指向立绘的尖角：随立绘头部锚点上下对齐，自动随左右翻边切换方向。 */
 .rc-bubble::after {
   position: absolute;
-  bottom: 16px;
-  left: -7px;
-  width: 14px;
-  height: 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--sh-media-text) 18%, transparent);
-  border-left: 1px solid color-mix(in srgb, var(--sh-media-text) 18%, transparent);
-  border-radius: 0 0 0 4px;
-  background: color-mix(in srgb, var(--sh-media-bg) 26%, transparent);
+  top: var(--rc-tail-top, 26px);
+  width: 12px;
+  height: 12px;
+  background: color-mix(in srgb, var(--sh-media-bg) 42%, transparent);
   content: '';
-  transform: rotate(45deg);
+  pointer-events: none;
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.rc-bubble.is-tail-left::after {
+  left: -7px;
+  border-bottom: 1px solid color-mix(in srgb, var(--sh-media-text) 20%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--sh-media-text) 20%, transparent);
+  border-radius: 0 0 0 3px;
+}
+
+.rc-bubble.is-tail-right::after {
+  right: -7px;
+  border-top: 1px solid color-mix(in srgb, var(--sh-media-text) 20%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--sh-media-text) 20%, transparent);
+  border-radius: 0 3px 0 0;
+}
+
+.rc-bubble.is-tail-none::after {
+  display: none;
+}
+
+.rc-bubble-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 13px 20px 14px 18px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--sh-media-text) 24%, transparent) transparent;
+}
+
+.rc-bubble-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.rc-bubble-scroll::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--sh-media-text) 24%, transparent);
 }
 
 .rc-bubble-text {
-  display: -webkit-box;
-  overflow: hidden;
   margin: 0;
-  font-size: 15px;
-  line-height: 1.9;
+  font-size: 14.5px;
+  line-height: 1.78;
   letter-spacing: 0.01em;
   overflow-wrap: anywhere;
-  text-shadow: 0 1px 16px color-mix(in srgb, var(--sh-media-bg) 70%, transparent);
+  text-shadow: 0 1px 14px color-mix(in srgb, var(--sh-media-bg) 70%, transparent);
   text-wrap: pretty;
   white-space: pre-wrap;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 9;
+}
+
+.rc-bubble-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--sh-media-bg) 42%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 72%, transparent);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--sh-t-fast) var(--sh-ease), background var(--sh-t-fast) var(--sh-ease),
+    color var(--sh-t-fast) var(--sh-ease);
+}
+
+.rc-bubble:hover .rc-bubble-close,
+.rc-bubble:focus-within .rc-bubble-close {
+  opacity: 1;
+}
+
+.rc-bubble-close:hover {
+  background: color-mix(in srgb, var(--sh-media-text) 18%, transparent);
+  color: var(--rc-ink);
+}
+
+.rc-bubble-close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--sh-accent-ring);
+}
+
+.rc-bubble-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 16px;
+}
+
+.rc-bubble-dots i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--sh-media-text) 80%, transparent);
+  animation: rc-dot 1.2s infinite;
+}
+
+.rc-bubble-dots i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.rc-bubble-dots i:nth-child(3) {
+  animation-delay: 0.32s;
 }
 
 .rc-bubble-enter-active {
-  transition: opacity 0.3s var(--sh-ease), transform 0.4s var(--sh-ease);
+  transition: opacity 0.24s var(--sh-ease), transform 0.3s var(--sh-ease);
 }
 
 .rc-bubble-leave-active {
-  transition: opacity 0.24s var(--sh-ease), transform 0.24s var(--sh-ease);
+  transition: opacity 0.2s var(--sh-ease), transform 0.2s var(--sh-ease);
 }
 
 .rc-bubble-enter-from,
 .rc-bubble-leave-to {
   opacity: 0;
-  transform: translateY(10px) scale(0.985);
+  transform: translateY(8px) scale(0.98);
 }
 
-/* 晨光那张整体偏亮：右半再加一道暗化，白字才压得住（比夜场轻一档）。 */
+/* 晨光整体偏亮：底部多补一点柔和过渡，保证悬浮栏文字清晰。 */
 .is-bg-dawn .rc-shade {
   background:
     linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--sh-media-bg) 30%, transparent) 0%,
+      0deg,
+      color-mix(in srgb, var(--sh-media-bg) 42%, transparent) 0%,
       color-mix(in srgb, var(--sh-media-bg) 14%, transparent) 18%,
-      color-mix(in srgb, var(--sh-media-bg) 24%, transparent) 38%,
-      color-mix(in srgb, var(--sh-media-bg) 40%, transparent) 56%,
-      color-mix(in srgb, var(--sh-media-bg) 54%, transparent) 74%,
-      color-mix(in srgb, var(--sh-media-bg) 68%, transparent) 100%
+      transparent 30%
     ),
-    linear-gradient(0deg, color-mix(in srgb, var(--sh-media-bg) 46%, transparent) 0%, transparent 26%);
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--sh-media-bg) 34%, transparent) 0%,
+      transparent 20%
+    );
 }
 
 /* ---- 名牌 ---------------------------------------------------------- */
 
 .rc-plate {
   position: absolute;
-  /* 顶上是名字：不再有「角色」那行垫着，留白直接记在这里。 */
-  top: 54px;
-  left: 32px;
+  top: 28px;
+  left: 28px;
   z-index: 2;
   display: flex;
-  width: min(330px, 34%);
+  width: min(320px, 34%);
   flex-direction: column;
-  gap: var(--sh-gap-3);
+  gap: var(--sh-gap-2);
+}
+
+.rc-plate.is-open {
+  z-index: 6;
 }
 
 /* 名牌落在左上角：垫一层从左上散开的暗雾，字才读得出来。 */
 .rc-plate::before {
   position: absolute;
   z-index: -1;
-  inset: -34px -70px -26px -46px;
+  inset: -28px -64px -22px -38px;
   background: radial-gradient(
     120% 120% at 12% 10%,
-    rgb(0 0 0 / 52%) 0%,
-    rgb(0 0 0 / 28%) 46%,
-    rgb(0 0 0 / 8%) 68%,
+    color-mix(in srgb, var(--sh-media-bg) 52%, transparent) 0%,
+    color-mix(in srgb, var(--sh-media-bg) 26%, transparent) 46%,
+    color-mix(in srgb, var(--sh-media-bg) 8%, transparent) 68%,
     transparent 80%
   );
   content: '';
@@ -1564,12 +2080,12 @@ onBeforeUnmount(() => {
   margin: 0;
   color: var(--rc-ink);
   font-family: var(--sh-font-serif);
-  font-size: 40px;
+  font-size: 36px;
   font-weight: 500;
   letter-spacing: 0.03em;
-  line-height: 1.06;
+  line-height: 1.08;
   text-wrap: balance;
-  text-shadow: 0 2px 28px color-mix(in srgb, var(--sh-media-bg) 80%, transparent);
+  text-shadow: 0 2px 24px color-mix(in srgb, var(--sh-media-bg) 80%, transparent);
 }
 
 .rc-intro {
@@ -1577,7 +2093,7 @@ onBeforeUnmount(() => {
   max-width: 26ch;
   color: var(--rc-sub);
   font-size: 12.5px;
-  line-height: 1.9;
+  line-height: 1.8;
   text-wrap: pretty;
 }
 
@@ -1602,6 +2118,17 @@ onBeforeUnmount(() => {
   border-color: color-mix(in srgb, var(--sh-accent) 56%, transparent);
   background: color-mix(in srgb, var(--sh-media-bg) 52%, transparent);
   color: var(--rc-ink);
+}
+
+.rc-edit:focus-visible,
+.rc-switch:focus-visible,
+.rc-corner-btn:focus-visible,
+.rc-mic:focus-visible,
+.rc-model:focus-visible,
+.rc-send:focus-visible,
+.rc-tool:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--sh-accent-ring);
 }
 
 .rc-name-row {
@@ -1641,7 +2168,7 @@ onBeforeUnmount(() => {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  z-index: 5;
+  z-index: 6;
   display: flex;
   width: max-content;
   min-width: 190px;
@@ -1703,101 +2230,386 @@ onBeforeUnmount(() => {
   transform: translateY(-4px);
 }
 
-/* ---- 台本 ---------------------------------------------------------- */
+/* ---- 右上角精简入口 ------------------------------------------------ */
 
-.rc-read {
-  position: relative;
-  z-index: 2;
+.rc-corner-acts {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 4;
   display: flex;
-  width: auto;
-  /* 台本收窄、整块贴右：左边留给她，字只占一条很窄的竖带。 */
-  max-width: 24%;
-  min-width: 0;
-  height: 100%;
-  flex: 1 1 auto;
-  margin-left: auto;
-  flex-direction: column;
-  /* 这一列自己有断点：窄到 380 以下时页头与输入行要换排法。 */
-  container-type: inline-size;
-  container-name: read;
+  align-items: center;
+  gap: var(--sh-gap-2);
 }
 
-/* 台本收起来时留在右边的那枚「<」：没有边框，只是一道轻的提示。 */
-.rc-read-open {
-  position: absolute;
-  top: 50%;
-  right: 6px;
-  z-index: 2;
-  display: grid;
-  width: 30px;
-  height: 62px;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: color-mix(in srgb, var(--sh-media-text) 46%, transparent);
+.rc-corner-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--sh-media-text) 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sh-media-bg) 32%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 84%, transparent);
+  font: inherit;
+  font-size: 12px;
   cursor: pointer;
-  place-items: center;
-  transform: translateY(-50%);
-  transition: color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease);
+  opacity: 0.86;
+  backdrop-filter: blur(12px) saturate(1.1);
+  transition: opacity var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    border-color var(--sh-t) var(--sh-ease), color var(--sh-t) var(--sh-ease);
 }
 
-.rc-read-open:hover {
-  background: color-mix(in srgb, var(--sh-media-text) 8%, transparent);
-  color: var(--sh-media-text);
+.rc-corner-btn.is-icon {
+  width: 34px;
+  padding: 0;
 }
 
-/* 磨砂只从右半边起：左边她的画面是清楚的，越往右越虚。 */
-.rc-frost {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  backdrop-filter: blur(var(--sh-blur)) saturate(0.96);
-  mask-image: linear-gradient(90deg, transparent 0, black 34%, black 100%);
-}
-
-/* 台本这一列里，除了磨砂底与记录抽屉，其余都压在底之上。 */
-.rc-read > :not(.rc-frost, .rc-toc) {
-  position: relative;
-  z-index: 1;
-}
-
-.rc-read-head {
-  display: flex;
-  flex: none;
-  align-items: flex-end;
-  gap: 12px;
-  padding: 24px 24px 10px 22px;
-}
-
-.rc-read-title {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.rc-read-title h2 {
-  margin: 0;
-  overflow: hidden;
+.rc-corner-btn:hover {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--sh-media-text) 30%, transparent);
+  background: color-mix(in srgb, var(--sh-media-bg) 48%, transparent);
   color: var(--rc-ink);
-  font-family: var(--sh-font-serif);
-  font-size: 20px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-shadow: 0 2px 20px color-mix(in srgb, var(--sh-media-bg) 74%, transparent);
 }
 
-.rc-read-meta {
-  color: var(--rc-sub);
-  font-size: 11.5px;
+.rc-corner-n {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sh-media-text) 14%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 82%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
 
-.rc-read-acts {
+/* ---- 居中悬浮输入栏（浅浅的对话框 + 语音 + 模型） ------------------ */
+
+.rc-dock {
+  position: absolute;
+  bottom: 20px;
+  left: calc((100% - var(--rc-history-w, 0px)) / 2);
+  z-index: 4;
+  display: flex;
+  width: min(560px, calc(100% - var(--rc-history-w, 0px) - 36px));
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sh-gap-2);
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: left var(--sh-t-slow) var(--sh-ease), width var(--sh-t-slow) var(--sh-ease);
+}
+
+.rc-dock-meta {
+  display: flex;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sh-gap-1);
+}
+
+.rc-dock-pill {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid color-mix(in srgb, var(--sh-media-text) 14%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sh-media-bg) 42%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 86%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.rc-dock-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-dock-pill.is-error {
+  border-color: color-mix(in srgb, var(--sh-danger) 42%, transparent);
+  background: color-mix(in srgb, var(--sh-media-bg) 56%, var(--sh-danger) 14%);
+  color: var(--rc-danger);
+}
+
+.rc-dock-pill.is-live {
+  border-color: color-mix(in srgb, var(--sh-accent) 42%, transparent);
+  color: var(--rc-ink);
+}
+
+.rc-dock-live-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--sh-accent);
+  animation: rc-mic-pulse 1.1s ease-in-out infinite;
+}
+
+.rc-dock-bar {
+  display: flex;
+  width: 100%;
+  align-items: flex-end;
+  gap: var(--sh-gap-2);
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--sh-media-text) 16%, transparent);
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--sh-media-bg) 26%, transparent);
+  box-shadow:
+    0 12px 34px color-mix(in srgb, var(--sh-media-bg) 24%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--sh-media-text) 14%, transparent);
+  opacity: 0.82;
+  pointer-events: auto;
+  backdrop-filter: blur(14px) saturate(1.14);
+  transition: opacity var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    border-color var(--sh-t) var(--sh-ease), box-shadow var(--sh-t) var(--sh-ease);
+}
+
+.rc-dock-bar:hover,
+.rc-dock-bar:focus-within,
+.rc-dock-bar.is-active {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--sh-media-text) 28%, transparent);
+  background: color-mix(in srgb, var(--sh-media-bg) 44%, transparent);
+  box-shadow:
+    0 14px 38px color-mix(in srgb, var(--sh-media-bg) 34%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--sh-media-text) 20%, transparent);
+}
+
+.rc-dock-bar.is-listening {
+  border-color: color-mix(in srgb, var(--sh-accent) 52%, transparent);
+}
+
+.rc-mic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--sh-media-text) 8%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 78%, transparent);
+  cursor: pointer;
+  transition: color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    border-color var(--sh-t) var(--sh-ease), box-shadow var(--sh-t) var(--sh-ease);
+}
+
+.rc-mic:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--sh-media-text) 16%, transparent);
+  color: var(--rc-ink);
+}
+
+.rc-mic:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.rc-mic.is-on {
+  border-color: color-mix(in srgb, var(--sh-accent) 56%, transparent);
+  background: color-mix(in srgb, var(--sh-accent) 24%, transparent);
+  color: var(--rc-ink);
+}
+
+.rc-mic.is-hearing {
+  background: color-mix(in srgb, var(--sh-accent) 36%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--sh-accent) 22%, transparent);
+  color: var(--rc-ink);
+}
+
+.rc-mic.is-hearing :where(svg) {
+  animation: rc-mic-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes rc-mic-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.rc-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  max-height: 108px;
+  padding: 6px 4px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--rc-ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  resize: none;
+  scrollbar-width: thin;
+  text-shadow: 0 1px 12px color-mix(in srgb, var(--sh-media-bg) 78%, transparent);
+}
+
+.rc-input::placeholder {
+  color: color-mix(in srgb, var(--sh-media-text) 56%, transparent);
+}
+
+.rc-send {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: var(--sh-accent);
+  color: var(--sh-accent-contrast);
+  cursor: pointer;
+  transition: filter var(--sh-t) var(--sh-ease), opacity var(--sh-t) var(--sh-ease),
+    background var(--sh-t) var(--sh-ease);
+}
+
+.rc-send:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.rc-send:disabled {
+  background: color-mix(in srgb, var(--sh-media-text) 14%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 46%, transparent);
+  cursor: default;
+}
+
+/* 对话模型：收在输入栏右侧的一枚紧凑胶囊，向上展开。 */
+.rc-model-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+.rc-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 152px;
+  height: 30px;
+  margin-bottom: 2px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--sh-media-text) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sh-media-text) 7%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 76%, transparent);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    border-color var(--sh-t) var(--sh-ease);
+}
+
+.rc-model:hover,
+.rc-model.is-open {
+  border-color: color-mix(in srgb, var(--sh-media-text) 24%, transparent);
+  background: color-mix(in srgb, var(--sh-media-text) 14%, transparent);
+  color: var(--rc-ink);
+}
+
+.rc-model.is-warn {
+  border-color: color-mix(in srgb, var(--sh-warn) 38%, transparent);
+  color: var(--rc-warm);
+}
+
+.rc-model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-model-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 12px);
+  z-index: 6;
+  display: flex;
+  width: 280px;
+  flex-direction: column;
+  gap: var(--sh-gap-2);
+  padding: 13px 14px 11px;
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-md);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow-2);
+}
+
+.rc-model-pop .rc-note {
+  margin: 0;
+  color: var(--sh-text-3);
+}
+
+/* ---- 右侧精简历史抽屉 ---------------------------------------------- */
+
+.rc-history {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  width: clamp(260px, 26%, 340px);
+  flex-direction: column;
+  border-left: 1px solid color-mix(in srgb, var(--sh-media-text) 16%, transparent);
+  background: color-mix(in srgb, var(--sh-media-bg) 34%, transparent);
+  box-shadow: -12px 0 36px color-mix(in srgb, var(--sh-media-bg) 22%, transparent);
+  backdrop-filter: blur(var(--sh-blur)) saturate(1.1);
+}
+
+.rc-history-enter-active,
+.rc-history-leave-active {
+  transition: transform 0.24s var(--sh-ease), opacity 0.2s var(--sh-ease);
+}
+
+.rc-history-enter-from,
+.rc-history-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.rc-history-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sh-gap-2);
+  padding: 14px 12px 10px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--sh-media-text) 10%, transparent);
+}
+
+.rc-history-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--sh-gap-2);
+}
+
+.rc-history-title h2 {
+  margin: 0;
+  color: var(--rc-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rc-history-meta {
+  color: var(--rc-sub);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rc-history-acts {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -1807,15 +2619,16 @@ onBeforeUnmount(() => {
 .rc-tool {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 9px;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 7px;
   border: 0;
   border-radius: var(--sh-r-xs);
   background: none;
-  color: color-mix(in srgb, var(--sh-media-text) 76%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 74%, transparent);
   font: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
   cursor: pointer;
   transition: background var(--sh-t) var(--sh-ease), color var(--sh-t) var(--sh-ease);
 }
@@ -1826,13 +2639,13 @@ onBeforeUnmount(() => {
 }
 
 .rc-tool.is-icon {
-  width: 30px;
+  width: 28px;
   padding: 0;
-  justify-content: center;
 }
 
 .rc-tool-n {
-  color: color-mix(in srgb, var(--sh-media-text) 52%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 60%, transparent);
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1840,14 +2653,13 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px 24px 12px 22px;
+  padding: 12px 14px 18px 16px;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--sh-media-text) 22%, transparent) transparent;
-  mask-image: linear-gradient(to bottom, transparent 0, black 24px);
 }
 
 .rc-script::-webkit-scrollbar {
-  width: 7px;
+  width: 6px;
 }
 
 .rc-script::-webkit-scrollbar-thumb {
@@ -1855,21 +2667,28 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--sh-media-text) 20%, transparent);
 }
 
+.rc-stamp {
+  margin: 0 0 14px;
+  color: color-mix(in srgb, var(--sh-media-text) 48%, transparent);
+  font-size: 11px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .rc-line {
-  max-width: 56ch;
-  margin: 0 0 22px;
-  animation: rc-rise 0.4s var(--sh-ease) both;
+  margin: 0 0 14px;
+  animation: rc-rise 0.3s var(--sh-ease) both;
 }
 
 .rc-line.user {
-  padding-left: 18px;
-  border-left: 2px solid color-mix(in srgb, var(--sh-accent) 44%, transparent);
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--sh-accent) 46%, transparent);
 }
 
 @keyframes rc-rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -1879,15 +2698,15 @@ onBeforeUnmount(() => {
 
 .rc-who {
   display: block;
-  margin-bottom: 7px;
-  color: color-mix(in srgb, var(--sh-warn) 42%, var(--sh-media-text));
+  margin-bottom: 3px;
+  color: color-mix(in srgb, var(--sh-warn) 44%, var(--sh-media-text));
   font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.08em;
 }
 
 .rc-line.user .rc-who {
-  color: color-mix(in srgb, var(--sh-accent) 34%, var(--sh-media-text));
+  color: color-mix(in srgb, var(--sh-accent) 40%, var(--sh-media-text));
 }
 
 .rc-line.is-error .rc-who {
@@ -1897,35 +2716,30 @@ onBeforeUnmount(() => {
 .rc-said {
   margin: 0;
   color: var(--rc-ink);
-  font-size: 15.5px;
-  line-height: 2.02;
-  letter-spacing: 0.01em;
+  font-size: 13.5px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
   text-wrap: pretty;
-  text-shadow:
-    0 1px 18px color-mix(in srgb, var(--sh-media-bg) 80%, transparent),
-    0 0 2px color-mix(in srgb, var(--sh-media-bg) 50%, transparent);
+  white-space: pre-wrap;
 }
 
 .rc-line.user .rc-said {
-  color: color-mix(in srgb, var(--sh-media-text) 92%, transparent);
-  font-size: 14.5px;
-  line-height: 1.95;
+  color: color-mix(in srgb, var(--sh-media-text) 88%, transparent);
+  font-size: 13px;
 }
 
 .rc-line.is-error .rc-said {
   color: var(--rc-danger);
-  font-size: 13px;
-  line-height: 1.9;
+  font-size: 12.5px;
 }
 
 .rc-line.is-live .rc-said {
-  color: color-mix(in srgb, var(--sh-media-text) 60%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 62%, transparent);
 }
 
-/* 正在念的那一句：字提亮到暖色，和旁边的白字区分开。 */
+/* 正在念的那一句：字提亮到暖色。 */
 .rc-line.is-playing .rc-said {
   color: var(--rc-warm);
-  text-shadow: 0 1px 22px color-mix(in srgb, var(--sh-warn) 26%, transparent);
 }
 
 .rc-line-acts {
@@ -1935,7 +2749,7 @@ onBeforeUnmount(() => {
   height: 22px;
   margin-top: 4px;
   opacity: 0;
-  transition: opacity var(--sh-t) var(--sh-ease);
+  transition: opacity var(--sh-t-fast) var(--sh-ease);
 }
 
 .rc-line:hover .rc-line-acts,
@@ -1952,7 +2766,7 @@ onBeforeUnmount(() => {
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--sh-media-text) 20%, transparent);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--sh-media-bg) 40%, transparent);
+  background: color-mix(in srgb, var(--sh-media-bg) 36%, transparent);
   color: color-mix(in srgb, var(--sh-media-text) 82%, transparent);
   cursor: pointer;
   transition: border-color var(--sh-t) var(--sh-ease), color var(--sh-t) var(--sh-ease);
@@ -1974,7 +2788,7 @@ onBeforeUnmount(() => {
 }
 
 .rc-tag {
-  color: color-mix(in srgb, var(--sh-media-text) 50%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 56%, transparent);
   font-size: 10.5px;
   cursor: default;
 }
@@ -1989,8 +2803,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 5px;
-  height: 24px;
-  margin: 0 0 20px;
+  height: 20px;
+  margin: 0 0 14px;
 }
 
 .rc-typing i {
@@ -2027,17 +2841,16 @@ onBeforeUnmount(() => {
   display: flex;
   height: 100%;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   gap: 6px;
-  animation: rc-rise 0.4s var(--sh-ease-out) both;
+  animation: rc-rise 0.3s var(--sh-ease-out) both;
 }
 
 .rc-blank-line {
   margin: 0;
-  color: color-mix(in srgb, var(--sh-media-text) 90%, transparent);
-  font-size: 15px;
-  text-shadow: 0 1px 16px color-mix(in srgb, var(--sh-media-bg) 85%, transparent);
+  color: color-mix(in srgb, var(--sh-media-text) 62%, transparent);
+  font-size: 13px;
 }
 
 .rc-blank-sub {
@@ -2046,7 +2859,6 @@ onBeforeUnmount(() => {
   color: color-mix(in srgb, var(--sh-media-text) 68%, transparent);
   font-size: 12.5px;
   line-height: 1.8;
-  text-shadow: 0 1px 14px color-mix(in srgb, var(--sh-media-bg) 85%, transparent);
 }
 
 .rc-blank.is-scene {
@@ -2055,288 +2867,43 @@ onBeforeUnmount(() => {
   padding: 32px;
 }
 
-/* ---- 输入 ---------------------------------------------------------- */
-
-.rc-compose {
-  flex: none;
-  margin: 0 24px 24px 22px;
-  padding-top: 9px;
-  border-top: 1px solid color-mix(in srgb, var(--sh-media-text) 16%, transparent);
-}
-
-.rc-inline-error {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 8px;
-  color: var(--rc-danger);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.rc-compose-in {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-}
-
-.rc-input {
-  flex: 1;
-  min-height: 30px;
-  max-height: 132px;
-  padding: 5px 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--rc-ink);
-  font: inherit;
-  font-size: 14.5px;
-  line-height: 1.7;
-  resize: none;
-  scrollbar-width: thin;
-  text-shadow: 0 1px 12px color-mix(in srgb, var(--sh-media-bg) 78%, transparent);
-}
-
-.rc-input::placeholder {
-  color: color-mix(in srgb, var(--sh-media-text) 46%, transparent);
-}
-
-.rc-send {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid transparent;
-  border-radius: var(--sh-r-xs);
-  background: var(--sh-accent);
-  color: var(--sh-accent-contrast);
-  cursor: pointer;
-  transition: filter var(--sh-t) var(--sh-ease), opacity var(--sh-t) var(--sh-ease);
-}
-
-.rc-send:hover:not(:disabled) {
-  filter: brightness(1.06);
-}
-
-.rc-send:disabled {
-  background: color-mix(in srgb, var(--sh-media-text) 16%, transparent);
-  color: color-mix(in srgb, var(--sh-media-text) 42%, transparent);
-  cursor: default;
-}
-
-.rc-compose-foot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 7px;
-}
-
-.rc-mic {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 9px;
-  border: 0;
-  border-radius: var(--sh-r-2xs);
-  background: none;
-  color: color-mix(in srgb, var(--sh-media-text) 62%, transparent);
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-  transition: color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease);
-}
-
-.rc-mic:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--sh-media-text) 10%, transparent);
-  color: var(--rc-ink);
-}
-
-.rc-mic:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.rc-mic.is-on {
-  color: var(--rc-accent);
-}
-
-.rc-mic.is-hearing {
-  background: color-mix(in srgb, var(--sh-accent) 22%, transparent);
-  color: var(--rc-ink);
-}
-
-.rc-mic.is-hearing :where(svg) {
-  animation: rc-mic-pulse 1.1s ease-in-out infinite;
-}
-
-@keyframes rc-mic-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
-
-.rc-hint {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: color-mix(in srgb, var(--sh-media-text) 46%, transparent);
-  font-size: 11.5px;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rc-key {
-  flex: none;
-  color: color-mix(in srgb, var(--sh-media-text) 34%, transparent);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-}
-
-/* 对话模型：输入框旁边的一枚胶囊，点开才露出服务与模型两栏。 */
-.rc-model-wrap {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-}
-
-.rc-model {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 230px;
-  height: 26px;
-  padding: 0 9px;
-  border: 1px solid transparent;
-  border-radius: var(--sh-r-2xs);
-  background: none;
-  color: color-mix(in srgb, var(--sh-media-text) 62%, transparent);
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-  transition: color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
-    border-color var(--sh-t) var(--sh-ease);
-}
-
-.rc-model:hover,
-.rc-model.is-open {
-  border-color: color-mix(in srgb, var(--sh-media-text) 18%, transparent);
-  background: color-mix(in srgb, var(--sh-media-text) 10%, transparent);
-  color: var(--rc-ink);
-}
-
-.rc-model.is-warn {
-  color: var(--rc-warm);
-}
-
-.rc-model-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 弹层贴在胶囊上方：这里离页面底部很近，往下铺会被切掉。 */
-.rc-model-pop {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
-  z-index: 6;
-  display: flex;
-  width: 286px;
-  flex-direction: column;
-  gap: var(--sh-gap-2);
-  padding: 13px 14px 11px;
-  border: 1px solid var(--sh-line);
-  border-radius: var(--sh-radius-md);
-  background: var(--sh-panel);
-  box-shadow: var(--sh-shadow-3);
-}
-
-.rc-model-pop .rc-note {
-  margin: 0;
-  color: var(--sh-text-3);
-}
-
-/* ---- 记录（压在台本上） -------------------------------------------- */
-
-.rc-toc {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--sh-line);
-  background: var(--sh-panel);
-}
-
-.rc-toc-head {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  padding: 22px 20px 10px 30px;
-}
-
-.rc-toc-head h2 {
-  margin: 0;
-  color: var(--sh-text);
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.rc-toc-count {
-  color: var(--sh-text-4);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.rc-toc-head .rc-tool {
-  margin-left: auto;
-  color: var(--sh-text-3);
-}
-
-.rc-toc-head .rc-tool:hover {
-  background: var(--sh-chip);
-  color: var(--sh-text);
-}
+/* ---- 历史对话列表（与半透明历史抽屉统一） ---------------------------- */
 
 .rc-toc-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 14px 12px;
+  padding: 8px 10px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--sh-media-text) 22%, transparent) transparent;
 }
 
 .rc-toc-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  border-radius: var(--sh-r-md);
-  transition: background var(--sh-t) var(--sh-ease);
+  gap: 4px;
+  margin-bottom: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-r-sm);
+  transition: background var(--sh-t) var(--sh-ease), border-color var(--sh-t) var(--sh-ease);
 }
 
 .rc-toc-row:hover {
-  background: var(--sh-chip);
+  background: color-mix(in srgb, var(--sh-media-text) 10%, transparent);
 }
 
 .rc-toc-row.is-active {
-  background: var(--sh-accent-soft);
+  border-color: color-mix(in srgb, var(--sh-accent) 32%, transparent);
+  background: color-mix(in srgb, var(--sh-accent) 18%, transparent);
 }
 
 .rc-toc-main {
-  display: grid;
+  display: flex;
   flex: 1;
   min-width: 0;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 10px;
-  padding: 11px 4px 11px 14px;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 6px 9px 10px;
   border: 0;
   background: none;
   color: inherit;
@@ -2345,27 +2912,21 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.rc-toc-date {
-  color: var(--sh-text-4);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
 .rc-toc-title {
   overflow: hidden;
-  color: var(--sh-text-2);
+  color: var(--rc-ink);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .rc-toc-row.is-active .rc-toc-title {
-  color: var(--sh-accent);
+  color: var(--rc-ink);
   font-weight: 600;
 }
 
-.rc-toc-n {
-  color: var(--sh-text-4);
+.rc-toc-sub {
+  color: var(--rc-sub);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -2376,24 +2937,25 @@ onBeforeUnmount(() => {
   place-items: center;
   width: 26px;
   height: 26px;
-  margin-right: 6px;
+  margin-right: 4px;
   border: 0;
   border-radius: var(--sh-r-xs);
   background: none;
-  color: var(--sh-text-4);
+  color: color-mix(in srgb, var(--sh-media-text) 64%, transparent);
   cursor: pointer;
-  opacity: 0.5;
+  opacity: 0;
   transition: opacity var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
     color var(--sh-t) var(--sh-ease);
 }
 
-.rc-toc-row:hover .rc-toc-del {
+.rc-toc-row:hover .rc-toc-del,
+.rc-toc-row:focus-within .rc-toc-del {
   opacity: 1;
 }
 
 .rc-toc-del:hover {
-  background: var(--sh-danger-soft);
-  color: var(--sh-danger);
+  background: color-mix(in srgb, var(--sh-danger) 24%, transparent);
+  color: var(--rc-danger);
 }
 
 .rc-toc-del:disabled {
@@ -2403,35 +2965,35 @@ onBeforeUnmount(() => {
 
 .rc-toc-del:disabled:hover {
   background: none;
-  color: var(--sh-text-4);
+  color: color-mix(in srgb, var(--sh-media-text) 50%, transparent);
 }
 
 .rc-toc-confirm {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 6px;
-  padding-right: 10px;
-  color: var(--sh-text-3);
-  font-size: 11.5px;
+  gap: 4px;
+  padding-right: 6px;
+  color: var(--rc-sub);
+  font-size: 11px;
 }
 
 .rc-toc-confirm button {
   height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--sh-line);
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--sh-media-text) 20%, transparent);
   border-radius: var(--sh-r-2xs);
-  background: var(--sh-panel);
-  color: var(--sh-text-2);
+  background: color-mix(in srgb, var(--sh-media-bg) 42%, transparent);
+  color: var(--rc-ink);
   font: inherit;
-  font-size: 11.5px;
+  font-size: 11px;
   cursor: pointer;
 }
 
 .rc-toc-confirm .rc-danger {
-  border-color: color-mix(in srgb, var(--sh-danger) 40%, transparent);
-  background: var(--sh-danger-soft);
-  color: var(--sh-danger);
+  border-color: color-mix(in srgb, var(--sh-danger) 48%, transparent);
+  background: color-mix(in srgb, var(--sh-danger) 24%, transparent);
+  color: var(--rc-danger);
 }
 
 .rc-toc-confirm button:disabled {
@@ -2439,29 +3001,12 @@ onBeforeUnmount(() => {
   opacity: 0.45;
 }
 
-.rc-toc-foot {
-  flex: none;
-  padding: 10px 20px 16px 30px;
-  border-top: 1px solid var(--sh-line-soft);
-}
-
-.rc-toc-enter-active,
-.rc-toc-leave-active {
-  transition: transform 0.3s var(--sh-ease), opacity 0.2s var(--sh-ease);
-}
-
-.rc-toc-enter-from,
-.rc-toc-leave-to {
-  transform: translateY(-8%);
-  opacity: 0;
-}
-
 /* ---- 角色设置（从名牌处铺开） -------------------------------------- */
 
 .rc-scrim {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  z-index: 6;
   border: 0;
   background: color-mix(in srgb, var(--sh-media-bg) 34%, transparent);
   cursor: default;
@@ -2471,7 +3016,7 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 22px;
   left: 22px;
-  z-index: 4;
+  z-index: 7;
   display: flex;
   width: min(372px, calc(100% - 44px));
   max-height: calc(100% - 44px);
@@ -2600,14 +3145,14 @@ onBeforeUnmount(() => {
   opacity: 0.55;
 }
 
-/* 试听：不改变选择，只把声音递到播放条。 */
-.rc-voice-play {
+/* 试听 / 清除音色 */
+.rc-voice-play,
+.rc-voice-clear {
   display: grid;
   flex: none;
   place-items: center;
   width: 28px;
   height: 28px;
-  margin-left: auto;
   padding: 0;
   border: 1px solid var(--sh-line);
   border-radius: 50%;
@@ -2621,6 +3166,98 @@ onBeforeUnmount(() => {
 .rc-voice-play.is-on {
   border-color: var(--sh-accent);
   color: var(--sh-accent);
+}
+
+.rc-voice-clear:hover {
+  border-color: color-mix(in srgb, var(--sh-danger) 40%, transparent);
+  color: var(--sh-danger);
+}
+
+.rc-voice-picker {
+  position: relative;
+  z-index: 4;
+}
+
+.rc-voice-picker :deep(.vpick-input) {
+  width: 100%;
+  height: 36px;
+  box-sizing: border-box;
+  padding: 0 32px 0 11px;
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-sm);
+  background: var(--sh-field);
+  color: var(--sh-text);
+  font: inherit;
+  font-size: 12.8px;
+  transition: border-color var(--sh-t) var(--sh-ease), background var(--sh-t) var(--sh-ease),
+    box-shadow var(--sh-t) var(--sh-ease);
+}
+
+.rc-voice-picker :deep(.vpick-input::placeholder) {
+  color: var(--sh-text-4);
+}
+
+.rc-voice-picker :deep(.vpick-input:hover) {
+  border-color: color-mix(in srgb, var(--sh-accent) 34%, var(--sh-line));
+}
+
+.rc-voice-picker :deep(.vpick-input:focus) {
+  outline: none;
+  border-color: var(--sh-accent);
+  background: var(--sh-field-focus);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+
+.rc-voice-picker :deep(.combo-caret) {
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: var(--sh-r-xs);
+  color: var(--sh-text-4);
+  font-size: 11px;
+}
+
+.rc-voice-picker :deep(.combo-caret:hover) {
+  background: var(--sh-chip);
+  color: var(--sh-text);
+}
+
+.rc-voice-picker :deep(.vpick-menu) {
+  padding: 6px;
+  border: 1px solid var(--sh-line);
+  border-radius: var(--sh-r-md);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow-2);
+}
+
+.rc-voice-picker :deep(.vpick-row) {
+  padding: 7px 9px;
+  border-radius: var(--sh-r-2xs);
+  color: var(--sh-text-2);
+  font-size: 12.5px;
+}
+
+.rc-voice-picker :deep(.vpick-row:hover),
+.rc-voice-picker :deep(.vpick-row.hot) {
+  background: var(--sh-chip);
+  color: var(--sh-text);
+}
+
+.rc-voice-picker :deep(.vpick-row.on) {
+  background: var(--sh-accent-soft);
+  color: var(--sh-accent);
+}
+
+.rc-voice-picker :deep(.vpick-src),
+.rc-voice-picker :deep(.vpick-note) {
+  color: var(--sh-text-4);
+}
+
+.rc-voice-picker :deep(.vpick-foot) {
+  border-top-color: var(--sh-line-soft);
 }
 
 /* 样例：只占一行下拉，样例再多也不把这张纸拉长。 */
@@ -2779,7 +3416,7 @@ onBeforeUnmount(() => {
   background-color: var(--sh-media-bg);
   background-position: center;
   background-size: cover;
-  color: #fff;
+  color: var(--sh-media-text);
   cursor: pointer;
   transition: border-color var(--sh-t) var(--sh-ease), box-shadow var(--sh-t) var(--sh-ease);
 }
@@ -2788,7 +3425,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: auto 0 0;
   padding: 14px 8px 5px;
-  background: linear-gradient(180deg, transparent, rgb(0 0 0 / 62%));
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--sh-media-bg) 68%, transparent));
   font-size: 11px;
   text-align: left;
 }
@@ -2834,8 +3471,8 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: auto 0 0;
   padding: 12px 3px 3px;
-  background: linear-gradient(180deg, transparent, rgb(0 0 0 / 72%));
-  color: #fff;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--sh-media-bg) 74%, transparent));
+  color: var(--sh-media-text);
   font-size: 10px;
   line-height: 1.2;
   text-align: center;
@@ -2954,242 +3591,101 @@ onBeforeUnmount(() => {
 }
 
 /* ---- 房间宽度 ------------------------------------------------------ */
-/* 这一页夹在导航、分类栏与音色列之后：视口 1440 时房间可能只有 690。
-   所以断点不看视口，按房间自己的宽度（container-name: room）算。 */
+/* 这一页夹在导航、分类栏与音色列之后：按房间自己的宽度（container-name: room）排版。 */
 
-/* 台本收窄成一条竖带以后，页头与输入行走另一套排法：
-   按钮只留图标，提示与快捷键收起来，把宽度全让给字。 */
-@container read (max-width: 400px) {
-  .rc-read-head {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 20px 16px 8px 16px;
+@container room (max-width: 960px) {
+  .rc-plate {
+    top: 22px;
+    left: 22px;
+    width: min(260px, 42%);
   }
 
-  .rc-read-acts {
-    margin-left: 0;
+  .rc-name {
+    font-size: 30px;
   }
 
-  .rc-tool-label {
+  .rc-history {
+    width: clamp(248px, 32%, 310px);
+  }
+}
+
+/* 较窄档：历史抽屉以轻浮层盖在右侧，模型胶囊收成纯图标，把宽度全让给输入框。 */
+@container room (max-width: 640px) {
+  .rc-plate {
+    top: 16px;
+    left: 16px;
+    width: min(220px, 56%);
+  }
+
+  .rc-name {
+    font-size: 24px;
+  }
+
+  .rc-intro {
     display: none;
   }
 
-  .rc-script {
-    padding: 4px 16px 10px 16px;
+  .rc-corner-acts {
+    top: 14px;
+    right: 14px;
   }
 
-  .rc-said,
-  .rc-line.user .rc-said {
-    font-size: 14px;
-    line-height: 1.9;
+  .rc-corner-label {
+    display: none;
   }
 
-  .rc-compose {
-    margin: 0 16px 18px 16px;
+  .rc-dock {
+    bottom: 14px;
+    width: calc(100% - 28px);
   }
 
-  .rc-compose-foot {
-    flex-wrap: wrap;
-    row-gap: 4px;
-  }
-
-  .rc-hint,
-  .rc-key {
+  .rc-model-name {
     display: none;
   }
 
   .rc-model {
-    max-width: 100%;
-  }
-}
-
-@container room (max-width: 1120px) {
-  /* 房间窄、台本又占去一半时，把人物往左裁：她的脸不能落在字下面。 */
-  .rc-scene {
-    background-position: 62% 32%;
+    width: 30px;
+    padding: 0;
+    justify-content: center;
   }
 
-  .rc-plate {
-    top: 50px;
-    left: 32px;
-    width: min(286px, 40%);
+  .rc-model-pop {
+    right: -40px;
+    width: min(270px, calc(100vw - 40px));
   }
 
-  .rc-name {
-    font-size: 34px;
-  }
-
-  .rc-read {
-    max-width: 28%;
-  }
-
-  .rc-read-head {
-    padding: 22px 28px 10px 28px;
-  }
-
-  .rc-script {
-    padding: 6px 28px 12px 28px;
-  }
-
-  .rc-compose {
-    margin: 0 28px 22px 28px;
+  .rc-history {
+    width: min(300px, 86%);
+    box-shadow: var(--sh-shadow-2);
   }
 
   .rc-sheet {
-    top: 14px;
-    left: 14px;
+    top: 10px;
+    left: 10px;
+    width: calc(100% - 20px);
+    max-height: calc(100% - 20px);
   }
 }
 
-/* 房间不够两栏：名牌排到台本上方，背景（如果有图）铺满整块，由台本自己压暗。 */
-@container room (max-width: 900px) {
-  .rc-scene {
-    flex-direction: column;
-    background-color: var(--sh-media-bg);
-  }
-
-  .rc-plate {
-    position: relative;
-    top: auto;
-    bottom: auto;
-    left: auto;
-    width: auto;
-    gap: var(--sh-gap-2);
-    padding: 22px 22px 18px;
-  }
-
-  /* 窄档没有两栏，立绘没地方站：整张收起来，只留房间；气泡也没有依附的人。 */
-  .rc-figure,
-  .rc-bubble,
-  .rc-plate::before {
-    display: none;
-  }
-
-  .rc-name {
-    font-size: 28px;
-  }
-
-  .rc-intro {
-    max-width: 60ch;
-  }
-
-  .rc-roster {
-    top: calc(100% + 8px);
-    bottom: auto;
-    padding-top: 0;
-  }
-
-  .rc-read {
-    width: 100%;
-    max-width: none;
-    height: auto;
-    flex: 1;
-    margin-left: 0;
-  }
-
-  /* 台本落在实底上：这一档不再用磨砂，避免整张脸被虚化。 */
-  .rc-frost {
-    display: none;
-  }
-
-  /* 有图时台本压一层向下的暗化保证可读；没图时场景本身是暗底，不必再压。 */
-  .rc-scene.has-image .rc-read {
-    background: linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--sh-media-bg) 34%, transparent) 0,
-      color-mix(in srgb, var(--sh-media-bg) 88%, transparent) 96px,
-      color-mix(in srgb, var(--sh-media-bg) 94%, transparent) 100%
-    );
-  }
-
-  .rc-read-head {
-    padding: 10px 20px 6px 22px;
-  }
-
-  .rc-script {
-    padding: 4px 20px 8px 22px;
-  }
-
-  .rc-compose {
-    margin: 0 20px 14px 22px;
-  }
-}
-
-@container room (max-width: 560px) {
-  .rc-read-head {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .rc-read-acts {
-    margin-left: 0;
-  }
-
-  .rc-key,
-  .rc-hint {
-    display: none;
-  }
-
-  .rc-sheet {
-    top: 8px;
-    left: 8px;
-    width: calc(100% - 16px);
-    max-height: calc(100% - 16px);
-  }
-}
-
-/* 房间很宽：画面与台本一起上一个档，字不贴着一条窄线。 */
 @container room (min-width: 1400px) {
   .rc-plate {
-    top: 66px;
-    left: 46px;
+    top: 38px;
+    left: 38px;
     width: 340px;
   }
 
   .rc-name {
-    font-size: 48px;
+    font-size: 44px;
   }
 
   .rc-intro {
     max-width: 28ch;
-    font-size: 13.5px;
+    font-size: 13px;
   }
 
-  .rc-read {
-    max-width: min(24%, 640px);
-  }
-
-  .rc-read-head {
-    padding: 26px 26px 12px 24px;
-  }
-
-  .rc-read-title h2 {
-    font-size: 22px;
-  }
-
-  .rc-script {
-    padding: 6px 26px 12px 24px;
-  }
-
-  .rc-said {
-    font-size: 15px;
-  }
-
-  .rc-line.user .rc-said {
-    font-size: 14.5px;
-  }
-
-  .rc-compose {
-    margin: 0 26px 28px 24px;
-  }
-}
-
-/* 再宽一档：台本跟着长，字仍按 56ch 折行，多出来的是可读的留白。 */
-@container room (min-width: 1700px) {
-  .rc-read {
-    max-width: min(22%, 700px);
+  .rc-dock {
+    bottom: 26px;
+    width: min(600px, calc(100% - var(--rc-history-w, 0px) - 48px));
   }
 }
 
@@ -3227,23 +3723,18 @@ onBeforeUnmount(() => {
 
 .rc.is-fullscreen .rc-plate,
 .rc:fullscreen .rc-plate {
-  top: 44px;
-  left: 56px;
+  top: 40px;
+  left: 48px;
   width: 360px;
 }
 
 .rc.is-fullscreen .rc-name,
 .rc:fullscreen .rc-name {
-  font-size: 52px;
+  font-size: 48px;
 }
 
-.rc.is-fullscreen .rc-said,
-.rc:fullscreen .rc-said {
-  font-size: 16.5px;
-}
-
-.rc.is-fullscreen .rc-compose,
-.rc:fullscreen .rc-compose {
-  margin-bottom: 34px;
+.rc.is-fullscreen .rc-dock,
+.rc:fullscreen .rc-dock {
+  bottom: 30px;
 }
 </style>

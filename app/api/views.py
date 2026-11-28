@@ -559,6 +559,20 @@ class ServiceIn(BaseModel):
     autostart: bool | None = None
 
 
+class SapiConfigIn(BaseModel):
+    """Windows SAPI 桥接设置：选音色与是否设为系统默认，引擎固定默认 ``auto``。"""
+
+    voice_id: str | None = None
+    is_default: bool | None = None
+
+
+class SapiInstallIn(BaseModel):
+    """安装 SAPI 桥接时的初始选项。"""
+
+    voice_id: str = ""
+    set_default: bool = True
+
+
 def _cover_url(voice: Voice) -> str:
     """封面地址带上文件时间：重新生成/换图后 URL 一定变，浏览器不会拿旧图。
 

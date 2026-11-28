@@ -970,7 +970,7 @@ const BUSY_TEXT = {
   sentences: { kind: '拆句', message: '正在拆句……' },
   analysis: { kind: '分析', message: '正在分析对话……' },
   audio: { kind: '生成', message: '正在启动生成任务……' },
-  qc: { kind: '预检', message: '正在回读行音频……' },
+  qc: { kind: '预检', message: '正在预检行音频……' },
   merge: { kind: '合并', message: '正在合并本章：拼接音频、写字幕与 BGM……' },
   'merge-all': { kind: '合并', message: '正在逐章合并……' },
   export: { kind: '导出', message: '正在打包 ZIP……' },
@@ -1042,7 +1042,7 @@ function stepTitle(key) {
     return stepBlocked(key) ? '还没有可生成的行：先拆句。' : '按角色音色逐行生成音频'
   }
   if (key === 'qc') {
-    return stepBlocked(key) ? '还没有逐行音频：先生成音频。' : '回读已生成的音频，找出念错、漏读与截断'
+    return stepBlocked(key) ? '还没有逐行音频：先生成音频。' : '声学前置检查与 ASR 回读比对'
   }
   if (key === 'merge') {
     return stepBlocked(key) ? '还没有逐行音频：先生成音频。' : '把逐行音频合成章节成品'

@@ -1691,19 +1691,19 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
 .map-name { color: var(--text); font-weight: 600; }
 .map-key { display: block; color: var(--muted); font-size: 11px; margin-top: 1px; }
 .map-note { color: var(--text-soft); line-height: 1.65; }
-.map-note.is-warning { color: var(--warn, #b4690e); }
+.map-note.is-warning { color: var(--sh-warn); }
 .map-note svg { vertical-align: -2px; margin-right: 4px; flex-shrink: 0; }
 .map-table tr.is-unmapped .map-name { color: var(--muted); font-weight: 500; }
 .map-constants { margin-top: 8px; font-size: 11.5px; color: var(--muted); }
 /* 重点说明：逐条换行、带警示标记，不与正文混成一段。 */
 .map-cautions {
   margin: 10px 0 0; padding: 10px 12px; list-style: none;
-  border-left: 3px solid var(--warn, #b4690e); border-radius: var(--sh-r-2xs);
-  background: var(--warn-soft, rgba(180, 105, 14, 0.08));
+  border-left: 3px solid var(--sh-warn); border-radius: var(--sh-r-2xs);
+  background: var(--sh-warn-soft);
   display: flex; flex-direction: column; gap: 6px;
 }
 .map-cautions li { display: flex; gap: 6px; font-size: 12px; line-height: 1.7; color: var(--text-soft); }
-.map-cautions svg { flex-shrink: 0; margin-top: 4px; color: var(--warn, #b4690e); }
+.map-cautions svg { flex-shrink: 0; margin-top: 4px; color: var(--sh-warn); }
 .map-footnote { margin: 8px 0 0; font-size: 11.5px; color: var(--muted); }
 /* 引擎要求：关键词标签，一行一个要求。 */
 .req-tags { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1714,8 +1714,8 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
 }
 .req-tag-name { color: var(--muted); font-size: 11.5px; }
 .req-tag-value { color: var(--text); font-weight: 600; }
-.req-tag-item.is-required { border-color: var(--warn, #b4690e); }
-.req-tag-item.is-required .req-tag-value { color: var(--warn, #b4690e); }
+.req-tag-item.is-required { border-color: var(--sh-warn); }
+.req-tag-item.is-required .req-tag-value { color: var(--sh-warn); }
 .req-auto { margin: 10px 0 0; font-size: 11.5px; color: var(--muted); }
 .mono { font-family: Consolas, 'Courier New', monospace; font-size: 12px; }
 .small { font-size: 11.5px; }
@@ -1809,17 +1809,17 @@ html[data-avatar-shape='square'] :is(.synth-rail .rail-cover, .card .cover, .car
 .toast.is-info > svg { color: var(--sh-accent); }
 .toast.is-success {
   border-color: color-mix(in srgb, var(--sh-ok) 34%, transparent);
-  background: color-mix(in srgb, var(--sh-ok-soft) 62%, var(--sh-glass-strong, #fff));
+  background: color-mix(in srgb, var(--sh-ok-soft) 62%, var(--sh-glass-strong));
 }
 .toast.is-success > svg { color: var(--sh-ok); }
 .toast.is-warn {
   border-color: color-mix(in srgb, var(--sh-warn) 38%, transparent);
-  background: color-mix(in srgb, var(--sh-warn-soft) 62%, var(--sh-glass-strong, #fff));
+  background: color-mix(in srgb, var(--sh-warn-soft) 62%, var(--sh-glass-strong));
 }
 .toast.is-warn > svg { color: var(--sh-warn); }
 .toast.is-error {
   border-color: color-mix(in srgb, var(--sh-danger) 42%, transparent);
-  background: color-mix(in srgb, var(--sh-danger-soft) 66%, var(--sh-glass-strong, #fff));
+  background: color-mix(in srgb, var(--sh-danger-soft) 66%, var(--sh-glass-strong));
 }
 .toast.is-error > svg { color: var(--sh-danger); }
 
