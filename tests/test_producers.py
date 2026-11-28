@@ -4250,11 +4250,11 @@ def test_set_row_error_preserves_previous_audio_and_retries_in_plan(tmp_path) ->
     project = service.create("样书", "第一章\n少年推门。\n风停了。\n")
     service.split_project(project["id"], "general")
     service.split_sentences(project["id"])
-    service.store.set_voice(project["id"], "旁白", "breeze_tts", "v-narrator", "旁白音")
     chapter = service.store.chapters(project["id"])[0]
     row = service.store.rows(chapter["id"])[0]
     _record_row_audio(service, project["id"], chapter["id"], row)
-    # _record_row_audio 按 fake 算指纹，这里换回真实匹配行当前音色的键并标失败。
+    # _record_row_audio 会把旁白改绑到 fake（未注册引擎），这里绑回真实启用的 breeze_tts。
+    service.store.set_voice(project["id"], "旁白", "breeze_tts", "v-narrator", "旁白音")
     before = service.store.row(row["id"])
     assert before is not None and before["audio"] and before["audio_key"]
 
