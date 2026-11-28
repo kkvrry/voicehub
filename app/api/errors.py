@@ -135,6 +135,12 @@ CODES: dict[str, str] = {
     # 访问令牌（见 app.api.auth）
     "token_required": "缺少访问令牌",
     "token_invalid": "访问令牌不对",
+    # 系统朗读（SAPI）桥接
+    "sapi_unsupported": "当前平台不支持 SAPI 桥接",
+    "sapi_not_installed": "SAPI 桥接尚未安装",
+    "sapi_default_failed": "切换默认系统语音失败",
+    "sapi_install_failed": "安装 SAPI 桥接失败",
+    "sapi_uninstall_failed": "卸载 SAPI 桥接失败",
     # 兜底
     "internal_error": "服务内部错误",
 }
